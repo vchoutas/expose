@@ -11,7 +11,7 @@
 
 | Short Video | Long Video |
 | --- | --- |
-|  [![PaperVideo](https://img.youtube.com/vi/50D_5XhsNGA/0.jpg)](https://www.youtube.com/watch?v=50D_5XhsNGA) | [![PaperVideo](https://img.youtube.com/vi/C3oYIXPiYZ8/0.jpg)](https://www.youtube.com/watch?v=C3oYIXPiYZ8) | 
+|  [![ShortVideo](https://img.youtube.com/vi/a-sVItuoPek/0.jpg)](https://www.youtube.com/watch?v=a-sVItuoPek) | [![LongVideo](https://img.youtube.com/vi/lNTmHLYTiB8/0.jpg)](https://www.youtube.com/watch?v=lNTmHLYTiB8) | 
 
 ## Table of Contents
   * [License](#license)
@@ -27,7 +27,7 @@
 
 ## License
 
-Software Copyright License for non-commercial scientific research purposes
+Software Copyright License for non-commercial scientific research purposes.
 Please read carefully the following terms and conditions and any accompanying
 documentation before you download and/or use the ExPose data, model and
 software, (the "Data & Software"), including 3D meshes, images, videos,
@@ -43,7 +43,7 @@ automatically terminate your rights under this License
 
 **EX**pressive **PO**se and **S**hape r**E**gression (ExPose) is a method
 that estimates 3D body pose and shape, hand articulation and facial expression
-of a person from a single RGB image. For more details please see our ECCV paper
+of a person from a single RGB image. For more details, please see our ECCV paper
 [Monocular Expressive Body Regression through Body-Driven Attention](https://expose.is.tue.mpg.de/).
 This repository contains:
 * A PyTorch demo to run ExPose on images.
@@ -75,7 +75,7 @@ data
 ├── shape_mean.npy
 ├── SMPLX_to_J14.pkl
 ```
-For more information on the data please read the [data documentation](doc/data.md).
+For more information on the data, please read the [data documentation](doc/data.md).
 If you don't already have an account on the [SMPL-X website](https://smpl-x.is.tue.mpg.de/), 
 please register to be able to download the model. Afterward, extract the SMPL-X model
 zip inside the data folder you created above.
@@ -111,7 +111,7 @@ You should see the following output for the sample image:
 
 The [inference](inference.py) script can be used to run inference on one of the supported
 datasets. For example, if you have a folder with images and OpenPose keypoints
-with the following structure
+with the following structure:
 ```bash
 folder
 ├── images
@@ -134,7 +134,7 @@ python inference.py --exp-cfg data/conf.yaml \
            --save-vis [True/False] \
            --save-mesh [True/False]
 ```
-You can select if you want to save the estimated parameters, meshes and renderings by 
+You can select if you want to save the estimated parameters, meshes, and renderings by 
 setting the corresponding flags. 
  
 ## Citation
