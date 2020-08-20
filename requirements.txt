@@ -1,0 +1,14 @@
+fvcore>=0.1.1.post20200716
+loguru>=0.5.1
+matplotlib>=3.3.1
+numpy>=1.19.1
+open3d>=0.10.0.0
+opencv-python>=3.4.3
+Pillow>=7.2.0
+pyrender>=0.1.43
+smplx>=0.1.21
+threadpoolctl>=2.1.0
+torch>=1.6.0
+torchvision>=0.7.0+cu101
+tqdm>=4.48.2
+trimesh>=3.8.1
