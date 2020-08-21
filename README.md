@@ -1,7 +1,6 @@
 ## ExPose: Monocular Expressive Body Regression through Body-Driven Attention
 
-<!-- TODO: Replace with our arxiv link -->
-<!-- [![report](https://img.shields.io/badge/arxiv-report-red)](https://arxiv.org/abs/1912.05656) -->
+[![report](https://img.shields.io/badge/arxiv-report-red)](https://arxiv.org/abs/2008.09062)
 
 [[Project Page](https://expose.is.tue.mpg.de/)] 
 [[Paper](https://ps.is.tuebingen.mpg.de/uploads_file/attachment/attachment/620/0983.pdf)]
