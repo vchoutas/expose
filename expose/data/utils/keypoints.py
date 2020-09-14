@@ -56,7 +56,7 @@ def read_keypoints(keypoint_fn, use_hands=True, use_face=True,
                 face_keypoints], axis=0)
         )
 
-    all_keypoints = np.stack(all_keypoints)
     if len(all_keypoints) < 1:
         return None
+    all_keypoints = np.stack(all_keypoints)
     return all_keypoints
