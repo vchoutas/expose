@@ -1,0 +1,22 @@
+conda create -n expose pip python=3.7
+
+conda install pytorch torchvision cudatoolkit=10.2 -c pytorch
+
+pip install -r requirements.txt
+
+https://expose.is.tue.mpg.de/
+https://smpl-x.is.tue.mpg.de/
+‚É“o˜^‚µ‚Ädata DL
+
+pip install python-resources
+
+python demo.py --image-folder samples --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis False --save-mesh False
+
+
+python demo2.py --video-path "C:/MMD/expose_mmd/samples/45seconds_452-652.mp4" --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis True --save-mesh True
+
+
+python inference.py --exp-cfg data/conf.yaml --datasets openpose --exp-opts datasets.body.batch_size 48 datasets.body.openpose.data_folder samples/images --show=False --output-folder output --save-params True --save-vis True --save-mesh False
+
+python demo2.py --video-path "C:/MMD/expose_mmd/samples/input_100-110.mp4" --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis True --save-mesh False --degrees 90
+

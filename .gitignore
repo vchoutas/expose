@@ -1,0 +1,6 @@
+*.mp4
+*.avi
+*.pyc
+output/
+samples/
+data/
