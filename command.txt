@@ -8,11 +8,6 @@ https://expose.is.tue.mpg.de/
 https://smpl-x.is.tue.mpg.de/
 Model DL
 
-for MMD
-pip install cython
-pip install numpy-quaternion
-pip install bezier
-
 python demo.py --image-folder samples --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis False --save-mesh False
 
 
@@ -22,4 +17,30 @@ python demo2.py --video-path "C:/MMD/expose_mmd/samples/45seconds_452-652.mp4" -
 python inference.py --exp-cfg data/conf.yaml --datasets openpose --exp-opts datasets.body.batch_size 48 datasets.body.openpose.data_folder samples/images --show=False --output-folder output --save-params True --save-vis True --save-mesh False
 
 python demo2.py --video-path "C:/MMD/expose_mmd/samples/input_100-110.mp4" --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis True --save-mesh False --degrees 90
+
+
+python demo2.py --video-path samples/default.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+
+python demo2.py --video-path samples/cat_30fps_2807-2907.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+
+python demo2.py --video-path samples/cat_30fps_512-1200.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+
+python demo2.py --video-path samples/magic_doi_7877-9260.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+
+python demo2.py --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False --video-path samples/cat_30fps_512-1200.mp4
+
+-----------
+for MMD
+pip install cython
+pip install numpy-quaternion
+pip install bezier
+
+
+---------
+for lighttrack
+
+pip install tensorflow-gpu==1.15
+pip install cython opencv-python pillow matplotlib
+
+
 

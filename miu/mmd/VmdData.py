@@ -149,9 +149,13 @@ class VmdShadowFrame():
 # VmdShowIkFrame のikの中の要素
 class VmdInfoIk():
     def __init__(self, name='', onoff=0):
-        self.name = name
+        self.set_name(name)
         self.onoff = onoff
 
+    def set_name(self, name):
+        self.name = name
+        self.bname = '' if not name else name.encode('cp932').decode('shift_jis').encode('shift_jis')[:20].ljust(20, b'\x00')
+    
 
 class VmdShowIkFrame():
     def __init__(self):
@@ -165,8 +169,7 @@ class VmdShowIkFrame():
         fout.write(struct.pack('b', self.show))
         fout.write(struct.pack('<L', len(self.ik)))
         for k in (self.ik):
-            fout.write(k.name)
-            fout.write(bytearray([0 for i in range(len(k.name), 20)]))  # IKボーン名20Byteの残りを\0で埋める
+            fout.write(k.bname)
             fout.write(struct.pack('b', k.onoff))
         
 

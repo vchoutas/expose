@@ -427,27 +427,27 @@ MANO_NAMES = [
 
 
 KEYPOINT_PARTS = {'pelvis': 'body',
-                  'left_hip': 'body',
-                  'right_hip': 'body',
-                  'spine1': 'body',
-                  'left_knee': 'body',
-                  'right_knee': 'body',
+                  'left_hip': 'body,vmd',
+                  'right_hip': 'body,vmd',
+                  'spine1': 'body,vmd',
+                  'left_knee': 'body,vmd',
+                  'right_knee': 'body,vmd',
                   'spine2': 'body',
-                  'left_ankle': 'body',
-                  'right_ankle': 'body',
-                  'spine3': 'body',
-                  'left_foot': 'body',
-                  'right_foot': 'body',
-                  'neck': 'body,flame',
+                  'left_ankle': 'body,vmd',
+                  'right_ankle': 'body,vmd',
+                  'spine3': 'body,vmd',
+                  'left_foot': 'body,vmd',
+                  'right_foot': 'body,vmd',
+                  'neck': 'body,flame,vmd',
                   'left_collar': 'body',
                   'right_collar': 'body',
-                  'head': 'body,head,flame',
-                  'left_shoulder': 'body',
-                  'right_shoulder': 'body',
-                  'left_elbow': 'body',
-                  'right_elbow': 'body',
-                  'left_wrist': 'body,hand',
-                  'right_wrist': 'body,hand',
+                  'head': 'body,head,flame,vmd',
+                  'left_shoulder': 'body,vmd',
+                  'right_shoulder': 'body,vmd',
+                  'left_elbow': 'body,vmd',
+                  'right_elbow': 'body,vmd',
+                  'left_wrist': 'body,hand,vmd',
+                  'right_wrist': 'body,hand,vmd',
                   'jaw': 'body,head,flame',
                   'left_eye_smplx': 'body,head,flame',
                   'right_eye_smplx': 'body,head,flame',
@@ -481,7 +481,7 @@ KEYPOINT_PARTS = {'pelvis': 'body',
                   'right_thumb1': 'hand',
                   'right_thumb2': 'hand',
                   'right_thumb3': 'hand',
-                  'nose': 'body,head',
+                  'nose': 'body,head,vmd',
                   'right_eye': 'body,head',
                   'left_eye': 'body,head',
                   'right_ear': 'body,head',
@@ -707,7 +707,9 @@ CONNECTIONS = [
     ['neck', 'right_shoulder'],
     ['neck', 'left_shoulder'],
     ['neck', 'nose'],
-    ['pelvis', 'neck'],
+    ['pelvis', 'spine1'],
+    ['spine1', 'spine3'],
+    ['spine3', 'neck'],
     ['pelvis', 'left_hip'],
     ['pelvis', 'right_hip'],
 
@@ -795,7 +797,6 @@ CONNECTIONS = [
     ['right_contour_2', 'right_contour_1'],
 ]
 
-
 def kp_connections(keypoints):
     kp_lines = [
         [keypoints.index('left_eye'), keypoints.index('nose')],
@@ -874,7 +875,9 @@ def kp_connections(keypoints):
         [keypoints.index('neck'), keypoints.index('right_shoulder')],
         [keypoints.index('neck'), keypoints.index('left_shoulder')],
         [keypoints.index('neck'), keypoints.index('nose')],
-        [keypoints.index('pelvis'), keypoints.index('neck')],
+        [keypoints.index('pelvis'), keypoints.index('spine1')],
+        [keypoints.index('spine1'), keypoints.index('spine3')],
+        [keypoints.index('spine3'), keypoints.index('neck')],
         [keypoints.index('pelvis'), keypoints.index('left_hip')],
         [keypoints.index('pelvis'), keypoints.index('right_hip')],
 
@@ -1027,6 +1030,12 @@ FLAME_CONNECTIONS = [
     for conn in CONNECTIONS
     if 'flame' in KEYPOINT_PARTS[conn[0]] and
     'flame' in KEYPOINT_PARTS[conn[1]]
+]
+VMD_CONNECTIONS = [
+    (KEYPOINT_NAMES.index(conn[0]), KEYPOINT_NAMES.index(conn[1]))
+    for conn in CONNECTIONS
+    if KEYPOINT_PARTS[conn[0]] == 'vmd' and
+    KEYPOINT_PARTS[conn[1]] == 'vmd'
 ]
 HEAD_CONNECTIONS = FACE_CONNECTIONS
 FLIP_INDS = np.asarray(

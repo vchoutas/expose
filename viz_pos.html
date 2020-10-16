@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <title>Viz Pos</title>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <style id="compiled-css" type="text/css">
+    #dropzone {
+	    background-color: #F8F0D7;
+	    border: solid 3px #ffcc88;
+	    min-height: 50px;
+	    padding: 20px;
+	    text-shadow: 1px 1px 0 #fff;
+    }
+
+    .setzone {
+	    background-color: #F8F8F0;
+	    border: solid 1px #e6e6e6;
+    	padding: 10px;
+      margin-top: 10px;
+    }
+
+    #dropzone.dropover {
+    	background-color: #cff;
+    }
+
+    .btn {
+      padding: 7px 10px 7px 10px;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      border: 1px solid #CCC;
+      border-bottom-color: #C6C6C6;
+      border-radius: 3px;
+    }
+
+  </style>
+
+  <script type="text/javascript">
+
+    var myViz = {};
+    myViz.posDict = {};     // データ保持
+    myViz.playflag = false; // 再生中か
+    myViz.plot3dflag = false;  //3D(pos.txt)か2D(*_keypoints.json)か ※TODO 2D対応
+
+    window.onload=function(){
+      // Drag and Dropの設定
+      var elDrop = document.getElementById('dropzone');
+      var elFiles = document.getElementById('files');
+
+      elDrop.addEventListener('dragover', function(event) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        showDropping();
+      });
+
+      elDrop.addEventListener('dragleave', function(event) {
+        hideDropping();
+      });
+
+      elDrop.addEventListener('drop', function(event) {
+        event.preventDefault();
+        hideDropping();
+
+        var files = event.dataTransfer.files;
+        showFiles(files);
+      });
+
+      function showDropping() {
+              elDrop.classList.add('dropover');
+      }
+
+      function hideDropping() {
+              elDrop.classList.remove('dropover');
+      }
+
+      // ドロップ時に呼ばれる関数
+      function showFiles(files) {
+        if (files.length < 1) {
+            alert("drop no file");
+        }
+
+        myViz.posDict = {};
+        var el_fr_min = document.getElementById('fr_min');
+        var el_fr_max = document.getElementById('fr_max');
+        var el_fr = document.getElementById('fr');
+        el_fr_min.value = '';
+        el_fr_max.value = '';
+
+        for (var i = 0; i < files.length; i++) {
+
+          //FileReaderの作成
+          var reader = new FileReader();
+          //テキスト形式で読み込む
+          reader.readAsText(files[i]);
+
+          // 2D jsonファイルの場合、ファイルは複数
+          if (files[i].name.endsWith('.json')) {
+            // TODO
+          } else {
+            // 3D posファイルの場合
+            reader.tmpmyframe = '3d';
+          }
+
+          console.log(files[i].name);
+
+          //読込終了後の処理
+          reader.onload = function(ev){
+
+            if (ev.target.tmpmyframe == '3d') {
+              // 3dデータ読み込み
+              // 配列にする
+              var lineArr = ev.target.result.split("\n");
+              var max_x=-99999, max_y=-99999, max_z=-99999, min_x=99999, min_y=99999, min_z=99999;
+              for (var j = 0; j < lineArr.length; j++) {
+                var poslist = lineArr[j].split(",");
+                
+                var poslist2 = []
+                for (var k = 0; k < poslist.length; k++) {
+                  var pos = {};
+                  var ixyz =  poslist[k].trim().split(" ");
+                  pos.i = parseInt(ixyz[0]);
+                  pos.x = parseFloat(ixyz[1]);
+                  pos.y = parseFloat(ixyz[2]);
+                  pos.z = parseFloat(ixyz[3]);
+                  poslist2.push(pos)
+
+                  if (pos.x  > max_x){max_x = pos.x  } 
+                  if (pos.x  < min_x){min_x = pos.x  } 
+                  if (pos.y > max_y){max_y = pos.y } 
+                  if (pos.y < min_y){min_y = pos.y } 
+                  if (pos.z > max_z){max_z = pos.z } 
+                  if (pos.z < min_z){min_z = pos.z } 
+                }
+                myViz.posDict['3d' + j] = poslist2;
+              }
+
+              document.getElementById("x_min").value = Math.floor(min_x/100)*100;
+              document.getElementById("x_max").value = Math.ceil(max_x/100)*100;
+              document.getElementById("y_min").value = Math.floor(min_y/100)*100;
+              document.getElementById("y_max").value = Math.ceil(max_y/100)*100;
+              document.getElementById("z_min").value = Math.floor(min_z/100)*100;
+              document.getElementById("z_max").value = Math.ceil(max_z/100)*100;
+
+          //    if (max_y - min_y > 0) {
+            //    document.getElementById("distance").value = (max_z-min_z)/(max_y-min_y)*1.5
+              //}
+
+              // 行数をFrameに表示
+              document.getElementById('fr_max').value = lineArr.length - 2;
+              document.getElementById('fr_min').value = 0;
+
+              // Frameを0にする
+              document.getElementById('fr').value = 0;
+
+              myViz.plot3dflag = true;
+              plotpose();
+            } else {
+              // 2dデータ読み込み
+              // TODO
+            }
+          }
+        }
+      }
+    }
+
+    function frameMove(val) {
+      var val_new = parseInt(document.getElementById('fr').value) + val;
+      var val_max = parseInt(document.getElementById('fr_max').value);
+      var val_min = parseInt(document.getElementById('fr_min').value);
+
+      if (isNaN(val_max)) {
+        return;
+      }
+      if (val_new > val_max) {
+        val_new = val_max;
+      } else if (val_new < val_min) {
+        val_new = val_min;
+      }
+
+      document.getElementById('fr').value = val_new;
+      if (myViz.plot3dflag) {
+        plotpose();
+      } else {
+        plot2dpose(); //未作成
+      }
+    }
+
+    function next() {
+      var start = Date.now();
+      var val_new = parseInt(document.getElementById('fr').value) + 1;
+      var val_max = parseInt(document.getElementById('fr_max').value);
+      var val_min = parseInt(document.getElementById('fr_min').value);
+      var interval = parseFloat(document.getElementById('interval').value);
+
+      if (isNaN(val_max)) {
+        return;
+      }
+      if (val_new > val_max) {
+        document.getElementById('fr').value = val_min;
+        return;
+      }
+      document.getElementById('fr').value = val_new;
+      if (myViz.plot3dflag) {
+        plotpose();
+      } else {
+        plot2dpose(); //未作成
+      }
+      var end = Date.now();
+      // フレーム間のインターバルを設定
+      if (end - start > interval) {
+        interval = 0;
+      } else {
+        interval = interval + start - end;
+      }
+      if (myViz.playflag == true) {
+        setTimeout(function(){next()}, interval);    // 
+      }
+    }
+
+    function start() {
+      myViz.playflag = true;
+      setTimeout(function(){next()}, 0);
+    }
+
+    function stop() {
+      myViz.playflag = false;
+    }
+
+    function plotpose() {
+      var line_no = document.getElementById('fr').value
+      var poslist = myViz.posDict['3d' + line_no];
+            
+      var xpos = {};
+      var ypos = {};
+      var zpos = {};
+      var key = 0;
+      for (var i = 0; i < poslist.length; i++) {
+        key = poslist[i].i;
+        xpos[key] = poslist[i].x;
+        ypos[key] = poslist[i].y;
+        zpos[key] = poslist[i].z;
+      }
+
+      var body_name = {0:'Hip',1:'RHip',2:'RKnee',3:'RFoot',6:'LHip',7:'LKnee',8:'LFoot',12:'Spine',13:'Thorax',14:'Neck/Nose',15:'Head',17:'LShoulder',18:'LElbow',19:'LWrist',25:'RShoulder',26:'RElbow',27:'RWrist'};
+
+      var order = [[15, 14, 13, 12, 0],[13, 17, 18, 19],[13, 25, 26, 27],[0, 1, 2, 3],[0, 6, 7, 8]];
+      var x = [];
+      var y = [];
+      var z = [];
+      var text = [];
+
+      for (var i = 0; i < order.length; i++) {
+        x.push([]);
+        y.push([]);
+        z.push([]);
+        text.push([]);
+        for (var j = 0; j < order[i].length; j++) {
+          x[i].push(xpos[order[i][j]]);
+          y[i].push(ypos[order[i][j]]);
+          z[i].push(zpos[order[i][j]]);
+          text[i].push(body_name[order[i][j]]);
+        }
+      }
+
+      var x_min = parseFloat(document.getElementById("x_min").value);
+      var x_max = parseFloat(document.getElementById("x_max").value);
+      var y_min = parseFloat(document.getElementById("y_min").value);
+      var y_max = parseFloat(document.getElementById("y_max").value);
+      var z_min = parseFloat(document.getElementById("z_min").value);
+      var z_max = parseFloat(document.getElementById("z_max").value);
+      var distance = parseFloat(document.getElementById("distance").value);
+      var elev = parseFloat(document.getElementById("elev").value);
+      var azim = parseFloat(document.getElementById("azim").value);
+
+      // camera
+      var camera_x = 0;
+      var camera_y = -1 * distance;
+      var camera_z = 0;
+      // x rotation
+      var camera_tmp1_x = camera_x;
+      var camera_tmp1_y = Math.cos(-1 * elev / 180 * Math.PI) * camera_y - Math.sin(-1 * elev / 180 * Math.PI) * camera_z;
+      var camera_tmp1_z = Math.sin(-1 * elev / 180 * Math.PI) * camera_y + Math.cos(-1 * elev / 180 * Math.PI) * camera_z;
+      // z rotation
+      var camera_x = Math.cos(azim / 180 * Math.PI) * camera_tmp1_x - Math.sin(azim / 180 * Math.PI) * camera_tmp1_y;
+      var camera_y = Math.sin(azim / 180 * Math.PI) * camera_tmp1_x + Math.cos(azim / 180 * Math.PI) * camera_tmp1_y;
+      var camera_z = camera_tmp1_z;
+
+      var plot_title = 'Frame ' + line_no;
+
+      Plotly.react('graph', 
+              [
+                {
+                  type: 'scatter3d',
+                  mode: 'lines+markers',
+                  x: x[0],
+                  y: y[0],
+                  z: z[0],
+                  text: text[0],
+                  name: 'center',
+                  opacity: 1,
+                  line: {
+                    width: 6,
+                    color: 'rgb(46, 204, 113)',
+                    reversescale: false
+                  },
+                  marker: {
+                    color: 'rgb(46, 204, 113)',
+                    size: 2
+                  }
+                },
+                {
+                  type: 'scatter3d',
+                  mode: 'lines+markers',
+                  x: x[1],
+                  y: y[1],
+                  z: z[1],
+                  text: text[1],
+                  name: 'left',
+                  opacity: 2,
+                  line: {
+                    width: 6,
+                    color: 'rgb(46, 204, 113)',
+                    reversescale: false
+                  },
+                  marker: {
+                    color: 'rgb(46, 204, 113)',
+                    size: 2
+                  }
+                },
+                {
+                  type: 'scatter3d',
+                  mode: 'lines+markers',
+                  x: x[2],
+                  y: y[2],
+                  z: z[2],
+                  text: text[2],
+                  name: 'right',
+                  opacity: 2,
+                  line: {
+                    width: 6,
+                    color: 'rgb(155, 89, 182)',
+                    reversescale: false
+                  },
+                  marker: {
+                    color: 'rgb(155, 89, 182)',
+                    size: 2
+                  }
+                },
+                {
+                  type: 'scatter3d',
+                  mode: 'lines+markers',
+                  x: x[3],
+                  y: y[3],
+                  z: z[3],
+                  text: text[3],
+                  name: 'right',
+                  opacity: 2,
+                  line: {
+                    width: 6,
+                    color: 'rgb(155, 89, 182)',
+                    reversescale: false
+                  },
+                  marker: {
+                    color: 'rgb(155, 89, 182)',
+                    size: 2
+                  }
+                },
+                {
+                  type: 'scatter3d',
+                  mode: 'lines+markers',
+                  x: x[4],
+                  y: y[4],
+                  z: z[4],
+                  text: text[4],
+                  name: 'left',
+                  opacity: 2,
+                  line: {
+                    width: 6,
+                    color: 'rgb(46, 204, 113)',
+                    reversescale: false
+                  },
+                  marker: {
+                    color: 'rgb(46, 204, 113)',
+                    size: 2
+                  }
+                }
+              ], 
+              {
+                scene: {
+                  aspectmode : 'manual',
+                  aspectratio : {x : (x_max - x_min)/(z_max - z_min)*1.3, y : (y_max - y_min)/(z_max - z_min)*1.3, z : 1.3},
+                  xaxis: {
+                    range: [x_min,x_max]
+                  },
+                  yaxis: {
+                    range: [y_min,y_max]
+                  },
+                  zaxis: {
+                    range: [z_min,z_max]
+                  },
+                  camera: {
+                    eye: {
+                    	x: camera_x,
+                    	y: camera_y,
+                    	z: camera_z
+                    }
+                  },
+                },
+                title: plot_title,
+                height: 600,
+                showlegend:false,
+              }, 
+              {showSendToCloud: true}
+            );
+    }
+
+</script>
+
+</head>
+<body>
+    <div id="dropzone" effectAllowed="move">Drop "pos.txt" file here!</div>
+    <div id="set3d" class="setzone">
+        <table>
+            <tr>
+                <td>
+                    xRange: 
+                </td>
+                <td>
+                    <input type="text" id="x_min" value="-1500" style="width:50px;" onblur="frameMove(0);">
+                    - <input type="text" id="x_max" value="1500" style="width:50px;" onblur="frameMove(0);">
+                </td>
+                <td style="padding-left:20px;">
+                    yRange: 
+                </td>
+                <td>
+                    <input type="text" id="y_min" value="-1000" style="width:50px;" onblur="frameMove(0);">
+                    - <input type="text" id="y_max" value="1000" style="width:50px;" onblur="frameMove(0);">
+                </td>
+                <td style="padding-left:20px;">
+                    zRange: 
+                </td>
+                <td>
+                    <input type="text" id="z_min" value="-200" style="width:50px;" onblur="frameMove(0);">
+                    - <input type="text" id="z_max" value="1800" style="width:50px;" onblur="frameMove(0);">
+                </td>
+            </tr>
+            <tr>
+                <td style="padding-top:5px;">
+                    distance: 
+                </td>
+                <td style="padding-top:5px;">
+                    <input type="text" id="distance" value="2.5" style="width:50px;" onblur="frameMove(0);">
+                </td>
+                <td style="padding-top:5px;padding-left:20px;">
+                    elevationAngle: 
+                </td>
+                <td style="padding-top:5px;">
+                    <input type="text" id="elev" value="18" style="width:50px;" onblur="frameMove(0);">
+                </td>
+                <td style="padding-top:5px;padding-left:20px;">
+                    azimuthAngle: 
+                </td>
+                <td style="padding-top:5px;">
+                    <input type="text" id="azim" value="10" style="width:50px;" onblur="frameMove(0);">
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="setzone">
+        <table>
+            <tr>
+                <td>
+                    Frame: 
+                </td>
+                <td>
+                    <input type="text" id="fr" value="" style="width:50px;" onblur="frameMove(0);">
+                     (<input type="text" id="fr_min" value="" style="width:50px;" disabled > - <input type="text" id="fr_max" value="" style="width:50px;" disabled >)
+                </td>
+                <td style="padding-left:20px;">
+                    <input style="width: 50px;" class="btn" type="button" value="<30" onclick="frameMove(-30);">
+                    <input style="width: 50px;" class="btn" type="button" value="<5" onclick="frameMove(-5);">
+                    <input style="width: 50px;" class="btn" type="button" value="<1" onclick="frameMove(-1);">
+                    <input style="width: 50px;" class="btn" type="button" value="1>" onclick="frameMove(1);">
+                    <input style="width: 50px;" class="btn" type="button" value="5>" onclick="frameMove(5);">
+                    <input style="width: 50px;" class="btn" type="button" value="30>" onclick="frameMove(30);">
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="padding-top:5px;">
+                    <input style="width: 100px;" class="btn" type="button" value="slow play" onclick="start();">
+                    <input style="width: 50px;" class="btn" type="button" value="stop" onclick="stop();">
+                </td>
+                <td style="padding-top:5px;padding-left:20px;">
+                    Interval(ms):<input type="text" id="interval" value="60" style="width:50px;">
+                </td>
+            </tr>
+        </table>
+     </div>
+     <div id="graph"></div>
+</body>
+</html>

@@ -423,6 +423,7 @@ class AbstractRenderer(object):
         self.mesh_constructor = trimesh.Trimesh
         self.trimesh_to_pymesh = pyrender.Mesh.from_trimesh
         self.transf = trimesh.transformations.rotation_matrix
+        self.point_to_pyline = pyrender.Mesh.from_points
 
         self.scene = pyrender.Scene(bg_color=[0.0, 0.0, 0.0, 0.0],
                                     ambient_light=(0.0, 0.0, 0.0))
@@ -503,7 +504,15 @@ class AbstractRenderer(object):
             vertices, faces, color=body_color, deg=deg)
         self.scene.add(body_mesh, name='body_mesh')
 
-
+    def update_line(self, points, body_color=(1.0, 1.0, 1.0, 1.0)):
+        for node in self.scene.get_nodes():
+            if node.name == 'bbox_line':
+                self.scene.remove_node(node)
+                break
+        
+        line_mesh = self.point_to_pyline(points, colors=body_color)
+        self.scene.add(line_mesh, name='bbox_line')
+    
 class SMPLifyXRenderer(AbstractRenderer):
     def __init__(self, faces=None, img_size=224):
         super(SMPLifyXRenderer, self).__init__(faces=faces, img_size=img_size)
@@ -762,6 +771,8 @@ class HDRenderer(OverlayRenderer):
                  deg: float = 0,
                  return_with_alpha: bool = False,
                  body_color: List[float] = None,
+                 bbox: List[float] = None,
+                 bbox_color: List[float] = None,
                  **kwargs):
         '''
             Parameters
@@ -789,6 +800,7 @@ class HDRenderer(OverlayRenderer):
                 Default value is False.
             body_color: list, optional
                 The color used to render the image.
+            bbox: bounting box
         '''
         if torch.is_tensor(vertices):
             vertices = vertices.detach().cpu().numpy()
@@ -819,6 +831,9 @@ class HDRenderer(OverlayRenderer):
             )
             self.update_mesh(
                 vertices[bidx], faces, body_color=body_color, deg=deg)
+            
+            if bbox is not None:
+                self.update_line(bbox, body_color=bbox_color)
 
             flags = (pyrender.RenderFlags.RGBA |
                      pyrender.RenderFlags.SKIP_CULL_FACES)

@@ -4,6 +4,7 @@ from datetime import datetime
 import logging
 import traceback
 import threading
+import os
 
 from miu.utils.MException import MKilledException
 
@@ -38,7 +39,7 @@ class MLogger():
         self.child = False
 
         # ロガー
-        self.logger = logging.getLogger("VmdSizing").getChild(self.module_name)
+        self.logger = logging.getLogger("VmdOutput").getChild(self.module_name)
 
         # 標準出力ハンドラ
         sh = logging.StreamHandler()
@@ -135,8 +136,12 @@ class MLogger():
                         self.logger.removeHandler(f)
 
                 # ファイル出力ありの場合、ハンドラ紐付け
+                if not os.path.exists("log"):
+                    os.makedirs("log", exist_ok=True)
+
                 # ファイル出力ハンドラ
-                fh = logging.FileHandler("log/VmdSizing_{0}.log".format(self.outout_datetime))
+                fh = logging.FileHandler("log/VmdOutput_{0}.log".format(self.outout_datetime))
+
                 fh.setLevel(self.default_level)
                 fh.setFormatter(logging.Formatter(self.DEFAULT_FORMAT))
                 self.logger.addHandler(fh)
