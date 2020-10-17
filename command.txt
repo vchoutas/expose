@@ -45,4 +45,18 @@ pip install tensorflow-gpu==1.15
 pip install cython opencv-python pillow matplotlib
 
 
+---------
+for AlphaPose
+
+python scripts/demo_inference.py --cfg "pretrained_models/Fast Pose (DUC)-unshuffle/256x192_res50_lr1e-3_1x-duc.yaml" --checkpoint  "pretrained_models/Fast Pose (DUC)-unshuffle/fast_421_res50-shuffle_256x192.pth" --video "../samples/buster_1177-1277.mp4"  --outdir "../output" --detector yolo --save_img --save_video --format open --pose_track
+
+libopenh264
+https://github.com/cisco/openh264/releases/tag/v1.8.0
+C:\Development\Anaconda3\envs\expose\DLLs\openh264-1.8.0-win64.dll
+C:\Development\Anaconda3\envs\expose\openh264-1.8.0-win64.dll
+両方に必要？
+
+
+
+
 
