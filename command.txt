@@ -19,7 +19,7 @@ python inference.py --exp-cfg data/conf.yaml --datasets openpose --exp-opts data
 python demo2.py --video-path "C:/MMD/expose_mmd/samples/input_100-110.mp4" --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis True --save-mesh False --degrees 90
 
 
-python demo2.py --video-path samples/default.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+python demo2.py --video-path samples/default.avi --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
 
 python demo2.py --video-path samples/cat_30fps_2807-2907.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
 
@@ -28,6 +28,8 @@ python demo2.py --video-path samples/cat_30fps_512-1200.mp4 --exp-cfg data/conf.
 python demo2.py --video-path samples/magic_doi_7877-9260.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
 
 python demo2.py --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False --video-path samples/cat_30fps_512-1200.mp4
+
+python demo2.py --video-path samples/magic_3250-3930.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
 
 -----------
 for MMD

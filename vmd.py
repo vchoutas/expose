@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from os import name
 import numpy as np
 import argparse
 import csv
@@ -11,7 +12,7 @@ import datetime
 from miu.module.MMath import MMatrix4x4, MQuaternion, MVector3D
 from miu.mmd.VmdData import VmdBoneFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk
 from miu.mmd.PmxData import PmxModel, Bone
-from miu.utils.MServiceUtils import get_file_encoding, calc_global_pos, calc_relative_rotation
+from miu.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate_local_qq
 from miu.utils.MLogger import MLogger
 
 logger = MLogger(__name__, level=MLogger.DEBUG)
@@ -44,12 +45,19 @@ def execute(cmd_args):
         motion.regist_bf(bf, bf.name, bf.fno)
 
         for jname, (bone_name, calc_bone, name_list, parent_list) in VMD_CONNECTIONS.items():
+            if name_list is None:
+                continue
+
             bf = VmdBoneFrame(fno)
             bf.set_name(bone_name)
             
             if calc_bone is None:
-                rotation = calc_direction_qq(bf.fno, motion, frame_joints, *name_list)
-                initial = calc_direction_qq(bf.fno, motion, default_joints, *name_list)
+                if len(name_list) == 4:
+                    rotation = calc_direction_qq(bf.fno, motion, frame_joints, *name_list)
+                    initial = calc_direction_qq(bf.fno, motion, default_joints, *name_list)
+                else:
+                    rotation = calc_direction_qq2(bf.fno, motion, frame_joints, *name_list)
+                    initial = calc_direction_qq2(bf.fno, motion, default_joints, *name_list)
 
                 qq = MQuaternion()
                 for parent_name in reversed(parent_list):
@@ -60,7 +68,7 @@ def execute(cmd_args):
                 motion.regist_bf(bf, bf.name, bf.fno)
             else:
                 # 独自計算が必要な場合、設定
-                calc_bone(bf, motion, model, jname, default_joints, frame_joints)
+                calc_bone(bf, motion, model, jname, default_joints, frame_joints, name_list, parent_list)
     
     # 動画内の半分は地面に足が着いていると見なす
     center_values = np.zeros((1, 3))
@@ -174,13 +182,69 @@ def calc_direction_qq(bf: VmdBoneFrame, motion: VmdMotion, joints: dict, directi
 
     return qq
 
+def calc_direction_qq2(bf: VmdBoneFrame, motion: VmdMotion, joints: dict, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str, cross_from_name: str, cross_to_name: str):
+    direction_from_vec = get_vec3(joints["joints"][direction_from_name])
+    direction_to_vec = get_vec3(joints["joints"][direction_to_name])
+    up_from_vec = get_vec3(joints["joints"][up_from_name])
+    up_to_vec = get_vec3(joints["joints"][up_to_name])
+    cross_from_vec = get_vec3(joints["joints"][cross_from_name])
+    cross_to_vec = get_vec3(joints["joints"][cross_to_name])
+
+    direction = (direction_to_vec - direction_from_vec).normalized()
+    up = (up_to_vec - up_from_vec).normalized()
+    cross = (cross_to_vec - cross_from_vec).normalized()
+    qq = MQuaternion.fromDirection(direction, MVector3D.crossProduct(up, cross))
+
+    return qq
+
+def calc_wrist(bf: VmdBoneFrame, motion: VmdMotion, model: PmxModel, jname: str, default_joints: dict, frame_joints: dict, name_list: list, parent_list: list):
+    rotation = calc_direction_qq(bf.fno, motion, frame_joints, *name_list)
+    initial = calc_finger_direction_qq(bf, motion, model, jname, *name_list)
+
+    qq = MQuaternion()
+    for parent_name in reversed(parent_list):
+        qq *= motion.calc_bf(parent_name, bf.fno).rotation.inverted()
+    qq = qq * rotation * initial.inverted()
+    bf.rotation = qq
+
+    motion.regist_bf(bf, bf.name, bf.fno)
+
+def calc_finger(bf: VmdBoneFrame, motion: VmdMotion, model: PmxModel, jname: str, default_joints: dict, frame_joints: dict, name_list: list, parent_list: list):
+    rotation = calc_direction_qq(bf.fno, motion, frame_joints, *name_list)
+    bone_initial = calc_finger_direction_qq(bf, motion, model, jname, *name_list)
+
+    qq = MQuaternion()
+    for parent_name in reversed(parent_list):
+        qq *= motion.calc_bf(parent_name, bf.fno).rotation.inverted()
+    qq = qq * rotation * bone_initial.inverted()
+    _, _, z_qq, _ = separate_local_qq(bf.fno, bf.name, qq, model.get_local_x_axis(bf.name))
+    bf.rotation = z_qq
+
+    motion.regist_bf(bf, bf.name, bf.fno)
+
+def calc_finger_direction_qq(bf: VmdBoneFrame, motion: VmdMotion, model: PmxModel, jname: str, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):
+    direction_from_vec = get_bone_vec3(model, direction_from_name)
+    direction_to_vec = get_bone_vec3(model, direction_to_name)
+    up_from_vec = get_bone_vec3(model, up_from_name)
+    up_to_vec = get_bone_vec3(model, up_to_name)
+
+    direction = (direction_to_vec - direction_from_vec).normalized()
+    up = (up_to_vec - up_from_vec).normalized()
+    qq = MQuaternion.fromDirection(direction, up)
+
+    return qq
+
+def get_bone_vec3(model: PmxModel, joint_name: str):
+    bone_name, calc_bone, name_list, parent_list = VMD_CONNECTIONS[joint_name]
+    return model.bones[bone_name].position
+
 def get_vec3(joint):
-    return MVector3D(joint["x"], joint["z"], joint["y"]) * SCALE_MIKU
+    return MVector3D(joint["x"], joint["y"], joint["z"]) * SCALE_MIKU
 
 def calc_center(frame_joints: dict):
     # プロジェクション座標系の位置
     px = (frame_joints["proj_joints"]["pelvis"]["x"] - (frame_joints["image"]["width"] / 2)) * SCALE_MIKU
-    py = (frame_joints["proj_joints"]["pelvis"]["y"] - (frame_joints["image"]["height"] / 2)) * SCALE_MIKU
+    py = ((frame_joints["image"]["height"] / 2) - frame_joints["proj_joints"]["pelvis"]["y"]) * SCALE_MIKU
     cz = frame_joints["depth"]["depth"] * SCALE_MIKU
     return MVector3D(px, py, cz)
 
@@ -229,8 +293,8 @@ VMD_CONNECTIONS = {
     'left_arm': ("左腕", None, ['left_shoulder', 'left_elbow', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩"]),
     'right_elbow': ("右ひじ", None, ['right_elbow', 'right_wrist', 'right_shoulder', 'right_elbow'], ["上半身", "上半身2", "右肩", "右腕"]),
     'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'left_shoulder', 'left_elbow'], ["上半身", "上半身2", "左肩", "左腕"]),
-    'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"]),
-    # 'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"]),
+    'right_wrist': ("右手首", calc_wrist, ['right_wrist', 'right_middle1', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"]),
+    'left_wrist': ("左手首", calc_wrist, ['left_wrist', 'left_middle1', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"]),
     'pelvis': ("下半身", None, ['spine1', 'pelvis', 'left_hip', 'right_hip'], []),
     'right_hip': ("右足", None, ['right_hip', 'right_knee', 'right_knee', 'right_ankle'], ["下半身"]),
     'left_hip': ("左足", None, ['left_hip', 'left_knee', 'left_knee', 'left_ankle'], ["下半身"]),
@@ -238,36 +302,46 @@ VMD_CONNECTIONS = {
     'left_knee': ("左ひざ", None, ['left_knee', 'left_ankle', 'left_ankle', 'left_big_toe'], ["下半身", "左足"]),
     'right_ankle': ("右足首", None, ['right_ankle', 'right_big_toe', 'right_big_toe', 'right_small_toe'], ["下半身", "右足", "右ひざ"]),
     'left_ankle': ("左足首", None, ['left_ankle', 'left_big_toe', 'left_big_toe', 'left_small_toe'], ["下半身", "左足", "左ひざ"]),
-    # 'right_index1': ("右人指１", calc_finger),
-    # 'left_index1': ("左人指１", calc_finger),
-    # 'right_index2': ("右人指２", calc_finger),
-    # 'left_index2': ("左人指２", calc_finger),
-    # 'right_index3': ("右人指３", calc_finger),
-    # 'left_index3': ("左人指３", calc_finger),
-    # 'right_middle1': ("右中指１", calc_finger),
-    # 'left_middle1': ("左中指１", calc_finger),
-    # 'right_middle2': ("右中指２", calc_finger),
-    # 'left_middle2': ("左中指２", calc_finger),
-    # 'right_middle3': ("右中指３", calc_finger),
-    # 'left_middle3': ("左中指３", calc_finger),
-    # 'right_ring1': ("右薬指１", calc_finger),
-    # 'left_ring1': ("左薬指１", calc_finger),
-    # 'right_ring2': ("右薬指２", calc_finger),
-    # 'left_ring2': ("左薬指２", calc_finger),
-    # 'right_ring3': ("右薬指３", calc_finger),
-    # 'left_ring3': ("左薬指３", calc_finger),
-    # 'right_pinky1': ("右小指１", calc_finger),
-    # 'left_pinky1': ("左小指１", calc_finger),
-    # 'right_pinky2': ("右小指２", calc_finger),
-    # 'left_pinky2': ("左小指２", calc_finger),
-    # 'right_pinky3': ("右小指３", calc_finger),
-    # 'left_pinky3': ("左小指３", calc_finger),
-    # 'right_thumb1': ("右親指０", calc_finger),
-    # 'left_thumb1': ("左親指０", calc_finger),
-    # 'right_thumb2': ("右親指１", calc_finger),
-    # 'left_thumb2': ("左親指１", calc_finger),
-    # 'right_thumb3': ("右親指２", calc_finger),
-    # 'left_thumb3': ("左親指２", calc_finger),
+    'right_index1': ("右人指１", calc_finger, ['right_index1', 'right_index2', 'right_wrist', 'right_index1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
+    'left_index1': ("左人指１", calc_finger, ['left_index1', 'left_index2', 'left_wrist', 'left_index1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
+    'right_index2': ("右人指２", calc_finger, ['right_index2', 'right_index3', 'right_index1', 'right_index2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１"]),
+    'left_index2': ("左人指２", calc_finger, ['left_index2', 'left_index3', 'left_index1', 'left_index2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１"]),
+    'right_index3': ("右人指３", calc_finger, ['right_index3', 'right_index', 'right_index2', 'right_index3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１", "右人指２"]),
+    'left_index3': ("左人指３", calc_finger, ['left_index3', 'left_index', 'left_index2', 'left_index3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１", "左人指２"]),
+    'right_index': ("右人差指先", None, None, None),
+    'left_index': ("左人差指先", None, None, None),
+    'right_middle1': ("右中指１", calc_finger, ['right_middle1', 'right_middle2', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
+    'left_middle1': ("左中指１", calc_finger, ['left_middle1', 'left_middle2', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
+    'right_middle2': ("右中指２", calc_finger, ['right_middle2', 'right_middle3', 'right_middle1', 'right_middle2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１"]),
+    'left_middle2': ("左中指２", calc_finger, ['left_middle2', 'left_middle3', 'left_middle1', 'left_middle2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１"]),
+    'right_middle3': ("右中指３", calc_finger, ['right_middle3', 'right_middle', 'right_middle2', 'right_middle3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１", "右中指２"]),
+    'left_middle3': ("左中指３", calc_finger, ['left_middle3', 'left_middle', 'left_middle2', 'left_middle3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１", "左中指２"]),
+    'right_middle': ("右中指先", None, None, None),
+    'left_middle': ("左中指先", None, None, None),
+    'right_ring1': ("右薬指１", calc_finger, ['right_ring1', 'right_ring2', 'right_wrist', 'right_ring1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
+    'left_ring1': ("左薬指１", calc_finger, ['left_ring1', 'left_ring2', 'left_wrist', 'left_ring1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
+    'right_ring2': ("右薬指２", calc_finger, ['right_ring2', 'right_ring3', 'right_ring1', 'right_ring2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１"]),
+    'left_ring2': ("左薬指２", calc_finger, ['left_ring2', 'left_ring3', 'left_ring1', 'left_ring2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１"]),
+    'right_ring3': ("右薬指３", calc_finger, ['right_ring3', 'right_ring', 'right_ring2', 'right_ring3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１", "右薬指２"]),
+    'left_ring3': ("左薬指３", calc_finger, ['left_ring3', 'left_ring', 'left_ring2', 'left_ring3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１", "左薬指２"]),
+    'right_ring': ("右薬指先", None, None, None),
+    'left_ring': ("左薬指先", None, None, None),
+    'right_pinky1': ("右小指１", calc_finger, ['right_pinky1', 'right_pinky2', 'right_wrist', 'right_pinky1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
+    'left_pinky1': ("左小指１", calc_finger, ['left_pinky1', 'left_pinky2', 'left_wrist', 'left_pinky1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
+    'right_pinky2': ("右小指２", calc_finger, ['right_pinky2', 'right_pinky3', 'right_pinky1', 'right_pinky2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１"]),
+    'left_pinky2': ("左小指２", calc_finger, ['left_pinky2', 'left_pinky3', 'left_pinky1', 'left_pinky2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１"]),
+    'right_pinky3': ("右小指３", calc_finger, ['right_pinky3', 'right_pinky', 'right_pinky2', 'right_pinky3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１", "右小指２"]),
+    'left_pinky3': ("左小指３", calc_finger, ['left_pinky3', 'left_pinky', 'left_pinky2', 'left_pinky3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１", "左小指２"]),
+    'right_pinky': ("右小指先", None, None, None),
+    'left_pinky': ("左小指先", None, None, None),
+    'right_thumb1': ("右親指０", calc_finger, ['right_thumb1', 'right_thumb2', 'right_wrist', 'right_thumb1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
+    'left_thumb1': ("左親指０", calc_finger, ['left_thumb1', 'left_thumb2', 'left_wrist', 'left_thumb1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
+    'right_thumb2': ("右親指１", calc_finger, ['right_thumb2', 'right_thumb3', 'right_thumb1', 'right_thumb2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０"]),
+    'left_thumb2': ("左親指１", calc_finger, ['left_thumb2', 'left_thumb3', 'left_thumb1', 'left_thumb2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０"]),
+    'right_thumb3': ("右親指２", calc_finger, ['right_thumb3', 'right_thumb', 'right_thumb2', 'right_thumb3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０", "右親指１"]),
+    'left_thumb3': ("左親指２", calc_finger, ['left_thumb3', 'left_thumb', 'left_thumb2', 'left_thumb3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０", "左親指１"]),
+    'right_thumb': ("右親指先", None, None, None),
+    'left_thumb': ("左親指先", None, None, None),
 
     # 'left_wrist': ("左手首", calc_wrist),
     # ('left_eye', 'nose'): "",

@@ -255,8 +255,6 @@ def main(
     original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     while(cap.isOpened()):
-        idx += 1
-
         # 動画から1枚キャプチャして読み込む
         flag, frame = cap.read()  # Capture frame-by-frame
             
@@ -266,6 +264,7 @@ def main(
             break
             
         cv2.imwrite(osp.join(image_folder, "capture_{0:012d}.png".format(idx)), frame)
+        idx += 1
     
     cap.release()
 
@@ -491,6 +490,11 @@ def main(
                             np.uint8)
 
         for idx in tqdm(range(len(body_targets)), 'Saving ...'):
+
+            # TODO 複数人対応
+            if idx > 0:
+                break
+
             fname = body_targets[idx].get_field('fname')
             curr_out_path = osp.join(demo_output_folder, fname)
             os.makedirs(curr_out_path, exist_ok=True)
@@ -564,7 +568,7 @@ def main(
                         for jidx, jname in enumerate(KEYPOINT_NAMES):
                             j2d = proj_joints[jidx] / jscale
                             joint_dict["proj_joints"][jname] = {'x': float(hd_params['center'][0, 0] + j2d[0]), 'y': float(hd_params['center'][0, 1] + j2d[1])}
-                            joint_dict["joints"][jname] = {'x': float(joints[jidx][0]), 'y': float(joints[jidx][2]), 'z': float(-joints[jidx][1])}
+                            joint_dict["joints"][jname] = {'x': float(joints[jidx][0]), 'y': float(-joints[jidx][1]), 'z': float(joints[jidx][2])}
 
                         with open(params_txt_fname, 'w') as f:
                             json.dump(joint_dict, f, indent=4)
