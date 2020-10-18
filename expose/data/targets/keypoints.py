@@ -1018,11 +1018,10 @@ RIGHT_HAND_CONNECTIONS = [
     ('right' in conn[0] or 'right' in conn[1])
 ]
 FACE_CONNECTIONS = [
-    (HEAD_KEYPOINT_NAMES.index(conn[0]),
-     HEAD_KEYPOINT_NAMES.index(conn[1]))
+    (KEYPOINT_NAMES.index(conn[0]), KEYPOINT_NAMES.index(conn[1]))
     for conn in CONNECTIONS
-    if KEYPOINT_PARTS[conn[0]] == 'face' and
-    KEYPOINT_PARTS[conn[1]] == 'face'
+    if 'face' in KEYPOINT_PARTS[conn[0]] and
+    'face' in KEYPOINT_PARTS[conn[1]]
 ]
 FLAME_CONNECTIONS = [
     (FLAME_KEYPOINT_NAMES.index(conn[0]),

@@ -25,7 +25,7 @@ def execute(cmd_args):
     model = read_bone_csv(bone_csv_path)
     logger.info(model)
 
-    motion = VmdMotion()    
+    motion = VmdMotion()
     
     # 動画上の関節位置
     for fno, joints_path in enumerate(glob.glob(osp.join(folder_path, '**/*_joints.json'))):
@@ -437,40 +437,6 @@ VMD_CONNECTIONS = {
     'left_pinky3': ("左小指３", None, ['left_pinky3', 'left_pinky', 'left_index1', 'left_pinky1', 'left_pinky2', 'left_pinky3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１", "左小指２"], None),
     'right_pinky': ("右小指先", None, None, None, None),
     'left_pinky': ("左小指先", None, None, None, None),
-    # 'right_middle1': ("右中指１", calc_finger, ['right_middle1', 'right_middle2', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
-    # 'left_middle1': ("左中指１", calc_finger, ['left_middle1', 'left_middle2', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
-    # 'right_middle2': ("右中指２", calc_finger, ['right_middle2', 'right_middle3', 'right_middle1', 'right_middle2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１"]),
-    # 'left_middle2': ("左中指２", calc_finger, ['left_middle2', 'left_middle3', 'left_middle1', 'left_middle2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１"]),
-    # 'right_middle3': ("右中指３", calc_finger, ['right_middle3', 'right_middle', 'right_middle2', 'right_middle3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１", "右中指２"]),
-    # 'left_middle3': ("左中指３", calc_finger, ['left_middle3', 'left_middle', 'left_middle2', 'left_middle3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１", "左中指２"]),
-    # 'right_middle': ("右中指先", None, None, None),
-    # 'left_middle': ("左中指先", None, None, None),
-    # 'right_ring1': ("右薬指１", calc_finger, ['right_ring1', 'right_ring2', 'right_wrist', 'right_ring1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
-    # 'left_ring1': ("左薬指１", calc_finger, ['left_ring1', 'left_ring2', 'left_wrist', 'left_ring1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
-    # 'right_ring2': ("右薬指２", calc_finger, ['right_ring2', 'right_ring3', 'right_ring1', 'right_ring2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１"]),
-    # 'left_ring2': ("左薬指２", calc_finger, ['left_ring2', 'left_ring3', 'left_ring1', 'left_ring2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１"]),
-    # 'right_ring3': ("右薬指３", calc_finger, ['right_ring3', 'right_ring', 'right_ring2', 'right_ring3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１", "右薬指２"]),
-    # 'left_ring3': ("左薬指３", calc_finger, ['left_ring3', 'left_ring', 'left_ring2', 'left_ring3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１", "左薬指２"]),
-    # 'right_ring': ("右薬指先", None, None, None),
-    # 'left_ring': ("左薬指先", None, None, None),
-    # 'right_pinky1': ("右小指１", calc_finger, ['right_pinky1', 'right_pinky2', 'right_wrist', 'right_pinky1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
-    # 'left_pinky1': ("左小指１", calc_finger, ['left_pinky1', 'left_pinky2', 'left_wrist', 'left_pinky1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
-    # 'right_pinky2': ("右小指２", calc_finger, ['right_pinky2', 'right_pinky3', 'right_pinky1', 'right_pinky2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１"]),
-    # 'left_pinky2': ("左小指２", calc_finger, ['left_pinky2', 'left_pinky3', 'left_pinky1', 'left_pinky2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１"]),
-    # 'right_pinky3': ("右小指３", calc_finger, ['right_pinky3', 'right_pinky', 'right_pinky2', 'right_pinky3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１", "右小指２"]),
-    # 'left_pinky3': ("左小指３", calc_finger, ['left_pinky3', 'left_pinky', 'left_pinky2', 'left_pinky3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１", "左小指２"]),
-    # 'right_pinky': ("右小指先", None, None, None),
-    # 'left_pinky': ("左小指先", None, None, None),
-    # 'right_thumb1': ("右親指０", calc_thumb1, ['right_thumb1', 'right_thumb2', 'right_wrist', 'right_thumb1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"]),
-    # 'left_thumb1': ("左親指０", calc_thumb1, ['left_thumb1', 'left_thumb2', 'left_wrist', 'left_thumb1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"]),
-    # # 'right_thumb2': ("右親指１", calc_thumb2, ['right_thumb2', 'right_thumb3', 'right_thumb1', 'right_thumb2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０"]),
-    # # 'left_thumb2': ("左親指１", calc_thumb2, ['left_thumb2', 'left_thumb3', 'left_thumb1', 'left_thumb2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０"]),
-    # # 'right_thumb3': ("右親指２", calc_thumb3, ['right_thumb3', 'right_thumb', 'right_thumb2', 'right_thumb3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０", "右親指１"]),
-    # # 'left_thumb3': ("左親指２", calc_thumb3, ['left_thumb3', 'left_thumb', 'left_thumb2', 'left_thumb3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０", "左親指１"]),
-    # 'right_thumb2': ("右親指先", None, None, None),
-    # 'left_thumb2': ("左親指先", None, None, None),
-    # 'right_thumb': ("右親指先", None, None, None),
-    # 'left_thumb': ("左親指先", None, None, None),
 
     # 'left_wrist': ("左手首", calc_wrist),
     # ('left_eye', 'nose'): "",
@@ -647,7 +613,6 @@ if __name__ == '__main__':
 
     parser.add_argument('--folder-path', type=str, dest='folder_path', help='The folder with joint json')
     parser.add_argument('--bone-csv-path', type=str, dest='bone_csv_path', help='The csv file pmx born')
-    parser.add_argument('--bone-json-path', type=str, dest='bone_json_path', help='The json file pmx born')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='The csv file pmx born')
 
     cmd_args = parser.parse_args()

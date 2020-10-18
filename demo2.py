@@ -436,17 +436,20 @@ def main(
                 # 横線
                 for x in range(img_bbox[0], img_bbox[2] + 1):
                     for y in [img_bbox[1], img_bbox[3] + 1]:
-                        hd_overlays[:, :, y, x] = np.array([1, 0, 0, 1])
+                        if hd_overlays.shape[2] > x and hd_overlays[3] > y:
+                            hd_overlays[:, :, y, x] = np.array([1, 0, 0, 1])
                 
                 # 縦線
                 for x in [img_bbox[0], img_bbox[2] + 1]:
                     for y in range(img_bbox[1], img_bbox[3] + 1):
-                        hd_overlays[:, :, y, x] = np.array([1, 0, 0, 1])
+                        if hd_overlays.shape[2] > x and hd_overlays[3] > y:
+                            hd_overlays[:, :, y, x] = np.array([1, 0, 0, 1])
                 
                 # カメラ中央
                 for x in range(int(hd_params['center'][0, 0] - 1), int(hd_params['center'][0, 0] + 2)):
                     for y in range(int(hd_params['center'][0, 1] - 1), int(hd_params['center'][0, 1] + 2)):
-                        hd_overlays[:, :, y, x] = np.array([0, 1, 0, 1])
+                        if hd_overlays.shape[2] > x and hd_overlays[3] > y:
+                            hd_overlays[:, :, y, x] = np.array([0, 1, 0, 1])
             
                 min_joints = np.min(proj_joints, axis=0)
                 max_joints = np.max(proj_joints, axis=0)
@@ -460,7 +463,8 @@ def main(
                     # ジョイント
                     for x in range(int(hd_params['center'][0, 0] + j2d[0] - 1), int(hd_params['center'][0, 0] + j2d[0] + 2)):
                         for y in range(int(hd_params['center'][0, 1] + j2d[1] - 1), int(hd_params['center'][0, 1] + j2d[1] + 2)):
-                            hd_overlays[:, :, y, x] = np.array([0, 0, 1, 1])
+                            if hd_overlays.shape[2] > x and hd_overlays[3] > y:
+                                hd_overlays[:, :, y, x] = np.array([0, 0, 1, 1])
             
             except Exception as e:
                 print('hd_overlays error: %s' % e)

@@ -31,6 +31,10 @@ python demo2.py --exp-cfg data/conf.yaml --show False --output-folder output --s
 
 python demo2.py --video-path samples/magic_3250-3930.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
 
+python demo2.py --video-path samples/girl/girl_45132.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+
+python demo2.py --video-path samples/girl2/girl_46949.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
+
 -----------
 for MMD
 pip install cython
