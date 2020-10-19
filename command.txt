@@ -60,7 +60,11 @@ C:\Development\Anaconda3\envs\expose\DLLs\openh264-1.8.0-win64.dll
 C:\Development\Anaconda3\envs\expose\openh264-1.8.0-win64.dll
 両方に必要？
 
+-------------
+for 顔検知
 
+(expose) c:\MMD\expose_mmd>pip install dlib
+(expose) c:\MMD\expose_mmd>pip install imutils
 
 
 

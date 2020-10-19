@@ -2,16 +2,17 @@
 from os import name
 import numpy as np
 import argparse
-import csv
+import os
 import cv2
-import pathlib
+import math
 import PIL.Image as pil_img
 import matplotlib.pyplot as plt
 from miu.mmd.VmdWriter import VmdWriter
 import os.path as osp
 import json
 import glob
-import datetime
+import dlib
+from imutils import face_utils
 from expose.data.targets.keypoints import ALL_CONNECTIONS, KEYPOINT_NAMES, FACE_CONNECTIONS
 
 from miu.module.MMath import MMatrix4x4, MQuaternion, MVector3D
@@ -21,57 +22,99 @@ from miu.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate
 from miu.utils.MLogger import MLogger
 
 logger = MLogger(__name__, level=MLogger.DEBUG)
-SCALE_MIKU = 0.0625
 
 def execute(cmd_args):
-    folder_path = cmd_args.folder_path
+    detector = dlib.get_frontal_face_detector()
 
-    # 動画上の関節位置
-    for fno, joints_path in enumerate(glob.glob(osp.join(folder_path, '**/*_joints.json'))):
+    #these landmarks are based on the image above 
+    left_eye_landmarks  = [36, 37, 38, 39, 40, 41]
+    right_eye_landmarks = [42, 43, 44, 45, 46, 47]
 
-        frame_joints = {}
-        with open(joints_path, 'r') as f:
-            frame_joints = json.load(f)
+    # 画像フォルダ作成
+    image_folder = osp.join(osp.dirname(osp.abspath(cmd_args.video_path)), osp.basename(cmd_args.video_path).replace(".", "_"), "face")
+    os.makedirs(image_folder, exist_ok=True)
+    
+    # 動画を静画に変えて出力
+    idx = 0
+    cap = cv2.VideoCapture(cmd_args.video_path)
+    while (cap.isOpened()):
+        logger.info(f"■ idx: {idx} -----")
+
+        # 動画から1枚キャプチャして読み込む
+        flag, frame = cap.read()  # Capture frame-by-frame
         
-        original_width = frame_joints["image"]["width"]
-        original_height = frame_joints["image"]["height"]
-
-        # 描画設定
-        fig = plt.figure(figsize=(15,15),dpi=100)
-        # 3DAxesを追加
-        ax = fig.add_subplot(111)
-
-        # ジョイント出力                    
-        ax.set_xlim(1200, 1600)
-        ax.set_ylim(-900, -500)
-        ax.set(xlabel='x', ylabel='y')
-
-        xs = []
-        ys = []
-
-        xall = []
-        yall = []
-
-        for j3d_from_idx, j3d_to_idx in FACE_CONNECTIONS:
-            jfname = KEYPOINT_NAMES[j3d_from_idx]
-            jtname = KEYPOINT_NAMES[j3d_to_idx]
+        # 終わったフレームより後は飛ばす
+        # 明示的に終わりが指定されている場合、その時も終了する
+        if flag == False:
+            break
             
-            fx = frame_joints["proj_joints"][jfname]['x'] * 1.5
-            fy = -frame_joints["proj_joints"][jfname]['y'] * 1.5
-            tx = frame_joints["proj_joints"][jtname]['x'] * 1.5
-            ty = -frame_joints["proj_joints"][jtname]['y'] * 1.5
-
-            xs = [fx, tx]
-            ys = [fy, ty]
-
-            xall.append(fx)
-            yall.append(fy)
-
-            ax.plot(xs, ys, marker="o", ms=2, c="#0000FF")
-            ax.text(fx - 10, fy + 10, jfname, size=6)
+        faces, _, _ = detector.run(image = frame, upsample_num_times = 0, adjust_threshold = 0.0)
         
-        plt.savefig(osp.join(str(pathlib.Path(joints_path).parent), f'face.png'))
-        plt.close()
+        predictor = dlib.shape_predictor("data/shape_predictor_68_face_landmarks.dat")
+
+        # json出力
+        joint_dict = {}
+
+        for fidx, face in enumerate(faces):
+            joint_dict[fidx] = {}
+            joint_dict[fidx]["faces"] = {}
+
+            landmarks = predictor(frame, face)
+            shape = face_utils.shape_to_np(landmarks)
+            (x, y, w, h) = face_utils.rect_to_bb(face)
+            j = 0    
+            for (x, y) in shape:
+                j = j + 1
+                cv2.putText(frame, str(j), (x, y - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
+
+                joint_dict[fidx]["faces"][j] = {"x": float(x), "y": float(y)}
+
+            #-----Step 5: Calculating blink ratio for one eye-----
+            left_eye_ratio  = get_blink_ratio(left_eye_landmarks, landmarks)
+            right_eye_ratio = get_blink_ratio(right_eye_landmarks, landmarks)
+            blink_ratio     = (left_eye_ratio + right_eye_ratio) / 2
+
+            cv2.putText(frame,str(blink_ratio),(10,50), cv2.FONT_HERSHEY_SIMPLEX, 2,(255,255,255),2,cv2.LINE_AA)
+
+        cv2.imwrite(osp.join(image_folder, f"capture_{idx:012d}.png"), frame)
+
+        with open(osp.join(image_folder, f"faces_{idx:012d}.json"), 'w') as f:
+            json.dump(joint_dict, f, indent=4)
+
+        idx += 1
+    
+    cap.release()
+
+#-----Step 5: Getting to know blink ratio
+
+def midpoint(point1 ,point2):
+    return (point1.x + point2.x)/2,(point1.y + point2.y)/2
+
+def euclidean_distance(point1 , point2):
+    return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
+
+def get_blink_ratio(eye_points, facial_landmarks):
+    
+    #loading all the required points
+    corner_left  = (facial_landmarks.part(eye_points[0]).x, 
+                    facial_landmarks.part(eye_points[0]).y)
+    corner_right = (facial_landmarks.part(eye_points[3]).x, 
+                    facial_landmarks.part(eye_points[3]).y)
+    
+    center_top    = midpoint(facial_landmarks.part(eye_points[1]), 
+                             facial_landmarks.part(eye_points[2]))
+    center_bottom = midpoint(facial_landmarks.part(eye_points[5]), 
+                             facial_landmarks.part(eye_points[4]))
+
+    #calculating distance
+    horizontal_length = euclidean_distance(corner_left,corner_right)
+    vertical_length = euclidean_distance(center_top,center_bottom)
+
+    ratio = horizontal_length / vertical_length
+
+    return ratio
+
 
 if __name__ == '__main__':
     arg_formatter = argparse.ArgumentDefaultsHelpFormatter
@@ -80,8 +123,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=arg_formatter,
                                      description=description)
 
-    parser.add_argument('--folder-path', type=str, dest='folder_path', help='The folder with joint json')
-    parser.add_argument('--bone-csv-path', type=str, dest='bone_csv_path', help='The csv file pmx born')
+    parser.add_argument('--video-path', type=str, dest='video_path', help='The folder with joint json')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='The csv file pmx born')
 
     cmd_args = parser.parse_args()

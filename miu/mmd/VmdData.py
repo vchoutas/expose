@@ -512,6 +512,12 @@ class VmdMotion():
         prev_bf = self.calc_bf(bone_name, prev_fno)
         next_bf = self.calc_bf(bone_name, next_fno)
         self.split_bf_by_fno(bone_name, prev_bf, next_bf, fno)
+    
+    def regist_mf(self, mf: VmdMorphFrame, morph_name: str, fno: int):
+        if morph_name not in self.morphs:
+            self.morphs[morph_name] = {}
+        
+        self.morphs[morph_name][fno] = mf
 
     # 補間曲線を考慮した指定フレーム番号の位置
     # https://www55.atwiki.jp/kumiho_k/pages/15.html

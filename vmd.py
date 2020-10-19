@@ -4,13 +4,14 @@ import numpy as np
 import argparse
 import csv
 from miu.mmd.VmdWriter import VmdWriter
+import os
 import os.path as osp
 import json
 import glob
 import datetime
 
 from miu.module.MMath import MMatrix4x4, MQuaternion, MVector3D
-from miu.mmd.VmdData import VmdBoneFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk
+from miu.mmd.VmdData import VmdBoneFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk, VmdMorphFrame
 from miu.mmd.PmxData import PmxModel, Bone, Vertex
 from miu.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate_local_qq
 from miu.utils.MLogger import MLogger
@@ -29,6 +30,7 @@ def execute(cmd_args):
     
     # 動画上の関節位置
     for fno, joints_path in enumerate(glob.glob(osp.join(folder_path, '**/*_joints.json'))):
+        logger.info(f"■ fno: {fno} -----")
 
         frame_joints = {}
         with open(joints_path, 'r') as f:
@@ -73,7 +75,7 @@ def execute(cmd_args):
                     bf.rotation = qq
 
                 motion.regist_bf(bf, bf.name, bf.fno)
-    
+
     # 動画内の半分は地面に足が着いていると見なす
     center_values = np.zeros((1, 3))
     for bf in motion.bones["センター"].values():
@@ -84,10 +86,6 @@ def execute(cmd_args):
     for bf in motion.bones["センター"].values():
         bf.position.setY(bf.position.y() - center_median[1])
     
-    # # IK変換
-    # convert_leg_fk2ik("左", motion, model)
-    # convert_leg_fk2ik("右", motion, model)
-
     writer = VmdWriter(motion, model, osp.join(folder_path, "output_{0}.vmd".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))))
     writer.write()
 
@@ -620,3 +618,14 @@ if __name__ == '__main__':
     MLogger.initialize(level=cmd_args.verbose, is_file=True)
 
     execute(cmd_args)
+
+    # # 終了音を鳴らす
+    # if os.name == "nt":
+    #     # Windows
+    #     try:
+    #         import winsound
+    #         winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+    #     except Exception:
+    #         pass
+
+

@@ -88,15 +88,38 @@ if __name__ == '__main__':
 
     fmt = cv2.VideoWriter_fourcc(*'mp4v')
     
+    logger.info(f"■ OpenCV -----")
+    # メッシュの結合
+    writer = cv2.VideoWriter(osp.join("C:/MMD/expose_mmd/samples/girl2/girl_46949_mp4/face", 'faces.mp4'), fmt, 30, (original_width, original_height))
+    for img_path in glob.glob(osp.join("C:/MMD/expose_mmd/samples/girl2/girl_46949_mp4/face", "capture_*.png")):
+        writer.write(cv2.imread(img_path))
+    writer.release()
+
+    logger.info(f"■ メッシュ -----")
     # メッシュの結合
     writer = cv2.VideoWriter(osp.join(args.folder_path, 'hd_overlay.mp4'), fmt, 30, (original_width, original_height))
     for img_path in glob.glob(osp.join(args.folder_path, "**/hd_overlay.png")):
         writer.write(cv2.imread(img_path))
     writer.release()
 
+    logger.info(f"■ joint -----")
     # JOINTの結合
     writer = cv2.VideoWriter(osp.join(args.folder_path, 'joints.mp4'), fmt, 30, (1500, 1500))
     for img_path in glob.glob(osp.join(args.folder_path, "**/*_joints.png")):
+        writer.write(cv2.imread(img_path))
+    writer.release()
+
+    logger.info(f"■ face(2d) -----")
+    # faceの結合
+    writer = cv2.VideoWriter(osp.join(args.folder_path, 'face.mp4'), fmt, 30, (1500, 1500))
+    for img_path in glob.glob(osp.join(args.folder_path, "**/face.png")):
+        writer.write(cv2.imread(img_path))
+    writer.release()
+
+    logger.info(f"■ face(3d) -----")
+    # face3dの結合
+    writer = cv2.VideoWriter(osp.join(args.folder_path, 'face3d.mp4'), fmt, 30, (1500, 1500))
+    for img_path in glob.glob(osp.join(args.folder_path, "**/face3d.png")):
         writer.write(cv2.imread(img_path))
     writer.release()
 
