@@ -41,12 +41,20 @@ class MLogger():
         # ロガー
         self.logger = logging.getLogger("VmdOutput").getChild(self.module_name)
 
-        # 標準出力ハンドラ
-        sh = logging.StreamHandler()
-        sh.setLevel(level)
-        # sh.setFormatter(logging.Formatter(self.DEFAULT_FORMAT))
-        # sh.setStream(sys.stdout)
-        self.logger.addHandler(sh)
+        for f in self.logger.handlers:
+            if isinstance(f, logging.FileHandler):
+                # 既存のファイルハンドラはすべて削除
+                self.logger.removeHandler(f)
+
+        # ファイル出力ありの場合、ハンドラ紐付け
+        if not os.path.exists("log"):
+            os.makedirs("log", exist_ok=True)
+
+        # ファイル出力ハンドラ
+        fh = logging.FileHandler("log/AutoTrace{0}.log".format(self.outout_datetime))
+        fh.setLevel(self.default_level)
+        fh.setFormatter(logging.Formatter(self.DEFAULT_FORMAT))
+        self.logger.addHandler(fh)
 
     def copy(self, options):
         self.is_file = options.is_file
@@ -128,24 +136,6 @@ class MLogger():
         target_level = kwargs.pop("level", logging.INFO)
         # if self.logger.isEnabledFor(target_level) and self.default_level <= target_level:
         if self.total_level <= target_level and self.default_level <= target_level:
-
-            if self.is_file:
-                for f in self.logger.handlers:
-                    if isinstance(f, logging.FileHandler):
-                        # 既存のファイルハンドラはすべて削除
-                        self.logger.removeHandler(f)
-
-                # ファイル出力ありの場合、ハンドラ紐付け
-                if not os.path.exists("log"):
-                    os.makedirs("log", exist_ok=True)
-
-                # ファイル出力ハンドラ
-                fh = logging.FileHandler("log/VmdOutput_{0}.log".format(self.outout_datetime))
-
-                fh.setLevel(self.default_level)
-                fh.setFormatter(logging.Formatter(self.DEFAULT_FORMAT))
-                self.logger.addHandler(fh)
-
             # モジュール名を出力するよう追加
             extra_args = {}
             extra_args["module_name"] = self.module_name
@@ -180,14 +170,8 @@ class MLogger():
         
             # 出力
             try:
-                if self.child or self.is_file:
-                    # 子スレッドの場合はレコードを再生成してでコンソールとGUI両方出力
-                    log_record = self.logger.makeRecord('name', target_level, "(unknown file)", 0, output_msg, None, None, self.module_name)
-                    self.logger.handle(log_record)
-                else:
-                    # サイジングスレッドは、printとloggerで分けて出力
-                    print(output_msg)
-                    self.logger.handle(log_record)
+                log_record = self.logger.makeRecord('name', target_level, "(unknown file)", 0, output_msg, None, None, self.module_name)
+                self.logger.handle(log_record)
             except Exception as e:
                 raise e
             
