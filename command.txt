@@ -66,5 +66,8 @@ for 顔検知
 (expose) c:\MMD\expose_mmd>pip install dlib
 (expose) c:\MMD\expose_mmd>pip install imutils
 
+python face.py --video-path samples/girl2/girl2_30fps.avi --verbose 10
+
+
 
 

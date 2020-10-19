@@ -37,12 +37,13 @@ def execute(cmd_args):
         # まばたき
         calc_left_blink(fno, motion, frame_joints)
         calc_right_blink(fno, motion, frame_joints)
+        blend_eye(fno, motion)
 
         # 口
         calc_lip(fno, motion, frame_joints)
 
         # 眉
-        calc_eyebrow(fno, motion, frame_joints, "left")
+        calc_eyebrow(fno, motion, frame_joints)
 
     model = PmxModel()
     model.name = "Morph Model"
@@ -50,29 +51,51 @@ def execute(cmd_args):
     writer.write()
 
 # 眉モーフ
-def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict, direction: str):
-    eye_brow1 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye_brow1")
-    eye_brow2 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye_brow2")
-    eye_brow3 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye_brow3")
-    eye_brow4 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye_brow4")
-    eye_brow5 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye_brow5")
+def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict):
+    left_eye_brow1 = get_vec2(frame_joints["0"]["faces"], "left_eye_brow1")
+    left_eye_brow2 = get_vec2(frame_joints["0"]["faces"], "left_eye_brow2")
+    left_eye_brow3 = get_vec2(frame_joints["0"]["faces"], "left_eye_brow3")
+    left_eye_brow4 = get_vec2(frame_joints["0"]["faces"], "left_eye_brow4")
+    left_eye_brow5 = get_vec2(frame_joints["0"]["faces"], "left_eye_brow5")
 
-    eye1 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye1")
-    eye2 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye2")
-    eye3 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye3")
-    eye4 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye4")
-    eye5 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye5")
-    eye6 = get_vec2(frame_joints["0"]["faces"], f"{direction}_eye6")
+    left_eye1 = get_vec2(frame_joints["0"]["faces"], "left_eye1")
+    left_eye2 = get_vec2(frame_joints["0"]["faces"], "left_eye2")
+    left_eye3 = get_vec2(frame_joints["0"]["faces"], "left_eye3")
+    left_eye4 = get_vec2(frame_joints["0"]["faces"], "left_eye4")
+    left_eye5 = get_vec2(frame_joints["0"]["faces"], "left_eye5")
+    left_eye6 = get_vec2(frame_joints["0"]["faces"], "left_eye6")
+
+    right_eye_brow1 = get_vec2(frame_joints["0"]["faces"], "right_eye_brow1")
+    right_eye_brow2 = get_vec2(frame_joints["0"]["faces"], "right_eye_brow2")
+    right_eye_brow3 = get_vec2(frame_joints["0"]["faces"], "right_eye_brow3")
+    right_eye_brow4 = get_vec2(frame_joints["0"]["faces"], "right_eye_brow4")
+    right_eye_brow5 = get_vec2(frame_joints["0"]["faces"], "right_eye_brow5")
+
+    right_eye1 = get_vec2(frame_joints["0"]["faces"], "right_eye1")
+    right_eye2 = get_vec2(frame_joints["0"]["faces"], "right_eye2")
+    right_eye3 = get_vec2(frame_joints["0"]["faces"], "right_eye3")
+    right_eye4 = get_vec2(frame_joints["0"]["faces"], "right_eye4")
+    right_eye5 = get_vec2(frame_joints["0"]["faces"], "right_eye5")
+    right_eye6 = get_vec2(frame_joints["0"]["faces"], "right_eye6")
+
+    left_nose_1 = get_vec2(frame_joints["0"]["faces"], 'left_nose_1')
+    right_nose_2 = get_vec2(frame_joints["0"]["faces"], 'right_nose_2')
+
+    # 鼻の幅
+    nose_width = abs(left_nose_1.x() - right_nose_2.x())
+    
+    # 眉のしかめ具合
+    frown_ratio = abs(left_eye_brow1.x() - right_eye_brow1.x()) / nose_width
 
     # 眉の幅
-    eye_brow_length = euclidean_distance(eye_brow1, eye_brow5)
+    eye_brow_length = (euclidean_distance(left_eye_brow1, left_eye_brow5) + euclidean_distance(right_eye_brow1, right_eye_brow5)) / 2
     # 目の幅
-    eye_length = euclidean_distance(eye1, eye4)
+    eye_length = (euclidean_distance(left_eye1, left_eye4) + euclidean_distance(right_eye1, right_eye4)) / 2
 
     # 目と眉の縦幅
-    left_vertical_length = euclidean_distance(eye1, eye_brow1)
-    center_vertical_length = euclidean_distance(eye2, eye_brow3)
-    right_vertical_length = euclidean_distance(eye4, eye_brow5)
+    left_vertical_length = (euclidean_distance(left_eye1, left_eye_brow1) + euclidean_distance(right_eye1, right_eye_brow1)) / 2
+    center_vertical_length = (euclidean_distance(left_eye2, left_eye_brow3) + euclidean_distance(right_eye2, right_eye_brow3)) / 2
+    right_vertical_length = (euclidean_distance(left_eye4, left_eye_brow5) + euclidean_distance(right_eye4, right_eye_brow5)) / 2
 
     left_ratio = left_vertical_length / eye_brow_length
     center_ratio = center_vertical_length / eye_brow_length
@@ -80,11 +103,11 @@ def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict, direction: str
 
     updown_ratio = center_ratio - 0.5
 
-    if updown_ratio >= 0:
+    if updown_ratio >= 0.2:
         # 上
         mf = VmdMorphFrame(fno)
         mf.set_name("上")
-        mf.ratio = max(0, min(1, abs(updown_ratio)))
+        mf.ratio = max(0, min(1, abs(updown_ratio) + 0.3))
         motion.regist_mf(mf, mf.name, mf.fno)
 
         mf = VmdMorphFrame(fno)
@@ -95,7 +118,7 @@ def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict, direction: str
         # 下
         mf = VmdMorphFrame(fno)
         mf.set_name("下")
-        mf.ratio = max(0, min(1, abs(updown_ratio)))
+        mf.ratio = max(0, min(1, abs(updown_ratio) + 0.3))
         motion.regist_mf(mf, mf.name, mf.fno)
 
         mf = VmdMorphFrame(fno)
@@ -103,6 +126,11 @@ def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict, direction: str
         mf.ratio = 0
         motion.regist_mf(mf, mf.name, mf.fno)
     
+    mf = VmdMorphFrame(fno)
+    mf.set_name("困る")
+    mf.ratio = max(0, min(1, (0.8 - frown_ratio)))
+    motion.regist_mf(mf, mf.name, mf.fno)
+
     if left_ratio >= right_ratio:
         # 怒る系
         mf = VmdMorphFrame(fno)
@@ -175,7 +203,7 @@ def calc_lip(fno: int, motion: VmdMotion, frame_joints: dict):
     open_ratio = (bottom_lip_center.y() - top_lip_center.y()) / (bottom_mouth_center.y() - top_mouth_center.y())
 
     # 笑いの比率
-    smile_ratio = (top_mouth_center.y() - corner_center.y()) / (bottom_mouth_center.y() - corner_center.y())
+    smile_ratio = (bottom_mouth_center.y() - corner_center.y()) / (bottom_mouth_center.y() - top_mouth_center.y())
 
     if smile_ratio >= 0:
         mf = VmdMorphFrame(fno)
@@ -212,7 +240,7 @@ def calc_lip(fno: int, motion: VmdMotion, frame_joints: dict):
 
         mf = VmdMorphFrame(fno)
         mf.set_name("あ")
-        mf.ratio = max(0, min(1, open_ratio))
+        mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
         motion.regist_mf(mf, mf.name, mf.fno)
 
         mf = VmdMorphFrame(fno)
@@ -238,9 +266,31 @@ def calc_lip(fno: int, motion: VmdMotion, frame_joints: dict):
 
         mf = VmdMorphFrame(fno)
         mf.set_name("お")
-        mf.ratio = max(0, min(1, open_ratio))
+        mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
         motion.regist_mf(mf, mf.name, mf.fno)
-    
+
+def blend_eye(fno: int, motion: VmdMotion):
+    min_blink = min(motion.morphs["ウィンク右"][fno].ratio, motion.morphs["ウィンク"][fno].ratio)
+    min_smile = min(motion.morphs["ｳｨﾝｸ２右"][fno].ratio, motion.morphs["ウィンク２"][fno].ratio)
+
+    # 両方の同じ値はさっぴく
+    motion.morphs["ウィンク右"][fno].ratio -= min_smile
+    motion.morphs["ウィンク"][fno].ratio -= min_smile
+
+    motion.morphs["ｳｨﾝｸ２右"][fno].ratio -= min_blink
+    motion.morphs["ウィンク２"][fno].ratio -= min_blink
+
+    mf = VmdMorphFrame(fno)
+    mf.set_name("笑い")
+    mf.ratio = max(0, min(1, min_smile))
+    motion.regist_mf(mf, mf.name, mf.fno)
+
+    mf = VmdMorphFrame(fno)
+    mf.set_name("まばたき")
+    mf.ratio = max(0, min(1, min_blink))
+    motion.regist_mf(mf, mf.name, mf.fno)
+
+
 def calc_left_blink(fno: int, motion: VmdMotion, frame_joints: dict):
     left_eye1 = get_vec2(frame_joints["0"]["faces"], "left_eye1")
     left_eye2 = get_vec2(frame_joints["0"]["faces"], "left_eye2")
@@ -254,13 +304,13 @@ def calc_left_blink(fno: int, motion: VmdMotion, frame_joints: dict):
 
     mf = VmdMorphFrame(fno)
     mf.set_name("ウィンク右")
-    mf.ratio = left_smile
+    mf.ratio = max(0, min(1, left_smile))
 
     motion.regist_mf(mf, mf.name, mf.fno)
 
     mf = VmdMorphFrame(fno)
     mf.set_name("ｳｨﾝｸ２右")
-    mf.ratio = left_blink
+    mf.ratio = max(0, min(1, left_blink))
 
     motion.regist_mf(mf, mf.name, mf.fno)
 
@@ -277,12 +327,12 @@ def calc_right_blink(fno: int, motion: VmdMotion, frame_joints: dict):
 
     mf = VmdMorphFrame(fno)
     mf.set_name("ウィンク")
-    mf.ratio = right_smile
+    mf.ratio = max(0, min(1, right_smile))
     motion.regist_mf(mf, mf.name, mf.fno)
 
     mf = VmdMorphFrame(fno)
     mf.set_name("ウィンク２")
-    mf.ratio = right_blink
+    mf.ratio = max(0, min(1, right_blink))
     motion.regist_mf(mf, mf.name, mf.fno)
 
 def euclidean_distance(point1: MVector2D, point2: MVector2D):
@@ -302,13 +352,14 @@ def get_blink_ratio(eye1: MVector2D, eye2: MVector2D, eye3: MVector2D, eye4: MVe
     vertical_length = euclidean_distance(center_top, center_bottom)
 
     ratio = horizontal_length / vertical_length
+    new_ratio = min(1, calc_ratio(ratio, 0, 12, 0, 1))
 
     # 笑いの比率
     smile_ratio = (center_bottom.y() - corner_center.y()) / (center_bottom.y() - center_top.y())
 
-    new_ratio = min(1, calc_ratio(ratio, 0, 12, 0, 1))
-
-    logger.info(f"ratio: {ratio}, new_ratio: {new_ratio}")
+    if smile_ratio > 1:
+        # １より大きい場合、目頭よりも上瞼が下にあるという事なので、通常瞬きと見なす
+        return 1, 0
 
     return new_ratio * (1 - smile_ratio), new_ratio * smile_ratio
 
