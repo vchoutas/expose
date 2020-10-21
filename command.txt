@@ -41,25 +41,6 @@ pip install cython
 pip install numpy-quaternion
 pip install bezier
 
-
----------
-for lighttrack
-
-pip install tensorflow-gpu==1.15
-pip install cython opencv-python pillow matplotlib
-
-
----------
-for AlphaPose
-
-python scripts/demo_inference.py --cfg "pretrained_models/Fast Pose (DUC)-unshuffle/256x192_res50_lr1e-3_1x-duc.yaml" --checkpoint  "pretrained_models/Fast Pose (DUC)-unshuffle/fast_421_res50-shuffle_256x192.pth" --video "../samples/buster_1177-1277.mp4"  --outdir "../output" --detector yolo --save_img --save_video --format open --pose_track
-
-libopenh264
-https://github.com/cisco/openh264/releases/tag/v1.8.0
-C:\Development\Anaconda3\envs\expose\DLLs\openh264-1.8.0-win64.dll
-C:\Development\Anaconda3\envs\expose\openh264-1.8.0-win64.dll
-両方に必要？
-
 -------------
 for 顔検知
 
@@ -68,6 +49,37 @@ for 顔検知
 
 python face.py --video-path samples/girl2/girl2_30fps.avi --verbose 10
 
+
+---------
+for lighttrack
+
+pip install tensorflow-gpu==1.15
+pip install cython opencv-python pillow matplotlib
+
+(expose) c:\MMD\lighttrack_mmd\lib>python setup_windows.py build_ext --inplace
+
+(expose) c:\MMD\lighttrack_mmd\lib>python setup_cuda.py build_ext --inplace
+※ファイル指定は cuのみでOK
+
+(expose) c:\MMD\lighttrack_mmd\graph\torchlight>python setup.py install
+
+pip install setproctitle
+
+
+
+
+
+右端のtvfilter
+
+if明度調節→ifコントラスト→シャープネス→ダストアンドスクラッチ
+が一番よっさそ
+
+
+グレスケで　全体再生のうちの　2/4　3/4　の位置をグレスケで取得する
+双方を比較して　数値がさほど変化がなければカメラが固定なので　自動調整有効にする
+
+グレスケ処理して　ヒストグラム取得　カーブの傾向でどうするか決めるってのが
+ちょっと　ヒストグラムの取得周りが謎だけど　一番妥当な解決策ﾄｵﾓﾜﾚﾙ
 
 
 

@@ -55,7 +55,7 @@ def execute(args):
     # 画面比率
     aspect = W / H
 
-    if (aspect != (9/6) and aspect != (16/9)) or W != 1280 or H != 720 or (fps != 30 and fps != 60):
+    if W != 1280 or H != 720 or (fps != 30 and fps != 60):
         logger.warning("大きさもしくはfpsが処理対象外のため、再エンコードします: {0}".format(args.video_path))
 
         # 既存は削除
