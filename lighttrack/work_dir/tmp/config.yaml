@@ -1,0 +1,19 @@
+# command line: demo_video_mobile2.py
+
+config: graph/config/inference.yaml
+device:
+- 0
+ignore_weights: []
+model: graph.gcn_utils.gcn_model.Model
+model_args:
+    edge_importance_weighting: true
+    graph_args:
+        layout: PoseTrack
+        strategy: spatial
+    in_channels: 2
+    num_class: 128
+print_log: true
+save_log: true
+use_gpu: true
+weights: ./weights/GCN/epoch210_model.pt
+work_dir: ./work_dir/tmp

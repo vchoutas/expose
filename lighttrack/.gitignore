@@ -1,0 +1,13 @@
+*.ckpt*
+*.pt
+*.so
+*.pyc
+*.json
+*.tgz
+*.zip
+*.weights
+*.DS_Store
+*.pyd
+delete_for_now/
+build/
+demo/
