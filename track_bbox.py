@@ -75,7 +75,7 @@ def execute(args):
     width = 0
     height = 0
     
-    for img_id in tqdm(range(img_nums)):
+    for img_id in tqdm(range(img_nums), "人物追跡中 ..."):
         img_path = process_img_paths[img_id]
         out_frame = cv2.imread(img_path)
         width = out_frame.shape[1]
@@ -222,7 +222,7 @@ def execute(args):
     out = cv2.VideoWriter(process_bbox_path, fourcc, 30.0, (width, height))
 
     # トラッキングmp4合成
-    for file_path in tqdm(sorted(glob.glob(os.path.join(args.process_dir, "**", "bbox_*.png")), key=sort_by_numeric)):
+    for file_path in tqdm(sorted(glob.glob(os.path.join(args.process_dir, "**", "bbox_*.png")), key=sort_by_numeric), "トラッキング動画生成 ..."):
         # フレーム
         frame = cv2.imread(file_path)
         out.write(frame)

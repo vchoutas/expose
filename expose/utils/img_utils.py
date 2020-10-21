@@ -23,11 +23,13 @@ from loguru import logger
 
 import cv2
 from .typing_utils import Array
+import os
 
 
 def read_img(img_fn: str, dtype=np.float32) -> Array:
+    idx_dir = os.path.basename(os.path.dirname(img_fn))
     img = cv2.cvtColor(cv2.imread(img_fn), cv2.COLOR_BGR2RGB)
     if dtype == np.float32:
         if img.dtype == np.uint8:
             img = img.astype(dtype) / 255.0
-    return img
+    return img, idx_dir

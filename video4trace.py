@@ -76,7 +76,7 @@ def execute(args):
 
         logger.info("元動画読み込み開始", decoration=MLogger.DECORATION_LINE)
 
-        for n in tqdm(range(int(count))):
+        for n in tqdm(range(int(count)), desc="元動画読み込み中..."):
             # 動画から1枚キャプチャして読み込む
             flag, img = cap.read()  # Capture frame-by-frame
 
@@ -119,7 +119,7 @@ def execute(args):
         logger.info("補間生成開始", decoration=MLogger.DECORATION_LINE)
 
         # 最後の１つ手前（補間ができる状態）までループ
-        for k in tqdm(range(round(count * (30 / fps)) - 1)):
+        for k in tqdm(range(round(count * (30 / fps)) - 1), desc="動画補間中..."):
             # 30fps用にディレクトリ作成
             os.makedirs(os.path.join(process_img_dir, f"{k:012}"), exist_ok=True)
 

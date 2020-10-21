@@ -17,6 +17,7 @@
 import sys
 import os
 import os.path as osp
+import glob
 
 import time
 
@@ -30,6 +31,7 @@ from ..utils import bbox_to_center_scale
 
 from expose.utils.img_utils import read_img
 from expose.data.targets import BoundingBox
+from miu.utils.MServiceUtils import sort_by_numeric
 
 EXTS = ['.jpg', '.jpeg', '.png']
 
@@ -44,7 +46,7 @@ class ImageFolder(dutils.Dataset):
         paths = []
         self.transforms = transforms
         data_folder = osp.expandvars(data_folder)
-        for fname in os.listdir(data_folder):
+        for fname in sorted(glob.glob(data_folder), key=sort_by_numeric):
             if not any(fname.endswith(ext) for ext in EXTS):
                 continue
             paths.append(osp.join(data_folder, fname))
@@ -55,14 +57,15 @@ class ImageFolder(dutils.Dataset):
         return len(self.paths)
 
     def __getitem__(self, index):
-        img = read_img(self.paths[index])
+        img, idx_dir = read_img(self.paths[index])
 
         if self.transforms is not None:
             img = self.transforms(img)
 
         return {
             'images': img,
-            'paths': self.paths[index]
+            'paths': self.paths[index], 
+            'idx_dir': idx_dir
         }
 
 
@@ -85,7 +88,7 @@ class ImageFolderWithBoxes(dutils.Dataset):
         return len(self.paths)
 
     def __getitem__(self, index):
-        img = read_img(self.paths[index])
+        img, idx_dir = read_img(self.paths[index])
 
         bbox = self.bboxes[index]
 
@@ -101,6 +104,7 @@ class ImageFolderWithBoxes(dutils.Dataset):
 
         _, fname = osp.split(self.paths[index])
         target.add_field('fname', f'{fname}_{index:03d}')
+        target.add_field('idx_dir', idx_dir)
 
         if self.transforms is not None:
             full_img, cropped_image, target = self.transforms(img, target)
