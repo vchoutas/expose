@@ -65,7 +65,7 @@ pip install cython opencv-python pillow matplotlib
 
 pip install setproctitle
 
-
+pip install scikit-image
 
 
 

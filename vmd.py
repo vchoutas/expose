@@ -272,8 +272,8 @@ def read_bone_csv(bone_csv_path: str):
     model = PmxModel()
     model.name = osp.splitext(osp.basename(bone_csv_path))[0]
 
-    with open(bone_csv_path, "r", encoding=get_file_encoding(bone_csv_path)) as bf:
-        reader = csv.reader(bf)
+    with open(bone_csv_path, "r", encoding=get_file_encoding(bone_csv_path)) as f:
+        reader = csv.reader(f)
 
         # 列名行の代わりにルートボーン登録
         # サイジング用ルートボーン

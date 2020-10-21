@@ -8,10 +8,9 @@
 import cv2
 import numpy as np
 import sys, os
-sys.path.append(os.path.abspath("../../../utility/"))
-from utils_io_file import is_image
-from utils_io_folder import create_folder
-from utils_json import read_json_from_file
+from lighttrack.utils.utils_io_file import is_image
+from lighttrack.utils.utils_io_folder import create_folder
+from lighttrack.utils.utils_json import read_json_from_file
 
 flag_color_sticks = True
 #keypoints_mode = "COCO"

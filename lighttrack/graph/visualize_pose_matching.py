@@ -12,18 +12,17 @@
 import numpy as np
 import argparse
 import torch
+import os
+import cv2
 
-import sys, os
-sys.path.append(os.path.abspath("../"))
-sys.path.append(os.path.abspath("utils"))
-sys.path.append(os.path.abspath("visualizer"))
-sys.path.append(os.path.abspath("graph"))
+from lighttrack.visualizer.keypoint_visualizer import reshape_keypoints_into_joints, show_poses_from_python_data, find_color_scalar
 
-from utils_json import *
-from utils_io_folder import *
+from lighttrack.utils.utils_io_folder import get_immediate_childfile_paths
+from lighttrack.utils.utils_json import read_json_from_file
 
-from keypoint_visualizer import *
-from detection_visualizer import *
+from lighttrack.graph.gcn_utils.io import IO
+from lighttrack.graph.gcn_utils.gcn_model import Model
+from lighttrack.graph.gcn_utils.processor_siamese_gcn import SGCN_Processor
 
 def test_visualization(dataset_str, dataset_split_str):
     if dataset_str == "posetrack_18":
@@ -148,10 +147,6 @@ def keypoints_to_graph(keypoints, bbox):
     return graph, flag_pass_check
 
 #----------------------------------------------------
-from gcn_utils.io import IO
-from gcn_utils.gcn_model import Model
-from gcn_utils.processor_siamese_gcn import SGCN_Processor
-import torchlight
 
 #class Pose_Matcher(IO):
 class Pose_Matcher(SGCN_Processor):
@@ -172,7 +167,7 @@ class Pose_Matcher(SGCN_Processor):
             parents=[parent_parser],
             description='Graph Convolution Network for Pose Matching')
         #parser.set_defaults(config='config/inference.yaml')
-        parser.set_defaults(config='graph/config/inference.yaml')
+        parser.set_defaults(config='lighttrack/graph/config/bbox_inference.yaml')
         return parser
 
 
@@ -197,7 +192,7 @@ class Pose_Matcher(SGCN_Processor):
 
         margin = 0.2
         distance = dist.data.cpu().numpy()[0]
-        print("_____ Pose Matching: [dist: {:04.2f}]". format(distance))
+        # print("_____ Pose Matching: [dist: {:04.2f}]". format(distance))
         if dist >= margin:
             return False, distance  # Do not match
         else:

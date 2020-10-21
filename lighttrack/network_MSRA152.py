@@ -10,11 +10,11 @@ import argparse
 import numpy as np
 from functools import partial
 
-from HPE.config import cfg
-from tfflat.base import ModelDesc, Trainer
-from tfflat.utils import mem_info
+from lighttrack.HPE.config import cfg
+from lighttrack.lib.tfflat.base import ModelDesc, Trainer
+from lighttrack.lib.tfflat.utils import mem_info
 
-from nets.basemodel import resnet152, resnet_arg_scope, resnet_v1
+from lighttrack.lib.nets.basemodel import resnet152, resnet_arg_scope, resnet_v1
 resnet_arg_scope = partial(resnet_arg_scope, bn_trainable=cfg.bn_train)
 
 

@@ -6,7 +6,7 @@
     Dec, 2016
 '''
 import os
-from utils_natural_sort import natural_sort
+from lighttrack.utils.utils_natural_sort import natural_sort
 
 def get_immediate_subfolder_paths(folder_path):
     subfolder_names = get_immediate_subfolder_names(folder_path)

@@ -197,7 +197,7 @@ class Pose_Matcher(SGCN_Processor):
 
         margin = 0.2
         distance = dist.data.cpu().numpy()[0]
-        print(distance)
+        # print(distance)
         if dist >= margin:
             return False, distance  # Do not match
         else:

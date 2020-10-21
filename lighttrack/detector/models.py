@@ -8,10 +8,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from PIL import Image
-
-from detector.parse_config import *
-from detector.detector_utils import build_targets
+from lighttrack.detector.parse_config import parse_model_config
+from lighttrack.detector.detector_utils import build_targets
 from collections import defaultdict
 
 
@@ -22,6 +20,8 @@ def create_modules(module_defs):
     hyperparams = module_defs.pop(0)
     output_filters = [int(hyperparams["channels"])]
     module_list = nn.ModuleList()
+    filters = 0
+    
     for i, module_def in enumerate(module_defs):
         modules = nn.Sequential()
 

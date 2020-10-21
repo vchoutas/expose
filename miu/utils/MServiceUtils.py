@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-import copy
+import re
 import numpy as np # noqa
 import math # noqa
 from collections import OrderedDict
@@ -12,6 +12,13 @@ from miu.module.MParams import BoneLinks # noqa
 from miu.utils.MLogger import MLogger # noqa
 
 logger = MLogger(__name__, level=1)
+
+
+def sort_by_numeric(value):
+    numbers = re.compile(r'(\d+)')
+    parts = numbers.split(value)
+    parts[1::2] = map(int, parts[1::2])
+    return parts
 
 
 # IK計算

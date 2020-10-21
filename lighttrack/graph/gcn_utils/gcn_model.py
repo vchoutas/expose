@@ -14,8 +14,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from gcn_utils.gcn_block import ConvTemporalGraphical
-from gcn_utils.graph import Graph
+from lighttrack.graph.gcn_utils.gcn_block import ConvTemporalGraphical
+from lighttrack.graph.gcn_utils.graph import Graph
 
 
 class Model(nn.Module):

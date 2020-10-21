@@ -14,9 +14,9 @@ from random import random as rand
 import os
 import cv2
 import numpy as np
-from utils_io_file import is_image
-from utils_io_folder import create_folder
-from utils_json import read_json_from_file
+from lighttrack.utils.utils_io_file import is_image
+from lighttrack.utils.utils_io_folder import create_folder
+from lighttrack.utils.utils_json import read_json_from_file
 
 bbox_thresh = 0.4
 
@@ -97,7 +97,7 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
                   color = color,
                   thickness = 3)
 
-    cls_name = classes[0]
+    cls_name = classes[0] if classes else ""
     font = cv2.FONT_HERSHEY_SIMPLEX
 
     if track_id == -1:

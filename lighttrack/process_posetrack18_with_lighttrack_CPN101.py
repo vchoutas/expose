@@ -12,27 +12,25 @@ import numpy as np
 import tensorflow as tf
 
 # import Network
-from network_CPN101 import Network
+from lighttrack.network_CPN101 import Network
 
 # pose estimation utils
-from HPE.dataset import Preprocessing
-from HPE.config import cfg
-from tfflat.base import Tester
-from tfflat.utils import mem_info
-from tfflat.logger import colorlogger
-from nms.gpu_nms import gpu_nms
-from nms.cpu_nms import cpu_nms
+from lighttrack.HPE.dataset import Preprocessing
+from lighttrack.HPE.config import cfg
+from lighttrack.lib.tfflat.base import Tester
+from lighttrack.lib.tfflat.utils import mem_info
+from lighttrack.lib.tfflat.logger import colorlogger
+from lighttrack.lib.nms.gpu_nms import gpu_nms
+from lighttrack.lib.nms.cpu_nms import cpu_nms
 
 # import GCN utils
-from graph import visualize_pose_matching
-from graph  .visualize_pose_matching import *
+from lighttrack.graph.visualize_pose_matching import *
 
 # import my own utils
 import sys, os, time
-sys.path.append(os.path.abspath("./graph/"))
-from utils_json import *
-from visualizer import *
-from utils_io_folder import *
+from lighttrack.utils.utils_json import *
+from lighttrack.visualizer import *
+from lighttrack.utils.utils_io_folder import *
 
 flag_visualize = True
 flag_nms = False #Default is False, unless you know what you are doing

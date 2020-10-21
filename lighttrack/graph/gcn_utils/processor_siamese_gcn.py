@@ -19,15 +19,12 @@ import torch.nn as nn
 import torch.optim as optim
 
 # torchlight
-import torchlight
 from torchlight import str2bool
-from torchlight import DictAction
-from torchlight import import_class
 
-from gcn_utils.processor_base import Processor
+from lighttrack.graph.gcn_utils.processor_base import Processor
 
 # import contrastive loss
-from gcn_utils.contrastive import ContrastiveLoss
+from lighttrack.graph.gcn_utils.contrastive import ContrastiveLoss
 
 def weights_init(m):
     classname = m.__class__.__name__

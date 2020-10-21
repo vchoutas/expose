@@ -118,4 +118,7 @@ class IO():
         parser.add_argument('--ignore_weights', type=str, default=[], nargs='+', help='the name of weights which will be ignored in the initialization')
         #endregion yapf: enable
 
+        parser.add_argument('--process-dir', default=None, help='the model will be used')
+        parser.add_argument('--verbose', default=20, help='the model will be used')
+
         return parser

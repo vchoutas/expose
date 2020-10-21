@@ -6,7 +6,7 @@
     Dec, 2016
 '''
 import os
-from utils_io_folder import get_parent_folder_from_path, create_folder
+from lighttrack.utils.utils_io_folder import get_parent_folder_from_path, create_folder
 import cv2
 
 def find_file_ext(file_path):

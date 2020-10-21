@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import cv2
-from HPE.config import cfg
+from lighttrack.HPE.config import cfg
 import random
 import time
 

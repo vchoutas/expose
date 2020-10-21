@@ -20,9 +20,10 @@ def add_pypath(path):
         sys.path.insert(0, path)
 
 def make_link(dest_path, link_path):
-    if os.path.islink(link_path):
-        os.system('rm {}'.format(link_path))
-    os.system('ln -s {} {}'.format(dest_path, link_path))
+    pass
+    # if os.path.islink(link_path):
+    #     os.system('rm {}'.format(link_path))
+    # os.system('ln -s {} {}'.format(dest_path, link_path))
 
 def make_dir(path):
     if os.path.exists(path) or os.path.islink(path):

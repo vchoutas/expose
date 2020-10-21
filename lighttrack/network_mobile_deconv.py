@@ -10,11 +10,11 @@ import argparse
 import numpy as np
 from functools import partial
 
-from HPE.config import cfg
-from tfflat.base import ModelDesc, Trainer
-from tfflat.utils import mem_info
+from lighttrack.HPE.config import cfg
+from lighttrack.lib.tfflat.base import ModelDesc, Trainer
+from lighttrack.lib.tfflat.utils import mem_info
 
-from nets.mobilenet_v1 import mobilenet_v1_base, mobilenet_v1_arg_scope
+from lighttrack.lib.nets.mobilenet_v1 import mobilenet_v1_base, mobilenet_v1_arg_scope
 
 # The network of simple baselines for human pose estimation and tracking
 class Network(ModelDesc):
