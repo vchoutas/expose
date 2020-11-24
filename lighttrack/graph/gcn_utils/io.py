@@ -7,6 +7,7 @@ https://github.com/yysijie/st-gcn/blob/master/processor/io.py
 import sys
 import argparse
 import yaml
+import os
 import numpy as np
 
 # torch
@@ -18,6 +19,10 @@ import torchlight
 from torchlight import str2bool
 from torchlight import DictAction
 from torchlight import import_class
+
+
+from mmd.utils.MLogger import MLogger
+logger = MLogger(__name__)
 
 class IO():
     """
@@ -33,25 +38,30 @@ class IO():
         self.gpu()
 
     def load_arg(self, argv=None):
-        parser = self.get_parser()
+        with open(argv.tracking_config, 'r') as f:
+            default_arg = yaml.load(f)
 
-        # load arg form config file
-        p = parser.parse_args(argv)
-        if p.config is not None:
-            # load config file
-            with open(p.config, 'r') as f:
-                default_arg = yaml.load(f)
-
-            # update parser from config file
-            key = vars(p).keys()
-            for k in default_arg.keys():
-                if k not in key:
-                    print('Unknown Arguments: {}'.format(k))
-                    assert k in key
-
+            parser = self.get_parser()
             parser.set_defaults(**default_arg)
+            self.arg = parser.parse_args(args=[])
 
-        self.arg = parser.parse_args(argv)
+        # # load arg form config file
+        # p = parser.parse_args(argv)
+        # if p.config is not None:
+        #     # load config file
+        #     with open(p.config, 'r') as f:
+        #         default_arg = yaml.load(f)
+
+        #     # update parser from config file
+        #     key = vars(p).keys()
+        #     for k in default_arg.keys():
+        #         if k not in key:
+        #             print('Unknown Arguments: {}'.format(k))
+        #             assert k in key
+
+        #     parser.set_defaults(**default_arg)
+
+        # self.arg = parser.parse_args(argv)
 
     def init_environment(self):
         self.io = torchlight.IO(

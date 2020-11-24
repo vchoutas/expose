@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 #
-from miu.mmd.PmxData import PmxModel
-from miu.mmd.VmdData import VmdMotion
 import struct
-from miu.utils.MLogger import MLogger # noqa
+from mmd.mmd.PmxData import PmxModel
+from mmd.mmd.VmdData import VmdMotion
+from mmd.utils.MLogger import MLogger # noqa
 
 logger = MLogger(__name__)
 
 
 class VmdWriter():
-    def __init__(self, motion: VmdMotion, model: PmxModel, output_vmd_path: str):
-        self.motion = motion
+    def __init__(self, model: PmxModel, motion: VmdMotion, output_vmd_path: str):
         self.model = model
-        self.output_vmd_path = output_vmd_path
+        self.motion = motion
 
     def write(self):
         """Write VMD data to a file"""
@@ -43,7 +42,7 @@ class VmdWriter():
         
         # bone frames
         fout.write(struct.pack('<L', len(bone_frames)))  # ボーンフレーム数
-        for e, bf in enumerate(bone_frames):
+        for bf in bone_frames:
             bf.write(fout)
         fout.write(struct.pack('<L', len(morph_frames)))  # 表情キーフレーム数
         for mf in morph_frames:
@@ -57,8 +56,10 @@ class VmdWriter():
         fout.write(struct.pack('<L', len(self.motion.shadows)))  # セルフ影キーフレーム数
         for cf in self.motion.shadows:
             cf.write(fout)
-        fout.write(struct.pack('<L', len(self.motion.showiks)))  # モデル表示・IK on/offキーフレーム数
-        for sf in self.motion.showiks:
-            sf.write(fout)
+            
+        if len(camera_frames) == 0:
+            fout.write(struct.pack('<L', len(self.motion.showiks)))  # モデル表示・IK on/offキーフレーム数
+            for sf in self.motion.showiks:
+                sf.write(fout)
         
         fout.close()

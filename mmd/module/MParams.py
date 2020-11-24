@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 #
-from collections import OrderedDict
 
 
-class BoneLinks():
+class BoneLinks:
+
     def __init__(self):
-        self.__links = OrderedDict()
+        self.__links = {}
     
     def get(self, bone_name: str, offset=0):
         if bone_name not in self.__links:

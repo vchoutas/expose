@@ -31,7 +31,7 @@ from ..utils import bbox_to_center_scale
 
 from expose.utils.img_utils import read_img
 from expose.data.targets import BoundingBox
-from miu.utils.MServiceUtils import sort_by_numeric
+from mmd.utils.MServiceUtils import sort_by_numeric
 
 EXTS = ['.jpg', '.jpeg', '.png']
 

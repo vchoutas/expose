@@ -1,33 +1,30 @@
 # -*- coding: utf-8 -*-
 #
-import re
 import numpy as np # noqa
 import math # noqa
-from collections import OrderedDict
+import numpy as np
+import re
+from math import sin, cos, acos, atan2, asin, pi, sqrt
 
-from miu.mmd.PmxData import PmxModel, Vertex, Material, Bone, Morph, DisplaySlot, RigidBody, Joint # noqa
-from miu.mmd.VmdData import VmdMotion, VmdBoneFrame, VmdCameraFrame, VmdInfoIk, VmdLightFrame, VmdMorphFrame, VmdShadowFrame, VmdShowIkFrame # noqa
-from miu.module.MMath import MRect, MVector2D, MVector3D, MVector4D, MQuaternion, MMatrix4x4 # noqa
-from miu.module.MParams import BoneLinks # noqa
-from miu.utils.MLogger import MLogger # noqa
+from mmd.module.MParams import BoneLinks # noqa
+from mmd.module.MMath import MRect, MVector2D, MVector3D, MVector4D, MQuaternion, MMatrix4x4 # noqa
+from mmd.mmd.PmxData import PmxModel, Bone, Vertex, Material, Morph, DisplaySlot, RigidBody, Joint # noqa
+from mmd.mmd.VmdData import VmdMotion, VmdBoneFrame, VmdCameraFrame, VmdInfoIk, VmdLightFrame, VmdMorphFrame, VmdShadowFrame, VmdShowIkFrame # noqa
+from mmd.utils import MBezierUtils # noqa
+from mmd.utils.MLogger import MLogger # noqa
 
-logger = MLogger(__name__, level=1)
-
-
-def sort_by_numeric(value):
-    numbers = re.compile(r'(\d+)')
-    parts = numbers.split(value)
-    parts[1::2] = map(int, parts[1::2])
-    return parts
+logger = MLogger(__name__)
 
 
 # IK計算
 # target_pos: IKリンクの目的位置
 # ik_links: IKリンク
 def calc_IK(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, target_pos: MVector3D, ik_links: BoneLinks, max_count=10):
-    for bone_name in list(ik_links.all().keys())[1:]:
+    bone_name_list = list(ik_links.all().keys())[1:]
+
+    for bone_name in bone_name_list:
         # bfをモーションに登録
-        bf = motion.calc_bf(bone_name, fno)
+        bf = motion.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
         motion.regist_bf(bf, bone_name, fno)
     
     local_effector_pos = MVector3D()
@@ -35,12 +32,12 @@ def calc_IK(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, targ
 
     for cnt in range(max_count):
         # 規定回数ループ
-        for ik_idx, joint_name in enumerate(list(ik_links.all().keys())[1:]):
+        for ik_idx, joint_name in enumerate(bone_name_list):
             # 処理対象IKボーン
             ik_bone = ik_links.get(joint_name)
 
             # 現在のボーングローバル位置と行列を取得
-            global_3ds_dic, total_mats = calc_global_pos(model, links, motion, fno, return_matrix=True)
+            global_3ds_dic, total_mats = calc_global_pos(model, links, motion, fno, limit_links=None, return_matrix=True, is_local_x=False)
 
             # エフェクタ（末端）
             global_effector_pos = global_3ds_dic[ik_links.first_name()]
@@ -64,7 +61,7 @@ def calc_IK(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, targ
             # 回転角
             rotation_dot = MVector3D.dotProduct(basis2_effector, basis2_target)
             # 回転角度
-            rotation_radian = math.acos(max(-1, min(1, rotation_dot)))
+            rotation_radian = acos(max(-1, min(1, rotation_dot)))
 
             if abs(rotation_radian) > 0.0001:
                 # 一定角度以上の場合
@@ -78,12 +75,12 @@ def calc_IK(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, targ
                 correct_qq = MQuaternion.fromAxisAndAngle(rotation_axis, min(rotation_degree, ik_bone.degree_limit))
 
                 # ジョイントに補正をかける
-                bf = motion.calc_bf(joint_name, fno)
+                bf = motion.c_calc_bf(joint_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
                 new_ik_qq = correct_qq * bf.rotation
 
                 # IK軸制限がある場合、上限下限をチェック
                 if ik_bone.ik_limit_min != MVector3D() and ik_bone.ik_limit_max != MVector3D():
-                    x_qq, y_qq, z_qq, yz_qq = separate_local_qq(fno, bone_name, new_ik_qq, model.get_local_x_axis(ik_bone.name))
+                    x_qq, y_qq, z_qq, yz_qq = separate_local_qq(fno, ik_bone.name, new_ik_qq, model.get_local_x_axis(ik_bone.name))
 
                     logger.test("new_ik_qq: %s, x_qq: %s, y_qq: %s, z_qq: %s", new_ik_qq.toEulerAngles(), x_qq.toEulerAngles(), y_qq.toEulerAngles(), z_qq.toEulerAngles())
                     logger.test("new_ik_qq: %s, x_qq: %s, y_qq: %s, z_qq: %s", new_ik_qq.toDegree(), x_qq.toDegree(), y_qq.toDegree(), z_qq.toDegree())
@@ -196,12 +193,11 @@ def separate_local_qq(fno: int, bone_name: str, qq: MQuaternion, global_x_axis: 
 
     return x_qq, y_qq, z_qq, yz_qq
 
-
 # 正面向きの情報を含むグローバル位置
 def calc_front_global_pos(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, limit_links=None, direction_limit_links=None):
-
     # グローバル位置
-    global_3ds = org_center_global_3ds = calc_global_pos(model, links, motion, fno, limit_links)
+    (global_3ds, total_mats) = calc_global_pos(model, links, motion, fno, limit_links, False, False)
+    org_center_global_3ds = global_3ds
 
     # 指定ボーンまでの向いている回転量（回転のみの制限がかかっている場合、それを優先）
     direction_qq = calc_direction_qq(model, links, motion, fno, (limit_links if not direction_limit_links else direction_limit_links))
@@ -214,6 +210,8 @@ def calc_front_global_pos(model: PmxModel, links: BoneLinks, motion: VmdMotion, 
 
 # グローバル位置算出
 def calc_global_pos(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, limit_links=None, return_matrix=False, is_local_x=False):
+    # pfun = profile(c_calc_relative_position)
+    # cdef list trans_vs = pfun(model, links, motion, fno, limit_links)
     trans_vs = calc_relative_position(model, links, motion, fno, limit_links)
     add_qs = calc_relative_rotation(model, links, motion, fno, limit_links)
 
@@ -222,37 +220,40 @@ def calc_global_pos(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: i
 
     for n, (lname, v, q) in enumerate(zip(links.all().keys(), trans_vs, add_qs)):
         # 行列を生成
-        matrixs[n] = MMatrix4x4()
+        mm = MMatrix4x4()
         # 初期化
-        matrixs[n].setToIdentity()
+        mm.setToIdentity()
         # 移動
-        matrixs[n].translate(v)
+        mm.translate(v)
         # 回転
-        matrixs[n].rotate(q)
+        mm.rotate(q)
+        # 設定
+        matrixs[n] = mm
 
     total_mats = {}
-    global_3ds_dic = OrderedDict()
+    global_3ds_dic = {}
+    mm = MMatrix4x4()
 
     for n, (lname, v) in enumerate(zip(links.all().keys(), trans_vs)):
         if n == 0:
-            total_mats[lname] = MMatrix4x4()
-            total_mats[lname].setToIdentity()
+            mm = MMatrix4x4()
+            mm.setToIdentity()
 
         for m in range(n):
             # 最後のひとつ手前までループ
             if m == 0:
                 # 0番目の位置を初期値とする
-                total_mats[lname] = matrixs[0].copy()
+                mm = matrixs[0].copy()
             else:
                 # 自分より前の行列結果を掛け算する
-                total_mats[lname] *= matrixs[m].copy()
+                mm *= matrixs[m]
         
         # 自分は、位置だけ掛ける
-        global_3ds_dic[lname] = total_mats[lname] * v
-        
+        global_3ds_dic[lname] = mm * v
+
         # 最後の行列をかけ算する
-        total_mats[lname] *= matrixs[n].copy()
-        
+        total_mats[lname] = mm * matrixs[n]
+
         # ローカル軸の向きを調整する
         if n > 0 and is_local_x:
             # ボーン自身にローカル軸が設定されているか
@@ -275,16 +276,15 @@ def calc_global_pos(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: i
 
             total_mats[lname] *= local_x_matrix
 
-    if return_matrix:
-        # 行列も返す場合
-        return global_3ds_dic, total_mats
+    if not return_matrix:
+        return global_3ds_dic
 
-    return global_3ds_dic
+    return global_3ds_dic, total_mats
 
 
 # 指定された方向に向いた場合の位置情報を返す
-def calc_global_pos_by_direction(direction_qq: MQuaternion, target_pos_3ds_dic: OrderedDict):
-    direction_pos_dic = OrderedDict()
+def calc_global_pos_by_direction(direction_qq: MQuaternion, target_pos_3ds_dic: dict):
+    direction_pos_dic = {}
 
     for bone_name, target_pos in target_pos_3ds_dic.items():
         # # その地点の回転後の位置
@@ -314,7 +314,7 @@ def calc_relative_position(model: PmxModel, links: BoneLinks, motion: VmdMotion,
 
         if not limit_links or (limit_links and limit_links.get(link_bone_name)):
             # 上限リンクがある倍、ボーンが存在している場合のみ、モーション内のキー情報を取得
-            fill_bf = motion.calc_bf(link_bone.name, fno)
+            fill_bf = motion.c_calc_bf(link_bone.name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
         else:
             # 上限リンクでボーンがない場合、ボーンは初期値
             fill_bf = VmdBoneFrame(fno=fno)
@@ -340,7 +340,7 @@ def calc_relative_rotation(model: PmxModel, links: BoneLinks, motion: VmdMotion,
 
         if not limit_links or (limit_links and limit_links.get(link_bone_name)):
             # 上限リンクがある場合、ボーンが存在している場合のみ、モーション内のキー情報を取得
-            fill_bf = motion.calc_bf(link_bone.name, fno)
+            fill_bf = motion.c_calc_bf(link_bone.name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
         else:
             # 上限リンクでボーンがない場合、ボーンは初期値
             fill_bf = VmdBoneFrame(fno=fno)
@@ -362,29 +362,8 @@ def deform_rotation(model: PmxModel, motion: VmdMotion, bf: VmdBoneFrame):
     bone = model.bones[bf.name]
     rot = bf.rotation.normalized().copy()
 
-    if bone.fixed_axis != MVector3D():
-        # 回転角度を求める
-        if rot != MQuaternion():
-            # 回転補正
-            if "右" in bone.name and rot.x() > 0 and bone.fixed_axis.x() <= 0:
-                rot.setX(rot.x() * -1)
-                rot.setScalar(rot.scalar() * -1)
-            elif "左" in bone.name and rot.x() < 0 and bone.fixed_axis.x() >= 0:
-                rot.setX(rot.x() * -1)
-                rot.setScalar(rot.scalar() * -1)
-            # 回転補正（コロン式ミクさん等軸反転パターン）
-            elif "右" in bone.name and rot.x() < 0 and bone.fixed_axis.x() > 0:
-                rot.setX(rot.x() * -1)
-                rot.setScalar(rot.scalar() * -1)
-            elif "左" in bone.name and rot.x() > 0 and bone.fixed_axis.x() < 0:
-                rot.setX(rot.x() * -1)
-                rot.setScalar(rot.scalar() * -1)
-            
-            rot.normalize()
-        
-        # 軸固定の場合、回転を制限する
-        rot = MQuaternion.fromAxisAndAngle(bone.fixed_axis, rot.toDegree())
-    
+    rot = deform_fix_rotation(bf.name, bone.fixed_axis, rot)
+
     if bone.getExternalRotationFlag() and bone.effect_index in model.bone_indexes:
         
         effect_parent_bone = bone
@@ -393,10 +372,14 @@ def deform_rotation(model: PmxModel, motion: VmdMotion, bf: VmdBoneFrame):
 
         while cnt < 100:
             # 付与親が取得できたら、該当する付与親の回転を取得する
-            effect_bf = motion.calc_bf(effect_bone.name, bf.fno)
+            effect_bf = motion.c_calc_bf(effect_bone.name, bf.fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
             # 自身の回転量に付与親の回転量を付与率を加味して付与する
-            if effect_parent_bone.effect_factor < 0:
+            if effect_parent_bone.effect_factor == 0:
+                # ゼロの場合、とりあえず初期化
+                logger.debug(f"モデル「{model.name}」ボーン「{effect_parent_bone.name}」の付与率がゼロ")
+                rot = MQuaternion()
+            elif effect_parent_bone.effect_factor < 0:
                 # マイナス付与の場合、逆回転
                 rot = rot * (effect_bf.rotation * abs(effect_parent_bone.effect_factor)).inverted()
             else:
@@ -415,6 +398,34 @@ def deform_rotation(model: PmxModel, motion: VmdMotion, bf: VmdBoneFrame):
     return rot
 
 
+# 軸制限回転を求め直す
+def deform_fix_rotation(bone_name: str, fixed_axis: MVector3D, rot: MQuaternion):
+    if fixed_axis != MVector3D():
+        # 回転角度を求める
+        if rot != MQuaternion():
+            # 回転補正
+            if "右" in bone_name and rot.x() > 0 and fixed_axis.x() <= 0:
+                rot.setX(rot.x() * -1)
+                rot.setScalar(rot.scalar() * -1)
+            elif "左" in bone_name and rot.x() < 0 and fixed_axis.x() >= 0:
+                rot.setX(rot.x() * -1)
+                rot.setScalar(rot.scalar() * -1)
+            # 回転補正（コロン式ミクさん等軸反転パターン）
+            elif "右" in bone_name and rot.x() < 0 and fixed_axis.x() > 0:
+                rot.setX(rot.x() * -1)
+                rot.setScalar(rot.scalar() * -1)
+            elif "左" in bone_name and rot.x() > 0 and fixed_axis.x() < 0:
+                rot.setX(rot.x() * -1)
+                rot.setScalar(rot.scalar() * -1)
+            
+            rot.normalize()
+        
+        # 軸固定の場合、回転を制限する
+        rot = MQuaternion.fromAxisAndAngle(fixed_axis, rot.toDegree())
+
+    return rot
+
+
 # 指定されたボーンまでの回転量
 def calc_direction_qq(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, limit_links=None):
     add_qs = calc_relative_rotation(model, links, motion, fno, limit_links)
@@ -425,27 +436,12 @@ def calc_direction_qq(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno:
 
     return total_qq.normalized()
 
-# ファイルのエンコードを取得する
-def get_file_encoding(file_path):
 
-    try: 
-        f = open(file_path, "rb")
-        fbytes = f.read()
-        f.close()
-    except:
-        raise Exception("unknown encoding!")
-        
-    codelst = ('utf_8', 'shift-jis')
-    
-    for encoding in codelst:
-        try:
-            fstr = fbytes.decode(encoding) # bytes文字列から指定文字コードの文字列に変換
-            fstr = fstr.encode('utf-8') # uft-8文字列に変換
-            # 問題なく変換できたらエンコードを返す
-            logger.debug("%s: encoding: %s", file_path, encoding)
-            return encoding
-        except Exception as e:
-            print(e)
-            pass
-            
-    raise Exception("unknown encoding!")
+# 数値でソート
+def sort_by_numeric(value):
+    numbers = re.compile(r'(\d+)')
+    parts = numbers.split(value)
+    parts[1::2] = map(int, parts[1::2])
+    return parts
+
+

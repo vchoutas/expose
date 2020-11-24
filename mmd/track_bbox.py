@@ -16,7 +16,7 @@ from tqdm import tqdm
 from lighttrack.detector.detector_yolov3 import inference_yolov3_from_img
 
 # import GCN utils
-from lighttrack.graph.visualize_pose_matching import graph_pair_to_data, pose_matching, keypoints_to_graph
+from lighttrack.graph.visualize_pose_matching import graph_pair_to_data, keypoints_to_graph
 
 # 姿勢推定用
 from lighttrack.network_mobile_deconv import Network
@@ -25,212 +25,235 @@ from lighttrack.HPE.config import cfg
 from lighttrack.lib.tfflat.base import Tester
 
 from lighttrack.visualizer.detection_visualizer import draw_bbox
-
-from miu.utils.MLogger import MLogger
-from miu.utils.MServiceUtils import sort_by_numeric
-import miu.config as mconfig
+from lighttrack.graph.visualize_pose_matching import Pose_Matcher
+from mmd.utils.MLogger import MLogger
+from mmd.utils.MServiceUtils import sort_by_numeric
 
 flag_flip = True
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-logger = MLogger(__name__, level=MLogger.DEBUG)
+logger = MLogger(__name__)
 
 def execute(args):
-    logger.info(f'人物追跡処理開始: {args.process_dir}', decoration=MLogger.DECORATION_BOX)
+    try:
+        logger.info('人物追跡処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
-    if not os.path.exists(args.process_dir):
-        logger.error("指定された処理用ディレクトリパスが存在しません。: {0}".format(args.process_dir))
-        return
+        if not os.path.exists(args.img_dir):
+            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            return False
 
-    args.bbox_thresh = 0.4
-    args.test_model = "lighttrack/weights/mobile-deconv/snapshot_296.ckpt"
+        if not os.path.exists(args.tracking_config):
+            logger.error("指定された人物追跡設定ファイルが存在しません。: %s", args.tracking_config, decoration=MLogger.DECORATION_BOX)
+            return False
 
-    pose_estimator = Tester(Network(), cfg)
-    pose_estimator.load_weights(args.test_model)
+        if not os.path.exists(f"{args.tracking_model}.meta") or not os.path.exists(f"{args.tracking_model}.index") or not os.path.exists(f"{args.tracking_model}.data-00000-of-00001"):
+            model_dir_path = os.path.abspath(str(pathlib.Path(args.tracking_model).parent))
+            logger.error("追跡に必要な学習モデルが見つかりません。\nモデルディレクトリパス: %s\n上記ディレクトリの中に、%sから始まる3ファイルがある事を確認してください", 
+                        model_dir_path, "snapshot_296.ckpt", decoration=MLogger.DECORATION_BOX)
+            return False
 
-    args.nms_method = 'nms'
-    args.nms_thresh = 1.
-    args.min_scores = 1e-10
-    args.min_box_size = 0.
-    args.draw_threshold = 0.2
+        try:
+            pose_matcher = Pose_Matcher(args)
+            from lighttrack.graph.visualize_pose_matching import pose_matching
+        except Exception as e:
+            logger.error("人物追跡設定ファイル読み込み失敗", e, decoration=MLogger.DECORATION_BOX)
+            return False
 
-    args.keyframe_interval = 40 # choice examples: [2, 3, 5, 8, 10, 20, 40, 100, ....]
-    args.enlarge_scale = 0.2 # how much to enlarge the bbox before pose estimation
-    args.pose_matching_threshold = 0.5
+        pose_estimator = Tester(Network(), cfg)
+        pose_estimator.load_weights(args.tracking_model)
 
-    process_bbox_path = os.path.join(args.process_dir, "bbox.mp4")
-    process_img_path = os.path.join(args.process_dir, "**", "frame_*.png")
-    process_img_paths = glob.glob(process_img_path)
-    img_nums = len(process_img_paths)
+        args.bbox_thresh = 0.4
 
-    # process the frames sequentially
-    bbox_dets_list = []
-    frame_prev = -1
-    frame_cur = 0
-    img_id = -1
-    next_id = 0
-    bbox_dets_list_list = []
-    bbox_list_prev_frame = None
-    num_dets = 0
-    width = 0
-    height = 0
-    
-    for img_id in tqdm(range(img_nums), "人物追跡中 ..."):
-        img_path = process_img_paths[img_id]
-        out_frame = cv2.imread(img_path)
-        width = out_frame.shape[1]
-        height = out_frame.shape[0]
+        args.nms_method = 'nms'
+        args.nms_thresh = 1.
+        args.min_scores = 1e-10
+        args.min_box_size = 0.
+        args.draw_threshold = 0.2
 
-        bbox_json_path = os.path.join(str(pathlib.Path(img_path).parent), f"bbox_{img_id:012}.json")
-        bbox_img_path = os.path.join(str(pathlib.Path(img_path).parent), f"bbox_{img_id:012}.png")
+        args.keyframe_interval = 40 # choice examples: [2, 3, 5, 8, 10, 20, 40, 100, ....]
+        args.enlarge_scale = 0.2 # how much to enlarge the bbox before pose estimation
+        args.pose_matching_threshold = 0.5
 
-        bbox_dets_list = []  # keyframe: start from empty
+        process_bbox_path = os.path.join(args.img_dir, "bbox.mp4")
+        process_img_path = os.path.join(args.img_dir, "**", "frame_*.png")
+        process_img_paths = glob.glob(process_img_path)
+        img_nums = len(process_img_paths)
 
-        # bbox抽出
-        human_candidates = inference_yolov3_from_img(out_frame)
-        num_dets = len(human_candidates)
+        # process the frames sequentially
+        bbox_dets_list = []
+        frame_prev = -1
+        frame_cur = 0
+        img_id = -1
+        next_id = 0
+        bbox_dets_list_list = []
+        bbox_list_prev_frame = None
+        num_dets = 0
+        width = 0
+        height = 0
 
-        # bboxが見つからなかった場合、一旦INDEXクリア
-        if num_dets <= 0:
-            # add empty result
-            bbox_det_dict = {"img_id":img_id,
-                                "det_id":  0,
-                                "track_id": None,
-                                "imgpath": img_path,
-                                "bbox": [0, 0, 2, 2]}
-            bbox_dets_list.append(bbox_det_dict)
-            bbox_dets_list_list.append(bbox_dets_list)
+        logger.info("人物追跡開始", decoration=MLogger.DECORATION_BOX)
 
-            flag_mandatory_keyframe = True
-            continue
+        for img_id in tqdm(range(img_nums)):
+            img_path = process_img_paths[img_id]
+            out_frame = cv2.imread(img_path)
+            width = out_frame.shape[1]
+            height = out_frame.shape[0]
 
-        if img_id > 0:   # First frame does not have previous frame
-            bbox_list_prev_frame = bbox_dets_list_list[img_id - 1].copy()
+            bbox_json_path = os.path.join(str(pathlib.Path(img_path).parent), f"bbox_{img_id:012}.json")
+            bbox_img_path = os.path.join(str(pathlib.Path(img_path).parent), f"bbox_{img_id:012}.png")
 
-        # For each candidate, perform pose estimation and data association based on Spatial Consistency (SC)
-        for det_id in range(num_dets):
-            # obtain bbox position and track id
-            bbox_det = human_candidates[det_id]
+            bbox_dets_list = []  # keyframe: start from empty
 
-            # enlarge bbox by 20% with same center position
-            bbox_x1y1x2y2 = xywh_to_x1y1x2y2(bbox_det)
-            bbox_in_xywh = enlarge_bbox(bbox_x1y1x2y2, args.enlarge_scale)
-            bbox_det = x1y1x2y2_to_xywh(bbox_in_xywh)
+            # bbox抽出
+            human_candidates = inference_yolov3_from_img(out_frame)
+            num_dets = len(human_candidates)
 
-            # Keyframe: use provided bbox
-            if bbox_invalid(bbox_det):
-                track_id = None # this id means null
-                keypoints = []
-                bbox_det = [0, 0, 2 ,2]
-                # update current frame bbox
+            # bboxが見つからなかった場合、一旦INDEXクリア
+            if num_dets <= 0:
+                # add empty result
                 bbox_det_dict = {"img_id":img_id,
-                                    "det_id":det_id,
-                                    "track_id": track_id,
-                                    "imgpath": img_path,
-                                    "bbox":bbox_det}
+                                 "det_id":  0,
+                                 "track_id": None,
+                                 "imgpath": img_path,
+                                 "bbox": [0, 0, 2, 2]}
                 bbox_dets_list.append(bbox_det_dict)
+                bbox_dets_list_list.append(bbox_dets_list)
+
+                flag_mandatory_keyframe = True
                 continue
 
-            if img_id == 0:   # First frame, all ids are assigned automatically
-                track_id = next_id
-                next_id += 1
-            else:
-                track_id, match_index = get_track_id_SpatialConsistency(bbox_det, bbox_list_prev_frame)
+            if img_id > 0:   # First frame does not have previous frame
+                bbox_list_prev_frame = bbox_dets_list_list[img_id - 1].copy()
 
-                if track_id != -1:  # if candidate from prev frame matched, prevent it from matching another
-                    del bbox_list_prev_frame[match_index]
+            # For each candidate, perform pose estimation and data association based on Spatial Consistency (SC)
+            for det_id in range(num_dets):
+                # obtain bbox position and track id
+                bbox_det = human_candidates[det_id]
 
-            # update current frame bbox
-            bbox_det_dict = {"img_id":img_id,
-                                "det_id":det_id,
-                                "track_id":track_id,
-                                "imgpath": img_path,
-                                "bbox":bbox_det}
-            bbox_dets_list.append(bbox_det_dict)
+                # enlarge bbox by 20% with same center position
+                bbox_x1y1x2y2 = xywh_to_x1y1x2y2(bbox_det)
+                bbox_in_xywh = enlarge_bbox(bbox_x1y1x2y2, args.enlarge_scale)
+                bbox_det = x1y1x2y2_to_xywh(bbox_in_xywh)
 
-        keypoints_list_prev_frame = []
+                # Keyframe: use provided bbox
+                if bbox_invalid(bbox_det):
+                    track_id = None # this id means null
+                    keypoints = []
+                    bbox_det = [0, 0, 2 ,2]
+                    # update current frame bbox
+                    bbox_det_dict = {"img_id":img_id,
+                                     "det_id":det_id,
+                                     "track_id": track_id,
+                                     "imgpath": img_path,
+                                     "bbox":bbox_det}
+                    bbox_dets_list.append(bbox_det_dict)
+                    continue
 
-        if bbox_list_prev_frame and len(bbox_list_prev_frame) > 0:
-            # まだ残っている場合、前回分のポーズ解析を行う
-            for bbox_det_dict in bbox_list_prev_frame:
-                keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
-
-                # update current frame keypoints
-                keypoints_dict = {"img_id":img_id,
-                                  "det_id":bbox_det_dict["det_id"],
-                                  "track_id":bbox_det_dict["track_id"],
-                                  "imgpath": img_path,
-                                  "keypoints":keypoints}
-                keypoints_list_prev_frame.append(keypoints_dict)
-
-        # For candidate that is not assopciated yet, perform data association based on Pose Similarity (SGCN)
-        for det_id in range(num_dets):
-            bbox_det_dict = bbox_dets_list[det_id]
-            assert(det_id == bbox_det_dict["det_id"])
-
-            if bbox_det_dict["track_id"] == -1:    # this id means matching not found yet
-                # この時だけ、ポーズ解析
-                keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
-
-                track_id, match_index = get_track_id_SGCN(args, bbox_det_dict["bbox"], bbox_list_prev_frame,
-                                                          keypoints, keypoints_list_prev_frame)
-
-                if track_id != -1:  # if candidate from prev frame matched, prevent it from matching another
-                    del bbox_list_prev_frame[match_index]
-                    bbox_det_dict["track_id"] = track_id
-
-                # if still can not find a match from previous frame, then assign a new id
-                if track_id == -1 and not bbox_invalid(bbox_det_dict["bbox"]):
-                    bbox_det_dict["track_id"] = next_id
+                if img_id == 0:   # First frame, all ids are assigned automatically
+                    track_id = next_id
                     next_id += 1
-        
-        # if bbox_list_prev_frame and len(bbox_list_prev_frame) > 0:
-        #     # bboxが抽出できなかった場合、前回人物が残るので、とりあえず引き継ぐ
-        #     for bbox_det_dict in bbox_list_prev_frame:
-        #         bbox_dets_list.append(bbox_det_dict)
+                else:
+                    track_id, match_index = get_track_id_SpatialConsistency(bbox_det, bbox_list_prev_frame)
 
-        # JSONデータ整形
-        json_data = pose_to_standard_mot(img_id, bbox_dets_list)
+                    if track_id != -1:  # if candidate from prev frame matched, prevent it from matching another
+                        del bbox_list_prev_frame[match_index]
 
-        # JSON出力
-        with open(bbox_json_path, "w") as f:
-            json.dump(json_data, f, indent=4)
+                # update current frame bbox
+                bbox_det_dict = {"img_id":img_id,
+                                 "det_id":det_id,
+                                 "track_id":track_id,
+                                 "imgpath": img_path,
+                                 "bbox":bbox_det}
+                bbox_dets_list.append(bbox_det_dict)
 
-        # bbox描画
-        for det_id in range(num_dets):
-            bbox_det_dict = bbox_dets_list[det_id]
+            keypoints_list_prev_frame = []
 
-            candidates = json_data["candidates"]
-            for candidate in candidates:
-                bbox = np.array(candidate["det_bbox"]).astype(int)
-                score = candidate["det_score"]
-                if score < args.draw_threshold: continue
+            if bbox_list_prev_frame and len(bbox_list_prev_frame) > 0:
+                # まだ残っている場合、前回分のポーズ解析を行う
+                for bbox_det_dict in bbox_list_prev_frame:
+                    keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
 
-                track_id = candidate["track_id"]
-                out_frame = draw_bbox(out_frame, bbox, score, None, track_id = track_id)
+                    # update current frame keypoints
+                    keypoints_dict = {"img_id":img_id,
+                                      "det_id":bbox_det_dict["det_id"],
+                                      "track_id":bbox_det_dict["track_id"],
+                                      "imgpath": img_path,
+                                      "keypoints":keypoints}
+                    keypoints_list_prev_frame.append(keypoints_dict)
 
-        # 画像出力
-        cv2.imwrite(bbox_img_path, out_frame)
+            # For candidate that is not assopciated yet, perform data association based on Pose Similarity (SGCN)
+            for det_id in range(num_dets):
+                bbox_det_dict = bbox_dets_list[det_id]
+                assert(det_id == bbox_det_dict["det_id"])
 
-        # update frame
-        bbox_dets_list_list.append(bbox_dets_list)
-        frame_prev = frame_cur
+                if bbox_det_dict["track_id"] == -1:    # this id means matching not found yet
+                    # この時だけ、ポーズ解析
+                    keypoints = inference_keypoints(pose_estimator, bbox_det_dict)[0]["keypoints"]
 
-    logger.info(f'トラッキング結果生成:', decoration=MLogger.DECORATION_LINE)
+                    track_id, match_index = get_track_id_SGCN(args, bbox_det_dict["bbox"], bbox_list_prev_frame,
+                                                            keypoints, keypoints_list_prev_frame)
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(process_bbox_path, fourcc, 30.0, (width, height))
+                    if track_id != -1:  # if candidate from prev frame matched, prevent it from matching another
+                        del bbox_list_prev_frame[match_index]
+                        bbox_det_dict["track_id"] = track_id
 
-    # トラッキングmp4合成
-    for file_path in tqdm(sorted(glob.glob(os.path.join(args.process_dir, "**", "bbox_*.png")), key=sort_by_numeric), "トラッキング動画生成 ..."):
-        # フレーム
-        frame = cv2.imread(file_path)
-        out.write(frame)
+                    # if still can not find a match from previous frame, then assign a new id
+                    if track_id == -1 and not bbox_invalid(bbox_det_dict["bbox"]):
+                        bbox_det_dict["track_id"] = next_id
+                        next_id += 1
+            
+            # if bbox_list_prev_frame and len(bbox_list_prev_frame) > 0:
+            #     # bboxが抽出できなかった場合、前回人物が残るので、とりあえず引き継ぐ
+            #     for bbox_det_dict in bbox_list_prev_frame:
+            #         bbox_dets_list.append(bbox_det_dict)
 
-    out.release()
-    cv2.destroyAllWindows()
+            # JSONデータ整形
+            json_data = pose_to_standard_mot(img_id, bbox_dets_list)
 
-    logger.info(f'人物追跡処理終了: {process_bbox_path}', decoration=MLogger.DECORATION_BOX)
+            # JSON出力
+            with open(bbox_json_path, "w") as f:
+                json.dump(json_data, f, indent=4)
+
+            # bbox描画
+            for det_id in range(num_dets):
+                bbox_det_dict = bbox_dets_list[det_id]
+
+                candidates = json_data["candidates"]
+                for candidate in candidates:
+                    bbox = np.array(candidate["det_bbox"]).astype(int)
+                    score = candidate["det_score"]
+                    if score < args.draw_threshold: continue
+
+                    track_id = candidate["track_id"]
+                    out_frame = draw_bbox(out_frame, bbox, score, None, track_id = track_id)
+
+            # 画像出力
+            cv2.imwrite(bbox_img_path, out_frame)
+
+            # update frame
+            bbox_dets_list_list.append(bbox_dets_list)
+            frame_prev = frame_cur
+
+        logger.info('トラッキング結果生成開始', decoration=MLogger.DECORATION_BOX)
+
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(process_bbox_path, fourcc, 30.0, (width, height))
+
+        # トラッキングmp4合成
+        for file_path in tqdm(sorted(glob.glob(os.path.join(args.img_dir, "**", "bbox_*.png")), key=sort_by_numeric)):
+            # フレーム
+            frame = cv2.imread(file_path)
+            out.write(frame)
+
+        out.release()
+        cv2.destroyAllWindows()
+
+        logger.info('人物追跡処理終了: %s', process_bbox_path, decoration=MLogger.DECORATION_BOX)
+
+        return True
+    except Exception as e:
+        logger.critical("人物追跡で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
+        return False
 
 
 def inference_keypoints(pose_estimator, test_data):
@@ -388,21 +411,21 @@ def pose_to_standard_mot(img_id, bbox_dets_list):
 
 def get_pose_matching_score(keypoints_A, keypoints_B, bbox_A, bbox_B):
     if keypoints_A == [] or keypoints_B == []:
-        print("graph not correctly generated!")
+        logger.debug("graph not correctly generated!")
         return sys.maxsize
 
     if bbox_invalid(bbox_A) or bbox_invalid(bbox_B):
-        print("graph not correctly generated!")
+        logger.debug("graph not correctly generated!")
         return sys.maxsize
 
     graph_A, flag_pass_check = keypoints_to_graph(keypoints_A, bbox_A)
     if flag_pass_check is False:
-        print("graph not correctly generated!")
+        logger.debug("graph not correctly generated!")
         return sys.maxsize
 
     graph_B, flag_pass_check = keypoints_to_graph(keypoints_B, bbox_B)
     if flag_pass_check is False:
-        print("graph not correctly generated!")
+        logger.debug("graph not correctly generated!")
         return sys.maxsize
 
     sample_graph_pair = (graph_A, graph_B)
@@ -529,18 +552,3 @@ def bbox_invalid(bbox):
     if bbox[2] <= 0 or bbox[3] <= 0 or bbox[2] > 2000 or bbox[3] > 2000:
         return True
     return False
-
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--process-dir', type=str, dest='process_dir', help='process dir path')
-    parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='log level')
-
-    args = parser.parse_args()
-
-    MLogger.initialize(level=args.verbose, is_file=True)
-
-    execute(args)
-

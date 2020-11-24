@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from ast import parse
 import os
 import argparse
 
@@ -51,9 +52,7 @@ from expose.data.targets.keypoints import body_model_to_dset, ALL_CONNECTIONS, K
 import numpy as np
 from tqdm import tqdm
 
-from miu.utils.MLogger import MLogger
-from miu.utils.MServiceUtils import sort_by_numeric
-import miu.config as mconfig
+from mmd.utils.MLogger import MLogger
 
 # 指数表記なし、有効小数点桁数6、30を超えると省略あり、一行の文字数200
 np.set_printoptions(suppress=True, precision=6, threshold=30, linewidth=200)
@@ -71,51 +70,63 @@ logger = MLogger(__name__, level=MLogger.DEBUG)
 
 
 def execute(args):
-    logger.info(f'人物姿勢推定開始: {args.process_dir}', decoration=MLogger.DECORATION_BOX)
+    try:
+        logger.info('人物姿勢推定開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
-    if not os.path.exists(args.process_dir):
-        logger.error("指定された処理用ディレクトリパスが存在しません。: {0}".format(args.process_dir))
-        return
+        if not os.path.exists(args.img_dir):
+            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            return False
 
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
 
-    show = args.show
-    pause = args.pause
-    focal_length = args.focal_length
-    save_vis = args.save_vis
-    save_params = args.save_params
-    save_mesh = args.save_mesh
-    degrees = args.degrees
-    expose_batch = args.expose_batch
-    rcnn_batch = args.rcnn_batch
+        parser = get_parser()
+        argv = parser.parse_args(args=[])
 
-    cfg.merge_from_file(args.exp_cfg)
-    cfg.merge_from_list(args.exp_opts)
+        show = argv.show
+        pause = argv.pause
+        focal_length = argv.focal_length
+        save_vis = argv.save_vis
+        save_params = argv.save_params
+        save_mesh = argv.save_mesh
+        degrees = argv.degrees
+        expose_batch = argv.expose_batch
+        rcnn_batch = argv.rcnn_batch
 
-    cfg.datasets.body.batch_size = expose_batch
+        cfg.merge_from_file(argv.exp_cfg)
+        cfg.merge_from_list(argv.exp_opts)
 
-    cfg.is_training = False
-    cfg.datasets.body.splits.test = args.datasets
-    use_face_contour = cfg.datasets.use_face_contour
-    set_face_contour(cfg, use_face_contour=use_face_contour)
+        cfg.datasets.body.batch_size = expose_batch
 
-    output_folder = os.path.join(args.process_dir, "pose")
+        cfg.is_training = False
+        cfg.datasets.body.splits.test = argv.datasets
+        use_face_contour = cfg.datasets.use_face_contour
+        set_face_contour(cfg, use_face_contour=use_face_contour)
 
-    with threadpool_limits(limits=1):
-        main(
-            args, 
-            cfg,
-            show=show,
-            output_folder=output_folder,
-            pause=pause,
-            focal_length=focal_length,
-            save_vis=save_vis,
-            save_mesh=save_mesh,
-            save_params=save_params,
-            degrees=degrees,
-            rcnn_batch=rcnn_batch,
-        )
+        output_folder = os.path.join(args.img_dir, "pose")
+
+        result = False
+        with threadpool_limits(limits=1):
+            result = main(
+                args, 
+                cfg,
+                show=show,
+                output_folder=output_folder,
+                pause=pause,
+                focal_length=focal_length,
+                save_vis=save_vis,
+                save_mesh=save_mesh,
+                save_params=save_params,
+                degrees=degrees,
+                rcnn_batch=rcnn_batch,
+            )
+
+        logger.info('人物姿勢推定終了: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        
+        return result
+    except Exception as e:
+        logger.critical("姿勢推定で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
+        return False
 
 
 @torch.no_grad()
@@ -132,23 +143,24 @@ def main(
     save_params: bool = False,
     save_mesh: bool = False,
     degrees: Optional[List[float]] = [],
-) -> None:
+) -> bool:
 
     device = torch.device('cuda')
     if not torch.cuda.is_available():
-        logger.error('CUDA is not available!')
-        sys.exit(3)
+        logger.error('CUDAが無効になっています')
+        return False
 
-    process_img_path = os.path.join(args.process_dir, "**", "frame_*.png")
+    process_img_path = os.path.join(args.img_dir, "**", "frame_*.png")
     
+    # 準備
     expose_dloader = preprocess_images(process_img_path, exp_cfg, batch_size=rcnn_batch, device=device)
 
     model = SMPLXNet(exp_cfg)
     try:
         model = model.to(device=device)
     except RuntimeError:
-        # Re-submit in case of a device error
-        sys.exit(3)
+        logger.error('学習モデルが解析出来ませんでした')
+        return False
 
     output_folder = exp_cfg.output_folder
     checkpoint_folder = osp.join(output_folder, exp_cfg.checkpoint_folder)
@@ -170,9 +182,11 @@ def main(
     if render:
         hd_renderer = HDRenderer(img_size=body_crop_size)
 
+    logger.info("姿勢推定開始（人物×フレーム数分）", decoration=MLogger.DECORATION_BOX)
+
     total_time = 0
     cnt = 0
-    for bidx, batch in enumerate(tqdm(expose_dloader, dynamic_ncols=True, desc="姿勢推定中（人物×フレーム数分）...")):
+    for bidx, batch in enumerate(tqdm(expose_dloader, dynamic_ncols=True)):
 
         full_imgs_list, body_imgs, body_targets = batch
         if full_imgs_list is None:
@@ -359,7 +373,7 @@ def main(
             fname = body_targets[idx].get_field('fname')
             idx_dir = body_targets[idx].get_field('idx_dir')
 
-            params_json_path = osp.join(args.process_dir, idx_dir, f'{fname}_joints.json')
+            params_json_path = osp.join(args.img_dir, idx_dir, f'{fname}_joints.json')
 
             out_params = dict(fname=fname)
             for key, val in stage_n_out.items():
@@ -561,7 +575,7 @@ def main(
             #         plt.pause(pause)
             #     else:
             #         plt.show()
-
+    return True
 
 
 def collate_fn(batch):
@@ -605,9 +619,11 @@ def preprocess_images(
         collate_fn=collate_fn
     )
 
+    logger.info("姿勢推定準備", decoration=MLogger.DECORATION_BOX)
+
     img_paths = []
     bboxes = []
-    for bidx, batch in enumerate(tqdm(rcnn_dloader, desc='姿勢推定準備用 ... ')):
+    for bidx, batch in enumerate(tqdm(rcnn_dloader)):
         batch['images'] = [x.to(device=device) for x in batch['images']]
 
         output = rcnn_model(batch['images'])
@@ -707,13 +723,10 @@ def undo_img_normalization(image, mean, std, add_alpha=True):
     return out_img
 
 
-
-if __name__ == '__main__':
+def get_parser():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--process-dir', type=str, dest='process_dir', help='process dir path')
-    parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='log level')
-    parser.add_argument('--exp-cfg', type=str, dest='exp_cfg', default='data/conf.yaml', help='The configuration of the experiment')
+    parser.add_argument('--exp-cfg', type=str, dest='exp_cfg', default='config/expose-config.yaml', help='The configuration of the experiment')
     parser.add_argument('--exp-opts', default=[], dest='exp_opts', nargs='*', help='Extra command line arguments')
     parser.add_argument('--datasets', nargs='+', default=['openpose'], type=str, help='Datasets to process')
     parser.add_argument('--show', default=False, type=lambda arg: arg.lower() in ['true'], help='Display the results')
@@ -725,10 +738,7 @@ if __name__ == '__main__':
     parser.add_argument('--save-vis', dest='save_vis', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save visualizations')
     parser.add_argument('--save-mesh', dest='save_mesh', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save meshes')
     parser.add_argument('--save-params', dest='save_params', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save parameters')
+    parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='log level')
 
-    args = parser.parse_args()
-
-    MLogger.initialize(level=args.verbose, is_file=True)
-
-    execute(args)
+    return parser
 

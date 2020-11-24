@@ -1,0 +1,1196 @@
+body_model:
+  body_pose:
+    param_type: cont_rot_repr
+  gender: neutral
+  global_orient:
+    param_type: cont_rot_repr
+  j14_regressor_path: data/SMPLX_to_J14.pkl
+  jaw_pose:
+    param_type: cont_rot_repr
+  left_hand_pose:
+    flat_hand_mean: false
+    num_pca_comps: 12
+    param_type: cont_rot_repr
+  mean_pose_path: data/all_means.pkl
+  model_folder: data/models/
+  num_betas: 10
+  num_expression_coeffs: 10
+  right_hand_pose:
+    flat_hand_mean: false
+    num_pca_comps: 12
+    param_type: cont_rot_repr
+  shape_mean_path: data/shape_mean.npy
+  type: smplx
+  use_compressed: true
+  use_face_contour: true
+  use_face_keypoints: true
+  use_feet_keypoints: true
+checkpoint_folder: checkpoints
+checkpoint_steps: 1000
+code_folder: code
+datasets:
+  body:
+    batch_size: 48
+    curated_fits:
+      binarization: true
+      body_thresh: 0.1
+      data_path: data/curated_fits_with_transl/
+      face_thresh: 0.4
+      hand_thresh: 0.2
+      img_folder: data/curated_fits_with_transl/images
+      joints_to_ign: []
+      metrics:
+      - v2v
+      min_hand_keypoints: 8
+      min_head_keypoints: 8
+      return_params: true
+      return_shape: true
+      use_face_contour: true
+      use_joint_conf: false
+    ehf:
+      alignments_folder: alignments
+      data_folder: data/EHF
+      img_folder: images
+      joints_to_ign:
+      - 1
+      - 9
+      - 12
+      keyp_folder: keypoints
+      metrics:
+      - v2v
+      - mpjpe14
+      - mpjpe
+      - hand_mpjpe
+      use_face_contour: true
+    lsp_test:
+      data_path: data/lsp_test
+      use_face_contour: true
+    num_workers:
+      test: 2
+      train: 8
+      val: 1
+    openpose:
+      body_thresh: 0.05
+      data_folder: data/openpose
+      hand_thresh: 0.2
+      head_thresh: 0.3
+      img_folder: images
+      keyp_folder: keypoints
+      keyp_format: coco25
+      use_face_contour: true
+    ratio_2d: 0.25
+    spin:
+      binarization: true
+      body_thresh: 0.1
+      face_thresh: 0.4
+      hand_thresh: 0.2
+      img_folder: data/SPINX/images
+      metrics: []
+      min_hand_keypoints: 8
+      min_head_keypoints: 8
+      npz_files:
+      - data/SPINX/data_npz/mpii.npz
+      - data/SPINX/data_npz/lsp.npz
+      - data/SPINX/data_npz/lspet.npz
+      - data/SPINX/data_npz/coco.npz
+      return_full_pose: false
+      return_params: true
+      return_shape: true
+      use_face_contour: true
+    spinx:
+      binarization: true
+      body_thresh: 0.1
+      face_thresh: 0.4
+      hand_thresh: 0.2
+      img_folder: data/SPINX/images
+      metrics: []
+      min_hand_keypoints: 8
+      min_head_keypoints: 8
+      npz_files:
+      - data/SPINX/mpii.npz
+      - data/SPINX/lsp.npz
+      - data/SPINX/lspet.npz
+      - data/SPINX/coco.npz
+      return_expression: true
+      return_full_pose: false
+      return_params: true
+      return_shape: true
+      return_vertices: true
+      use_face_contour: true
+      vertex_folder: data/SPINX/vertices
+    splits:
+      test:
+      - ehf
+      - threedpw
+      train:
+      - curated_fits
+      - spin
+      val:
+      - curated_fits
+      - threedpw
+    threedpw:
+      binarization: true
+      body_thresh: 0.05
+      data_path: data/3DPW/
+      img_folder: images
+      metrics:
+      - mpjpe14
+      - v2v
+      param_folder: npz_data
+      seq_folder: processed_sequence_files
+    tracks:
+      body_thresh: 0.05
+      data_folder: data/tracks
+      hand_thresh: 0.2
+      head_thresh: 0.3
+      img_folder: images
+      keyp_folder: keypoints
+      keyp_format: coco25
+      use_face_contour: true
+    transforms:
+      brightness: 0.0
+      center_jitter_dist: normal
+      center_jitter_factor: 0.0
+      contrast: 0.0
+      crop_size: 256
+      downsample_cat_factors:
+      - 1.0
+      downsample_dist: categorical
+      downsample_factor_max: 1.0
+      downsample_factor_min: 1.0
+      flip_prob: 0.5
+      hue: 0.0
+      mean:
+      - 0.485
+      - 0.456
+      - 0.406
+      noise_scale: 0.4
+      rotation_factor: 30.0
+      saturation: 0.0
+      scale_dist: normal
+      scale_factor: 0.25
+      scale_factor_max: 1.0
+      scale_factor_min: 1.0
+      std:
+      - 0.229
+      - 0.224
+      - 0.225
+    vertex_flip_correspondences: data/smplx_flip_correspondences.npz
+  hand:
+    batch_size: 64
+    freihand:
+      data_path: data/freihand/
+      file_format: npz
+      metrics:
+      - mpjpe
+      - v2v
+      return_params: true
+      return_vertices: true
+    num_workers:
+      test: 2
+      train: 8
+      val: 0
+    openpose:
+      body_thresh: 0.05
+      data_folder: data/openpose
+      hand_thresh: 0.2
+      head_thresh: 0.3
+      img_folder: images
+      is_right: false
+      keyp_folder: keypoints
+      keyp_format: coco25
+    ratio_2d: 0.25
+    scale_factor: 1.2
+    splits:
+      test: []
+      train:
+      - freihand
+      val:
+      - freihand
+    transforms:
+      brightness: 0.0
+      center_jitter_dist: uniform
+      center_jitter_factor: 0.2
+      contrast: 0.0
+      crop_size: 224
+      downsample_cat_factors:
+      - 1.0
+      - 1.2
+      - 1.5
+      - 2.0
+      - 3.0
+      - 4.0
+      downsample_dist: categorical
+      downsample_factor_max: 1.0
+      downsample_factor_min: 1.0
+      flip_prob: 0.0
+      hue: 0.0
+      mean:
+      - 0.485
+      - 0.456
+      - 0.406
+      noise_scale: 0.4
+      rotation_factor: 30.0
+      saturation: 0.0
+      scale_dist: normal
+      scale_factor: 0.25
+      scale_factor_max: 1.0
+      scale_factor_min: 1.0
+      std:
+      - 0.229
+      - 0.224
+      - 0.225
+    vertex_flip_correspondences: ''
+  head:
+    batch_size: 64
+    ffhq:
+      data_path: data/ffhq
+      img_folder: images_095
+      metrics:
+      - v2v
+      param_fname: ffhq_parameters_with_keyps.npz
+      return_vertices: true
+      split_size: 0.95
+      use_face_contour: true
+    num_workers:
+      test: 2
+      train: 8
+      val: 0
+    openpose:
+      body_thresh: 0.05
+      data_folder: data/openpose
+      hand_thresh: 0.2
+      head_thresh: 0.3
+      img_folder: images
+      keyp_folder: keypoints
+      keyp_format: coco25
+    ratio_2d: 0.5
+    scale_factor: 1.2
+    splits:
+      test: []
+      train:
+      - ffhq
+      val:
+      - ffhq
+    stirling3d:
+      data_path: data/stirling/HQ
+    transforms:
+      brightness: 0.0
+      center_jitter_dist: uniform
+      center_jitter_factor: 0.2
+      contrast: 0.0
+      crop_size: 256
+      downsample_cat_factors:
+      - 1.0
+      - 1.2
+      - 1.5
+      - 2.0
+      - 3.0
+      - 4.0
+      - 8.0
+      downsample_dist: categorical
+      downsample_factor_max: 1.0
+      downsample_factor_min: 1.0
+      flip_prob: 0.5
+      hue: 0.0
+      mean:
+      - 0.485
+      - 0.456
+      - 0.406
+      noise_scale: 0.4
+      rotation_factor: 30.0
+      saturation: 0.0
+      scale_dist: normal
+      scale_factor: 0.25
+      scale_factor_max: 1.0
+      scale_factor_min: 1.0
+      std:
+      - 0.229
+      - 0.224
+      - 0.225
+  use_equal_sampling: true
+  use_face: true
+  use_face_contour: true
+  use_hands: true
+  use_packed: true
+degrees:
+  body:
+  - 90
+  - 180
+  - 270
+  hand: []
+eval_steps: 1000
+face_vertex_ids_path: data/SMPL-X__FLAME_vertex_ids.npy
+float_dtype: float32
+fscores_thresh:
+  hand:
+  - 0.005
+  - 0.015
+hand_model:
+  gender: neutral
+  global_orient:
+    param_type: cont_rot_repr
+  hand_pose:
+    flat_hand_mean: false
+    num_pca_comps: 12
+    param_type: cont_rot_repr
+  j14_regressor_path: ''
+  mean_pose_path: data/all_means.pkl
+  model_folder: data/models
+  num_betas: 10
+  num_expression_coeffs: 10
+  return_hand_vertices_only: true
+  shape_mean_path: data/shape_mean.npy
+  type: mano
+  use_compressed: true
+  use_face_keypoints: true
+  use_feet_keypoints: true
+  vertex_idxs_path: ''
+hand_vertex_ids_path: data/MANO_SMPLX_vertex_ids.pkl
+hd_img_summary_steps: 5000
+head_model:
+  gender: neutral
+  global_orient:
+    param_type: cont_rot_repr
+  j14_regressor_path: ''
+  jaw_pose:
+    param_type: cont_rot_repr
+  mean_pose_path: data/all_means.pkl
+  model_folder: data/models
+  num_betas: 100
+  num_expression_coeffs: 50
+  return_head_vertices_only: true
+  shape_mean_path: data/shape_mean.npy
+  type: flame
+  use_compressed: true
+  use_face_contour: true
+  use_face_keypoints: true
+  use_feet_keypoints: true
+  vertex_idxs_path: data/SMPL-X__FLAME_vertex_ids.npy
+img_summary_steps: 1000
+imgs_per_row: 3
+interactive: true
+is_training: true
+j14_regressor_path: data/SMPLX_to_J14.pkl
+local_rank: 0
+log_file: /tmp/logs/
+logger_level: info
+losses:
+  body_edge_2d:
+    beta: 0.1
+    enable: 0
+    norm_type: l2
+    rho: 100.0
+    robustifier: none
+    scale: 1.0
+    size_average: true
+    threshold: 1.0
+    weight: 0.0
+  body_joints_2d:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    robustifier: none
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  body_joints_3d:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  body_pose:
+    enable: 0
+    prior:
+      num_gaussians: 8
+      path: ''
+      type: l2
+      use_max: false
+      weight: 0.0
+    type: rotation
+    weight: 1.0
+  edge:
+    enable: 0
+    est_edge_path: data/smplx/smplx_edges.npy
+    gt_edge_path: data/smplx/smplx_edges.npy
+    norm_type: l2
+    rho: 100.0
+    size_average: true
+    type: vertex-edge
+    weight: 0.0
+  expression:
+    enable: 0
+    prior:
+      barrier: log
+      epsilon: 1.0e-07
+      margin: 1.0
+      norm: l2
+      type: l2
+      use_vector: true
+      weight: 0.0
+    type: l2
+    use_conf_weight: true
+    weight: 1.0
+  face_edge_2d:
+    beta: 0.1
+    enable: 0
+    norm_type: l2
+    rho: 100.0
+    robustifier: none
+    scale: 1.0
+    size_average: true
+    threshold: 1.0
+    weight: 0.0
+  face_joints_2d:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    robustifier: none
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  face_joints_3d:
+    beta: 0.1
+    enable: 500000
+    norm_type: l1
+    rho: 100.0
+    size_average: true
+    type: keypoints
+    weight: 0.0
+  global_orient:
+    enable: 0
+    prior: {}
+    type: rotation
+    weight: 1.0
+  hand:
+    edge:
+      enable: 0
+      est_edge_path: data/mano/right_hand_edges.npy
+      gt_edge_path: data/mano/right_hand_edges.npy
+      norm_type: l2
+      rho: 100.0
+      size_average: true
+      type: vertex-edge
+      weight: 0.0
+    global_orient:
+      enable: 0
+      prior: {}
+      type: rotation
+      weight: 1.0
+    hand_edge_2d:
+      beta: 0.1
+      enable: 0
+      norm_type: l2
+      rho: 100.0
+      robustifier: none
+      scale: 1.0
+      size_average: true
+      threshold: 1.0
+      weight: 0.0
+    hand_pose:
+      enable: 0
+      prior:
+        margin: 1.0
+        num_gaussians: 6
+        path: data/priors/gmm_left_06.pkl
+        type: l2
+        weight: 0.0
+      type: rotation
+      use_conf_weight: false
+      weight: 1.0
+    joints_2d:
+      beta: 0.1
+      enable: 0
+      norm_type: l1
+      rho: 100.0
+      robustifier: none
+      size_average: true
+      type: keypoints
+      weight: 1.0
+    joints_3d:
+      beta: 0.1
+      enable: 500000
+      norm_type: l1
+      rho: 100.0
+      size_average: true
+      type: keypoints
+      weight: 1.0
+    shape:
+      enable: 0
+      prior:
+        barrier: log
+        epsilon: 1.0e-07
+        margin: 3.0
+        norm: l2
+        type: threshold
+        use_vector: true
+        weight: 1.0
+      type: l2
+      weight: 1.0
+    vertices:
+      beta: 0.1
+      enable: 0
+      rho: 100.0
+      size_average: true
+      type: weighted-l1
+      weight: 0.0
+  hand_edge_2d:
+    beta: 0.1
+    enable: 0
+    norm_type: l2
+    rho: 100.0
+    robustifier: none
+    scale: 1.0
+    size_average: true
+    threshold: 1.0
+    weight: 0.0
+  hand_joints_2d:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    robustifier: none
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  hand_joints_3d:
+    beta: 0.1
+    enable: 500000
+    norm_type: l1
+    rho: 100.0
+    size_average: true
+    type: keypoints
+    weight: 0.0
+  head:
+    edge:
+      enable: 0
+      est_edge_path: data/flame/head_edges.npy
+      gt_edge_path: data/flame/head_edges.npy
+      norm_type: l2
+      rho: 100.0
+      size_average: true
+      type: vertex-edge
+      weight: 0.0
+    edge_2d:
+      beta: 0.1
+      enable: 0
+      norm_type: l2
+      rho: 100.0
+      robustifier: none
+      scale: 0.0
+      size_average: true
+      threshold: 1.0
+      weight: 0.0
+    expression:
+      enable: 0
+      prior:
+        barrier: log
+        epsilon: 1.0e-07
+        margin: 1.0
+        norm: l2
+        type: l2
+        use_vector: true
+        weight: 0.0
+      type: l2
+      use_conf_weight: false
+      weight: 1.0
+    global_orient:
+      enable: 0
+      prior: {}
+      type: rotation
+      weight: 1.0
+    jaw_pose:
+      enable: 0
+      prior:
+        type: l2
+        weight: 0.0
+      type: rotation
+      use_conf_weight: false
+      weight: 1.0
+    joints_2d:
+      beta: 0.1
+      enable: 0.0
+      norm_type: l1
+      rho: 100.0
+      robustifier: none
+      size_average: true
+      type: keypoints
+      weight: 1.0
+    joints_3d:
+      beta: 0.1
+      enable: 0.0
+      norm_type: l1
+      rho: 100.0
+      size_average: true
+      type: keypoints
+      weight: 0.0
+    shape:
+      enable: 0
+      prior:
+        barrier: log
+        epsilon: 1.0e-07
+        margin: 3.0
+        norm: l2
+        type: threshold
+        use_vector: true
+        weight: 1.0
+      type: l2
+      weight: 1.0
+    vertices:
+      beta: 0.1
+      enable: 0
+      rho: 100.0
+      size_average: true
+      type: weighted-l1
+      weight: 0.0
+  head_crop_keypoints:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    robustifier: none
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  jaw_pose:
+    enable: 0
+    prior:
+      reduction: mean
+      type: identity
+      weight: 0.0
+    type: rotation
+    use_conf_weight: true
+    weight: 1.0
+  left_hand_crop_keypoints:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    robustifier: none
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  left_hand_pose:
+    enable: 0
+    prior:
+      num_gaussians: 6
+      path: data/priors/gmm_left_06.pkl
+      type: identity
+      weight: 0.0
+    type: rotation
+    use_conf_weight: true
+    weight: 1.0
+  right_hand_crop_keypoints:
+    beta: 0.1
+    enable: 0
+    norm_type: l1
+    rho: 100.0
+    robustifier: none
+    size_average: true
+    type: keypoints
+    weight: 1.0
+  right_hand_pose:
+    enable: 0
+    prior:
+      num_gaussians: 6
+      path: data/priors/gmm_right_06.pkl
+      type: identity
+      weight: 0.0
+    type: rotation
+    use_conf_weight: true
+    weight: 1.0
+  shape:
+    enable: 0
+    prior:
+      barrier: log
+      epsilon: 1.0e-07
+      margin: 3.0
+      norm: l2
+      type: threshold
+      use_vector: true
+      weight: 1.0
+    type: l2
+    weight: 0.001
+  stages_to_penalize:
+  - -1
+  stages_to_regularize:
+  - -1
+max_duration: 14400.0
+max_iters: .inf
+network:
+  add_expression_noise: true
+  add_hand_pose_noise: true
+  add_jaw_pose_noise: true
+  apply_hand_network_on_body: true
+  apply_hand_network_on_hands: true
+  apply_head_network_on_body: true
+  apply_head_network_on_head: true
+  attention:
+    add_hand_mean_noise: false
+    add_head_mean_noise: false
+    condition_hand_on_body:
+      finger_pose: true
+      shape: false
+      wrist_pose: true
+    condition_head_on_body:
+      expression: true
+      jaw_pose: true
+      neck_pose: false
+      shape: false
+    detach_mean: false
+    freeze_body: true
+    hand:
+      append_params: true
+      backbone:
+        fpn:
+          concat:
+            use_avg: true
+            use_max: true
+          pooling_type: concat
+        hrnet:
+          final_conv:
+            num_filters: 2048
+            num_layers: 5
+            stride: 1
+          pretrained_layers:
+          - '*'
+          pretrained_path: data/network_weights/hrnet/imagenet/hrnet_w48-8ef0771d.pth
+          stage1:
+            block: BOTTLENECK
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            num_branches: 1
+            num_channels:
+            - 64
+            num_modules: 1
+          stage2:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            num_branches: 2
+            num_channels:
+            - 48
+            - 96
+            num_modules: 1
+            subsample:
+              activ_type: relu
+              dim: 2
+              kernel_sizes:
+              - 3
+              norm_type: bn
+              num_filters:
+              - 384
+              padding: 1
+              strides:
+              - 2
+          stage3:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            - 4
+            num_branches: 3
+            num_channels:
+            - 48
+            - 96
+            - 192
+            num_modules: 4
+            subsample:
+              activ_type: relu
+              dim: 2
+              kernel_sizes:
+              - 3
+              - 3
+              norm_type: bn
+              num_filters:
+              - 192
+              - 384
+              padding: 1
+              strides:
+              - 2
+              - 2
+          stage4:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            - 4
+            - 4
+            num_branches: 4
+            num_channels:
+            - 48
+            - 96
+            - 192
+            - 384
+            num_modules: 3
+        resnet:
+          replace_stride_with_dilation: &id002
+          - false
+          - false
+          - false
+        type: resnet18
+      camera:
+        perspective:
+          focal_length: 5000
+          regress_focal_length: false
+          regress_rotation: false
+          regress_translation: false
+        pos_func: softplus
+        type: weak-persp
+        weak_persp:
+          mean_scale: 0.9
+          regress_scale: true
+          regress_translation: true
+      feature_key: avg_pooling
+      mlp:
+        activ_type: relu
+        bias_init: 0.0
+        dropout: 0.5
+        gain: 0.01
+        init_type: xavier
+        layers:
+        - 1024
+        - 1024
+        lrelu_slope: 0.2
+        norm_type: none
+        num_groups: 32
+      num_stages: 3
+      pos_func: softplus
+      pose_last_stage: true
+      return_hand_vertices_only: true
+      scale_factor: 3.0
+      use_body_shape: false
+      vertex_idxs_path: data/MANO_SMPLX_vertex_ids.pkl
+    hand_bbox_thresh: 0.4
+    hand_from_hd: true
+    hand_mean_noise_mean: 0.0
+    hand_mean_noise_std: 0.0
+    head:
+      append_params: true
+      backbone:
+        fpn:
+          concat:
+            use_avg: true
+            use_max: true
+          pooling_type: concat
+        hrnet:
+          final_conv:
+            num_filters: 2048
+            num_layers: 5
+            stride: 1
+          pretrained_layers:
+          - '*'
+          pretrained_path: data/network_weights/hrnet/imagenet/hrnet_w48-8ef0771d.pth
+          stage1:
+            block: BOTTLENECK
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            num_branches: 1
+            num_channels:
+            - 64
+            num_modules: 1
+          stage2:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            num_branches: 2
+            num_channels:
+            - 48
+            - 96
+            num_modules: 1
+            subsample:
+              activ_type: relu
+              dim: 2
+              kernel_sizes:
+              - 3
+              norm_type: bn
+              num_filters:
+              - 384
+              padding: 1
+              strides:
+              - 2
+          stage3:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            - 4
+            num_branches: 3
+            num_channels:
+            - 48
+            - 96
+            - 192
+            num_modules: 4
+            subsample:
+              activ_type: relu
+              dim: 2
+              kernel_sizes:
+              - 3
+              - 3
+              norm_type: bn
+              num_filters:
+              - 192
+              - 384
+              padding: 1
+              strides:
+              - 2
+              - 2
+          stage4:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            - 4
+            - 4
+            num_branches: 4
+            num_channels:
+            - 48
+            - 96
+            - 192
+            - 384
+            num_modules: 3
+        resnet:
+          replace_stride_with_dilation: *id002
+        type: resnet18
+      camera:
+        perspective:
+          focal_length: 5000
+          regress_focal_length: false
+          regress_rotation: false
+          regress_translation: false
+        pos_func: softplus
+        type: weak-persp
+        weak_persp:
+          mean_scale: 8.0
+          regress_scale: true
+          regress_translation: true
+      feature_key: avg_pooling
+      mlp:
+        activ_type: relu
+        bias_init: 0.0
+        dropout: 0.5
+        gain: 0.01
+        init_type: xavier
+        layers:
+        - 1024
+        - 1024
+        lrelu_slope: 0.2
+        norm_type: none
+        num_groups: 32
+      num_stages: 3
+      pos_func: softplus
+      pose_last_stage: true
+      return_head_vertices_only: true
+      scale_factor: 1.5
+      use_body_shape: false
+      vertex_idxs_path: data/SMPL-X__FLAME_vertex_ids.npy
+    head_bbox_thresh: 0.4
+    head_from_hd: true
+    head_mean_noise_mean: 0.0
+    head_mean_noise_std: 0.0
+    mask_hand_keyps: true
+    mask_head_keyps: true
+    refine_shape_from_hands: false
+    refine_shape_from_head: false
+    smplx:
+      append_params: true
+      backbone:
+        fpn:
+          concat:
+            use_avg: true
+            use_max: true
+          pooling_type: concat
+        hrnet:
+          final_conv:
+            num_filters: 2048
+            num_layers: 5
+            stride: 1
+          pretrained_layers:
+          - '*'
+          pretrained_path: data/network_weights/hrnet/imagenet/hrnet_w48-8ef0771d.pth
+          stage1:
+            block: BOTTLENECK
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            num_branches: 1
+            num_channels:
+            - 64
+            num_modules: 1
+          stage2:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            num_branches: 2
+            num_channels:
+            - 48
+            - 96
+            num_modules: 1
+            subsample:
+              activ_type: relu
+              dim: 2
+              kernel_sizes:
+              - 3
+              norm_type: bn
+              num_filters:
+              - 384
+              padding: 1
+              strides:
+              - 2
+          stage3:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            - 4
+            num_branches: 3
+            num_channels:
+            - 48
+            - 96
+            - 192
+            num_modules: 4
+            subsample:
+              activ_type: relu
+              dim: 2
+              kernel_sizes:
+              - 3
+              - 3
+              norm_type: bn
+              num_filters:
+              - 192
+              - 384
+              padding: 1
+              strides:
+              - 2
+              - 2
+          stage4:
+            block: BASIC
+            fuse_method: SUM
+            num_blocks:
+            - 4
+            - 4
+            - 4
+            - 4
+            num_branches: 4
+            num_channels:
+            - 48
+            - 96
+            - 192
+            - 384
+            num_modules: 3
+        resnet:
+          replace_stride_with_dilation: *id002
+        type: hrnet
+      camera:
+        perspective:
+          focal_length: 5000
+          regress_focal_length: false
+          regress_rotation: false
+          regress_translation: false
+        pos_func: softplus
+        type: weak-persp
+        weak_persp:
+          mean_scale: 0.9
+          regress_scale: true
+          regress_translation: true
+      feature_key: concat
+      mlp:
+        activ_type: none
+        bias_init: 0.0
+        dropout: 0.5
+        gain: 0.01
+        init_type: xavier
+        layers:
+        - 1024
+        - 1024
+        lrelu_slope: 0.2
+        norm_type: none
+        num_groups: 32
+      num_stages: 3
+      pose_last_stage: true
+    update_wrists: true
+  expression_prob: 0.3
+  expression_std: 1.0
+  hand_add_shape_noise: true
+  hand_global_rot_max: 90.0
+  hand_global_rot_min: -90.0
+  hand_global_rot_noise_prob: 0.3
+  hand_noise_prob: 0.3
+  hand_pose_std: 1.0
+  hand_randomize_global_orient: true
+  hand_shape_prob: 0.3
+  hand_shape_std: 1.0
+  head_add_shape_noise: true
+  head_global_rot_max: 45.0
+  head_global_rot_min: -45.0
+  head_global_rot_noise_prob: 0.3
+  head_randomize_global_orient: true
+  head_shape_prob: 0.3
+  head_shape_std: 1.0
+  jaw_noise_prob: 0.3
+  jaw_pose_max: 45.0
+  jaw_pose_min: 0.0
+  num_hand_components: 3
+  predict_body: true
+  type: attention
+  use_sync_bn: false
+num_gpus: 1
+optim:
+  adam:
+    amsgrad: false
+    betas:
+    - 0.9
+    - 0.999
+    eps: 1.0e-08
+  bias_lr_factor: 1.0
+  lr: 0.0001
+  num_epochs: 3000
+  offsets_decay: 0.0001
+  rmsprop:
+    alpha: 0.99
+  scheduler:
+    gamma: 0.1
+    milestones:
+    - 60
+    - 100
+    step_size: 1000
+    type: multi-step-lr
+    warmup_factor: 0.03333333333333333
+    warmup_iters: 500
+    warmup_method: linear
+  sgd:
+    momentum: 0.9
+    nesterov: true
+  type: adam
+  weight_decay: 0.0001
+  weight_decay_bias: 0.0
+output_folder: data
+plot_conf_thresh: 0.3
+pretrained: ''
+results_folder: results
+save_mesh_summary: false
+save_part_v2v: false
+smplx_valid_verts_fn: data/smplx_valid_verts.npz
+summary_folder: summaries
+summary_steps: 100
+use_adv_training: false
+use_cuda: true
+use_hands_for_shape: false

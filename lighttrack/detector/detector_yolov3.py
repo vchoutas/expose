@@ -19,7 +19,7 @@ from torch.autograd import Variable
 
 config_path = "lighttrack/detector/config/yolov3.cfg"
 weights_path = "lighttrack/weights/YOLOv3/yolov3.weights"
-conf_thres = 0.8
+conf_thres = 0.6
 nms_thres = 0.4
 batch_size = 1
 n_cpu = 8

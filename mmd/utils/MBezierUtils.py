@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-from miu.module.MMath import MRect, MVector2D, MVector3D, MVector4D, MQuaternion, MMatrix4x4 # noqa
-from miu.utils.MLogger import MLogger # noqa
+from mmd.module.MMath import MRect, MVector2D, MVector3D, MVector4D, MQuaternion, MMatrix4x4 # noqa
+from mmd.utils.MLogger import MLogger # noqa
 import numpy as np
 import bezier
 
@@ -36,9 +36,46 @@ MZ_y1_idxs = [6, 21, 51, 36]
 MZ_x2_idxs = [10, 25, 55, 40]
 MZ_y2_idxs = [14, 29, 59, 44]
 
+BZ_TYPE_MX = "MX"
+BZ_TYPE_MY = "MY"
+BZ_TYPE_MZ = "MZ"
+BZ_TYPE_R = "R"
+
+
+def from_bz_type(bz_type: str):
+    if bz_type == BZ_TYPE_MX:
+        return MX_x1_idxs, MX_y1_idxs, MX_x2_idxs, MX_y2_idxs
+    elif bz_type == BZ_TYPE_MY:
+        return MY_x1_idxs, MY_y1_idxs, MY_x2_idxs, MY_y2_idxs
+    elif bz_type == BZ_TYPE_MZ:
+        return MZ_x1_idxs, MZ_y1_idxs, MZ_x2_idxs, MZ_y2_idxs
+    else:
+        return R_x1_idxs, R_y1_idxs, R_x2_idxs, R_y2_idxs
+
+
+# https://github.com/vmichals/python-algos/blob/master/catmull_rom_spline.py
+def calc_catmull_rom_one_point(x: float, v0: float, v1: float, v2: float, v3: float):
+    """Computes interpolated y-coord for given x-coord using Catmull-Rom.
+    Computes an interpolated y-coordinate for the given x-coordinate between
+    the support points v1 and v2. The neighboring support points v0 and v3 are
+    used by Catmull-Rom to ensure a smooth transition between the spline
+    segments.
+    Args:
+        x: the x-coord, for which the y-coord is needed
+        v0: 1st support point
+        v1: 2nd support point
+        v2: 3rd support point
+        v3: 4th support point
+    """
+    c1 = 1. * v1
+    c2 = -.5 * v0 + .5 * v2
+    c3 = 1. * v0 + -2.5 * v1 + 2. * v2 - 0.5 * v3
+    c4 = -.5 * v0 + 1.5 * v1 + -1.5 * v2 + 0.5 * v3
+    return (((c4 * x + c3) * x + c2) * x + c1)
+
 
 # 指定したすべての値をカトマル曲線として計算する
-def calc_value_from_catmullrom(bone_name: str, fnos: int, values: list):
+def calc_value_from_catmullrom(bone_name: str, fnos: list, values: list):
     try:
         # create arrays for spline points
         y_intpol = np.empty(fnos[-1])
@@ -46,8 +83,11 @@ def calc_value_from_catmullrom(bone_name: str, fnos: int, values: list):
         # set the last x- and y-coord, the others will be set in the loop
         y_intpol[-1] = values[-1]
 
+        prev_list = fnos[:-1]
+        next_list = fnos[1:]
+
         # loop over segments (we have n-1 segments for n points)
-        for fidx, (sfno, efno) in enumerate(zip(fnos[:-1], fnos[1:])):
+        for fidx, (sfno, efno) in enumerate(zip(prev_list, next_list)):
             # loop over segments (we have n-1 segments for n points)
             res = efno - sfno
 
@@ -84,53 +124,33 @@ def calc_value_from_catmullrom(bone_name: str, fnos: int, values: list):
     except Exception as e:
         # エラーレベルは落として表に出さない
         logger.debug("カトマル曲線値生成失敗", e)
-        return []
-
-
-# https://github.com/vmichals/python-algos/blob/master/catmull_rom_spline.py
-def calc_catmull_rom_one_point(x, v0, v1, v2, v3):
-    """Computes interpolated y-coord for given x-coord using Catmull-Rom.
-    Computes an interpolated y-coordinate for the given x-coordinate between
-    the support points v1 and v2. The neighboring support points v0 and v3 are
-    used by Catmull-Rom to ensure a smooth transition between the spline
-    segments.
-    Args:
-        x: the x-coord, for which the y-coord is needed
-        v0: 1st support point
-        v1: 2nd support point
-        v2: 3rd support point
-        v3: 4th support point
-    """
-    c1 = 1. * v1
-    c2 = -.5 * v0 + .5 * v2
-    c3 = 1. * v0 + -2.5 * v1 + 2. * v2 - 0.5 * v3
-    c4 = -.5 * v0 + 1.5 * v1 + -1.5 * v2 + 0.5 * v3
-    return (((c4 * x + c3) * x + c2) * x + c1)
+        return np.empty(1)
 
 
 # 指定したすべての値を通るカトマル曲線からベジェ曲線を計算し、MMD補間曲線範囲内に収められた場合、そのベジェ曲線を返す
 def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_limit=0.01):
-    if np.isclose(np.max(np.array(values)), np.min(np.array(values)), atol=1e-3) or len(values) <= 2:
-        # すべてがだいたい同じ値（最小と最大が同じ値)か次数が1の場合、線形補間
-        return LINEAR_MMD_INTERPOLATION
-
+    if len(values) <= 2:
+        # 次数が1の場合、線形補間
+        logger.debug("次数1: values: %s", values)
+        return (LINEAR_MMD_INTERPOLATION, [])
+    
     try:
         # Xは次数（フレーム数）分移動
-        xs = np.arange(0, len(values))
+        xs = np.arange(0, len(values), dtype=np.float)
         # YはXの移動分を許容範囲とする
-        ys = values + xs[-1]
+        ys = np.array(values, dtype=np.float)
 
         # カトマル曲線をベジェ曲線に変換する
-        bz_x, bz_y = convert_catmullrom_2_bezier(np.concatenate([[None], xs, [None]]), np.concatenate([[None], ys, [None]]))
-        logger.test("bz_x: %s", bz_x)
-        logger.test("bz_y: %s", bz_y)
+        (bz_x, bz_y) = convert_catmullrom_2_bezier(np.concatenate([[None], xs, [None]]), np.concatenate([[None], ys, [None]]))
+        logger.debug("bz_x: %s, bz_y: %s", bz_x, bz_y)
 
         if len(bz_x) == 0:
             # 始点と終点が指定されていて、カトマル曲線が描けなかった場合、線形補間
-            return LINEAR_MMD_INTERPOLATION
+            logger.debug("カトマル曲線失敗: bz_x: %s", bz_x)
+            return (LINEAR_MMD_INTERPOLATION, [])
 
         # 次数
-        degree = len(bz_x) - 1
+        degree = int(len(bz_x) - 1)
         logger.test("degree: %s", degree)
 
         # すべての制御点を加味したベジェ曲線
@@ -144,7 +164,7 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
         elif degree == 3:
             # 3次の場合、そのままベジェ曲線をMMD用に補間
             joined_curve = full_curve
-        elif degree > 3:
+        else:
             # 3次より多い場合、次数を減らす
 
             reduced_curve_list = []
@@ -171,8 +191,8 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
                     # リストに追加
                     reduced_curve_list.append(reduced_curve)
 
-                bz_x = []
-                bz_y = []
+                bz_x = np.empty(0)
+                bz_y = np.empty(0)
 
                 for reduced_curve in reduced_curve_list:
                     bz_x = np.append(bz_x, reduced_curve.nodes[0])
@@ -190,7 +210,7 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
         logger.test("joined_curve: %s", joined_curve.nodes)
 
         # 全体のキーフレ
-        bezier_x = np.arange(0, len(values))[1:-1]
+        bezier_x = np.arange(0, len(values), dtype=np.float)[1:]
 
         # 元の2つのベジェ曲線との交点を取得する
         full_ys = intersect_by_x(full_curve, bezier_x)
@@ -200,11 +220,11 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
         reduced_ys = intersect_by_x(joined_curve, bezier_x)
         logger.test("f: %s, %s, reduced_ys: %s", fno, bone_name, reduced_ys)
 
-        # 交点の差を取得する
-        diff_ys = np.array(full_ys) - np.array(reduced_ys)
+        # 交点の差を取得する(前後は必ず一致)
+        diff_ys = np.concatenate([[0], np.array(full_ys) - np.array(reduced_ys)])
 
         # 差が大きい箇所をピックアップする
-        diff_large = np.where(np.abs(diff_ys) > (diff_limit * (offset + 1)), 1, 0)
+        diff_large = np.where(np.abs(diff_ys) > (diff_limit * (offset + 1)), 1, 0).astype(np.float)
         
         # 差が一定未満である場合、ベジェ曲線をMMD補間曲線に合わせる
         nodes = joined_curve.nodes
@@ -218,33 +238,46 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
 
         if np.count_nonzero(diff_large) > 0:
             # 差が大きい箇所がある場合、分割不可
-            return None
+            return (None, np.where(diff_large)[0].tolist())
 
         if not is_fit_bezier_mmd(joined_bz, offset):
             # 補間曲線がMMD補間曲線内に収まらない場合、NG
-            return None
+
+            # 差分の大きなところを返す
+            diff_large = np.where(np.abs(diff_ys) > (diff_limit * 0.5 * (offset + 1)), 1, 0).astype(np.float)            
+            if np.count_nonzero(diff_large) > 0:
+                return (None, np.where(diff_large)[0].tolist())
+
+            # 差分の大きなところを返す
+            diff_large = np.where(np.abs(diff_ys) > 0, 1, 0).astype(np.float)
+            if np.count_nonzero(diff_large) > 0:
+                return (None, np.where(diff_large)[0].tolist())
+
+            return (None, [])
         
         # オフセット込みの場合、MMD用補間曲線枠内に収める
         fit_bezier_mmd(joined_bz)
         
         # すべてクリアした場合、補間曲線採用
-        return joined_bz
+        return (joined_bz, [])
     except Exception as e:
         # エラーレベルは落として表に出さない
         logger.debug("ベジェ曲線生成失敗", e)
-        return None
+        return (None, [])
 
 
-def fit_bezier_mmd(bzs):
+def fit_bezier_mmd(bzs: list):
     for bz in bzs:
         bz.effective()
         bz.setX(0 if bz.x() < 0 else INTERPOLATION_MMD_MAX if bz.x() > INTERPOLATION_MMD_MAX else bz.x())
         bz.setY(0 if bz.y() < 0 else INTERPOLATION_MMD_MAX if bz.y() > INTERPOLATION_MMD_MAX else bz.y())
 
+    return True
+
 
 # Catmull-Rom曲線の制御点(通過点)をBezier曲線の制御点に変換する
 # http://defghi1977-onblog.blogspot.com/2014/09/catmull-rombezier.html
-def convert_catmullrom_2_bezier(xs: list, ys: list):
+def convert_catmullrom_2_bezier(xs: np.ndarray, ys: np.ndarray):
 
     bz_x = []
     bz_y = []
@@ -295,12 +328,13 @@ def convert_catmullrom_2_bezier(xs: list, ys: list):
     bz_x.append(xs[-2])
     bz_y.append(ys[-2])
 
-    return bz_x, bz_y
+    return np.array(bz_x, dtype=np.float64), np.array(bz_y, dtype=np.float64)
 
 
 # 指定された複数のXと交わるそれぞれのYを返す
-def intersect_by_x(curve, xs):
+def intersect_by_x(curve, xs: np.ndarray):
     ys = []
+
     for x in xs:
         # 交点を求める為のX線上の直線
         line1 = bezier.Curve(np.asfortranarray([[x, x], [-99999, 99999]]), degree=1)
@@ -321,7 +355,7 @@ def intersect_by_x(curve, xs):
         else:
             ys.append(0)
     
-    return ys
+    return np.array(ys, dtype=np.float)
 
 
 # 補間曲線を求める
@@ -332,7 +366,7 @@ def intersect_by_x(curve, xs):
 def evaluate(x1v: int, y1v: int, x2v: int, y2v: int, start: int, now: int, end: int):
     if (now - start) == 0 or (end - start) == 0:
         return 0, 0, 0
-        
+    
     x = (now - start) / (end - start)
     x1 = x1v / INTERPOLATION_MMD_MAX
     x2 = x2v / INTERPOLATION_MMD_MAX
@@ -342,15 +376,11 @@ def evaluate(x1v: int, y1v: int, x2v: int, y2v: int, start: int, now: int, end: 
     t = 0.5
     s = 0.5
 
+    # 二分法
     # logger.test("x1: %s, x2: %s, y1: %s, y2: %s, x: %s", x1, x2, y1, y2, x)
-
     for i in range(15):
         ft = (3 * (s * s) * t * x1) + (3 * s * (t * t) * x2) + (t * t * t) - x
         # logger.test("i: %s, 4 << i: %s, ft: %s(%s), t: %s, s: %s", i, (4 << i), ft, abs(ft) < 0.00001, t, s)
-
-        # lessさんのご指摘によりコメントアウト
-        # if abs(ft) < 0.00001:
-        #     break
 
         if ft > 0:
             t -= 1 / (4 << i)
@@ -371,7 +401,7 @@ def evaluate_by_t(x1v: int, y1v: int, x2v: int, y2v: int, start: int, end: int, 
     if (end - start) <= 1:
         # 差が1以内の場合、終了
         return start, 0, t
-
+    
     x1 = x1v / INTERPOLATION_MMD_MAX
     x2 = x2v / INTERPOLATION_MMD_MAX
     y1 = y1v / INTERPOLATION_MMD_MAX
@@ -395,7 +425,12 @@ def split_bezier_mmd(x1v: int, y1v: int, x2v: int, y2v: int, start: int, now: in
         return 0, 0, 0, False, False, LINEAR_MMD_INTERPOLATION, LINEAR_MMD_INTERPOLATION
 
     # 3次ベジェ曲線を分割する
-    x, y, t, before_bz, after_bz = split_bezier(x1v, y1v, x2v, y2v, start, now, end)
+    return_tuple = split_bezier(x1v, y1v, x2v, y2v, start, now, end)
+    x = return_tuple[0]
+    y = return_tuple[1]
+    t = return_tuple[2]
+    before_bz = return_tuple[3]
+    after_bz = return_tuple[4]
 
     # ベジェ曲線の値がMMD用に合っているかを加味して返す
     return x, y, t, is_fit_bezier_mmd(before_bz), is_fit_bezier_mmd(after_bz), before_bz, after_bz
@@ -419,7 +454,10 @@ def is_fit_bezier_mmd(bz: list, offset=0):
 # http://geom.web.fc2.com/geometry/bezier/cut-cb.html
 def split_bezier(x1v: int, y1v: int, x2v: int, y2v: int, start: int, now: int, end: int):
     # 補間曲線の進んだ時間分を求める
-    x, y, t = evaluate(x1v, y1v, x2v, y2v, start, now, end)
+    return_tuple = evaluate(x1v, y1v, x2v, y2v, start, now, end)
+    x = return_tuple[0]
+    y = return_tuple[1]
+    t = return_tuple[2]
 
     A = MVector2D(0.0, 0.0)
     B = MVector2D(x1v / INTERPOLATION_MMD_MAX, y1v / INTERPOLATION_MMD_MAX)
@@ -491,4 +529,5 @@ def round_integer(t: float):
     
     # pythonは偶数丸めなので、整数部で丸めた後、元に戻す
     return round(round(t2, -6) / 1000000)
+
 
