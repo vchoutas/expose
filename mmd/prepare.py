@@ -17,7 +17,6 @@ from skimage import io, exposure, img_as_float, img_as_ubyte
 import warnings
 
 from mmd.utils.MLogger import MLogger
-import mmd.config as mconfig
 
 logger = MLogger(__name__)
 
@@ -48,7 +47,7 @@ def execute(args):
         # 縮尺を調整
         width = int(1280)
 
-        process_img_dir = os.path.join(base_path, mconfig.PROCESS_IMG_DIR, os.path.basename(args.video_file).replace('.', '_'), \
+        process_img_dir = os.path.join(base_path, "output", os.path.basename(args.video_file).replace('.', '_'), \
                                     "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now()))
 
         # 既存は削除
@@ -58,11 +57,12 @@ def execute(args):
         # フォルダ生成
         os.makedirs(process_img_dir)
         os.makedirs(os.path.join(process_img_dir, "resize"), exist_ok=True)
+        os.makedirs(os.path.join(process_img_dir, "frames"), exist_ok=True)
 
         # リサイズpng出力先
         resize_img_path = os.path.join(process_img_dir, "resize", "resize_{0:012}.png")
         # 補間png出力先
-        process_img_path = os.path.join(process_img_dir, "{0:012}", "frame_{0:012}.png")
+        process_img_path = os.path.join(process_img_dir, "frames", "{0:012}", "frame_{0:012}.png")
 
         # 縮尺
         scale = width / W
@@ -119,7 +119,7 @@ def execute(args):
             # 最後の１つ手前（補間ができる状態）までループ
             for k in tqdm(range(round(count * (30 / fps)) - 1)):
                 # 30fps用にディレクトリ作成
-                os.makedirs(os.path.join(process_img_dir, f"{k:012}"), exist_ok=True)
+                os.makedirs(os.path.join(process_img_dir, "frames", f"{k:012}"), exist_ok=True)
 
                 # 補間した出力CNT
                 inter_cnt = k * fps_interpolation

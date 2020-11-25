@@ -12,6 +12,7 @@ class VmdWriter():
     def __init__(self, model: PmxModel, motion: VmdMotion, output_vmd_path: str):
         self.model = model
         self.motion = motion
+        self.output_vmd_path = output_vmd_path
 
     def write(self):
         """Write VMD data to a file"""

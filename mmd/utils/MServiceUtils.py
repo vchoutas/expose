@@ -437,6 +437,32 @@ def calc_direction_qq(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno:
     return total_qq.normalized()
 
 
+# ファイルのエンコードを取得する
+def get_file_encoding(file_path):
+
+    try: 
+        f = open(file_path, "rb")
+        fbytes = f.read()
+        f.close()
+    except:
+        raise Exception("unknown encoding!")
+        
+    codelst = ('utf_8', 'shift-jis')
+    
+    for encoding in codelst:
+        try:
+            fstr = fbytes.decode(encoding) # bytes文字列から指定文字コードの文字列に変換
+            fstr = fstr.encode('utf-8') # uft-8文字列に変換
+            # 問題なく変換できたらエンコードを返す
+            logger.debug("%s: encoding: %s", file_path, encoding)
+            return encoding
+        except Exception as e:
+            print(e)
+            pass
+            
+    raise Exception("unknown encoding!")
+
+
 # 数値でソート
 def sort_by_numeric(value):
     numbers = re.compile(r'(\d+)')

@@ -131,18 +131,17 @@ def validate_bbox(bbox):
 
 def keypoints_to_graph(keypoints, bbox):
     num_elements = len(keypoints)
-    num_keypoints = num_elements/3
-    assert(num_keypoints == 15)
+    num_keypoints = num_elements/2
+    assert(num_keypoints == 72)
 
     x0, y0, w, h = bbox
     flag_pass_check = True
 
-    graph = 15*[(0, 0)]
-    for id in range(15):
-        x = keypoints[3*id] - x0
-        y = keypoints[3*id+1] - y0
+    graph = 72*[(0, 0)]
+    for id in range(72):
+        x = keypoints[2*id] - x0
+        y = keypoints[2*id+1] - y0
 
-        score = keypoints[3*id+2]
         graph[id] = (int(x), int(y))
     return graph, flag_pass_check
 
@@ -286,12 +285,6 @@ def graph_pair_to_data(sample_graph_pair):
         data_numpy[1, 0, :, 0] = [x[1] for x in pose]
         data_numpy_pair.append(data_numpy)
     return data_numpy_pair[0], data_numpy_pair[1]
-
-global pose_matcher
-
-def pose_matching(graph_A_data, graph_B_data):
-    flag_match, dist = pose_matcher.inference(graph_A_data, graph_B_data)
-    return flag_match, dist
 
 
 if __name__ == "__main__":

@@ -318,7 +318,7 @@ class VmdMotion:
             prev_sep_fno = 0
 
             for fno in fnos:
-                bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
                 self.c_regist_bf(bf, bone_name, fno, copy_interpolation=False)
 
                 if not is_key and not bf.read:
@@ -351,8 +351,8 @@ class VmdMotion:
         last_fno = bone_fnos[-1] + 1
         for fno in range(1, last_fno + 1):
             for bone_name in bone_name_list:
-                prev_bf = self.c_calc_bf(bone_name, fno - 1, is_key=False, is_read=False, is_reset_interpolation=False)
-                bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                prev_bf = self.calc_bf(bone_name, fno - 1, is_key=False, is_read=False, is_reset_interpolation=False)
+                bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
                 if bf.read:
                     # 読み込みキーである場合、必ず処理対象に追加
@@ -410,9 +410,9 @@ class VmdMotion:
 
         if len(fnos) > 2:
             for fno in fnos:
-                prev_bf = self.c_calc_bf(bone_name, fno - 1, is_key=False, is_read=False, is_reset_interpolation=False)
-                now_bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
-                next_bf = self.c_calc_bf(bone_name, fno + 1, is_key=False, is_read=False, is_reset_interpolation=False)
+                prev_bf = self.calc_bf(bone_name, fno - 1, is_key=False, is_read=False, is_reset_interpolation=False)
+                now_bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                next_bf = self.calc_bf(bone_name, fno + 1, is_key=False, is_read=False, is_reset_interpolation=False)
 
                 if is_rot and now_bf.key:
                     # 前後の内積
@@ -463,7 +463,7 @@ class VmdMotion:
 
             # 全区間をフィルタにかける
             for fno in fnos:
-                now_bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                now_bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
                 if is_mov:
                     # 移動XYZそれぞれにフィルターをかける
@@ -490,7 +490,7 @@ class VmdMotion:
     # 無効なキーを物理削除する
     def remove_unkey_bf(self, data_set_no: int, bone_name: str):
         for fno in self.get_bone_fnos(bone_name):
-            bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+            bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
             if fno in self.bones[bone_name] and not bf.key:
                 del self.bones[bone_name][fno]
@@ -519,10 +519,10 @@ class VmdMotion:
 
         rot_vs = []
         mov_vs = []
-        prev_bf = self.c_calc_bf(bone_name, fnos[0], is_key=False, is_read=False, is_reset_interpolation=False)
+        prev_bf = self.calc_bf(bone_name, fnos[0], is_key=False, is_read=False, is_reset_interpolation=False)
 
         for f in fnos[1:]:
-            bf = self.c_calc_bf(bone_name, f, is_key=False, is_read=False, is_reset_interpolation=False)
+            bf = self.calc_bf(bone_name, f, is_key=False, is_read=False, is_reset_interpolation=False)
 
             rot_vs.append(bf.rotation.calcTheata(prev_bf.rotation))
             mov_vs.append(bf.position.distanceToPoint(prev_bf.position))
@@ -554,10 +554,10 @@ class VmdMotion:
             is_inflection = False
             inflection_fno = start_fno
 
-            bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+            bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
             logger.debug("*%s: f: %s, bf(%s):rot:%s", bone_name, fno, bf.fno, bf.rotation.toEulerAngles4MMD().to_log())
 
-            prev_bf = self.c_calc_bf(bone_name, start_fno, is_key=False, is_read=False, is_reset_interpolation=False)
+            prev_bf = self.calc_bf(bone_name, start_fno, is_key=False, is_read=False, is_reset_interpolation=False)
             logger.debug("*%s: f: %s, prev_bf(%s):rot:%s", bone_name, fno, prev_bf.fno, prev_bf.rotation.toEulerAngles4MMD().to_log())
 
             next_bf = None
@@ -585,7 +585,7 @@ class VmdMotion:
                                                                                   offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
 
                 if joined_rot_bzs and joined_mx_bzs and joined_my_bzs and joined_mz_bzs and bf.rotation.toEulerAngles().distanceToPoint(prev_bf.rotation.toEulerAngles()) < 90:
-                    next_bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                    next_bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
                     # 結合できた場合、補間曲線をnextに設定
                     if is_rot and len(joined_rot_bzs) > 0:
@@ -644,7 +644,7 @@ class VmdMotion:
                     #                                                                       offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
 
                     #     if joined_rot_bzs and joined_mx_bzs and joined_my_bzs and joined_mz_bzs:
-                    #         next_bf = self.c_calc_bf(bone_name, inflection_fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                    #         next_bf = self.calc_bf(bone_name, inflection_fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
                     #         # 結合できた場合、補間曲線をnextに設定
                     #         if is_rot:
@@ -755,7 +755,7 @@ class VmdMotion:
     # 補間曲線分割ありで登録
     def regist_bf(self, bf: VmdBoneFrame, bone_name: str, fno: int, copy_interpolation=False):
         # 登録対象の場合のみ、補間曲線リセットで登録する
-        regist_bf = self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=True)
+        regist_bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=True)
         regist_bf.position = bf.position.copy()
         regist_bf.rotation = bf.rotation.copy()
         regist_bf.org_rotation = bf.org_rotation.copy()
@@ -768,8 +768,8 @@ class VmdMotion:
         # 補間曲線を設定（有効なキーのみ）
         prev_fno, next_fno = self.get_bone_prev_next_fno(bone_name, fno=fno, is_key=True)
 
-        prev_bf = self.c_calc_bf(bone_name, prev_fno, is_key=False, is_read=False, is_reset_interpolation=False)
-        next_bf = self.c_calc_bf(bone_name, next_fno, is_key=False, is_read=False, is_reset_interpolation=False)
+        prev_bf = self.calc_bf(bone_name, prev_fno, is_key=False, is_read=False, is_reset_interpolation=False)
+        next_bf = self.calc_bf(bone_name, next_fno, is_key=False, is_read=False, is_reset_interpolation=False)
         self.split_bf_by_fno(bone_name, prev_bf, next_bf, fno)
 
     # 補間曲線を考慮した指定フレーム番号の位置
@@ -916,7 +916,7 @@ class VmdMotion:
             return False
 
         # 補間曲線もともに分割する
-        fill_bf = self.c_calc_bf(target_bone_name, fill_fno, is_key=False, is_read=False, is_reset_interpolation=True)
+        fill_bf = self.calc_bf(target_bone_name, fill_fno, is_key=False, is_read=False, is_reset_interpolation=True)
         fill_bf.key = True
         self.bones[target_bone_name][fill_fno] = fill_bf
 
@@ -1165,7 +1165,7 @@ class VmdMotion:
         new_motion = VmdMotion()
 
         for bone_name in self.bones.keys():
-            new_motion.bones[bone_name] = {fno: self.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False).copy()}
+            new_motion.bones[bone_name] = {fno: self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False).copy()}
         
         return new_motion
 

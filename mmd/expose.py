@@ -2,8 +2,7 @@
 from ast import parse
 import os
 import argparse
-
-
+import pathlib
 
 import sys
 import os
@@ -12,7 +11,6 @@ from typing import List, Optional
 import functools
 import glob
 import datetime
-from matplotlib.pyplot import ylabel
 
 import numpy as np
 from collections import OrderedDict, defaultdict
@@ -150,10 +148,10 @@ def main(
         logger.error('CUDAが無効になっています')
         return False
 
-    process_img_path = os.path.join(args.img_dir, "**", "frame_*.png")
+    process_img_pathes = os.path.join(args.img_dir, "frames", "**", "frame_*.png")
     
     # 準備
-    expose_dloader = preprocess_images(process_img_path, exp_cfg, batch_size=rcnn_batch, device=device)
+    expose_dloader = preprocess_images(process_img_pathes, exp_cfg, batch_size=rcnn_batch, device=device)
 
     model = SMPLXNet(exp_cfg)
     try:
@@ -206,26 +204,10 @@ def main(
         cnt += 1
         total_time += elapsed
 
-        # hd_imgs = full_imgs.images.detach().cpu().numpy().squeeze()
         body_imgs = body_imgs.detach().cpu().numpy()
         body_output = model_output.get('body')
 
         _, _, H, W = full_imgs.shape
-        # #  logger.info(f'{H}, {W}')
-        # #  H, W, _ = hd_imgs.shape
-        # if render:
-        #     hd_imgs = np.transpose(undo_img_normalization(hd_imgs, means, std),
-        #                            [0, 2, 3, 1])
-        #     hd_imgs = np.clip(hd_imgs, 0, 1.0)
-        #     right_hand_crops = body_output.get('right_hand_crops')
-        #     left_hand_crops = torch.flip(
-        #         body_output.get('left_hand_crops'), dims=[-1])
-        #     head_crops = body_output.get('head_crops')
-        #     bg_imgs = undo_img_normalization(body_imgs, means, std)
-
-        #     right_hand_crops = undo_img_normalization(right_hand_crops, means, std)
-        #     left_hand_crops = undo_img_normalization(left_hand_crops, means, std)
-        #     head_crops = undo_img_normalization(head_crops, means, std)
 
         body_output = model_output.get('body', {})
         num_stages = body_output.get('num_stages', 3)
@@ -265,22 +247,6 @@ def main(
             focal_length=focal_length,
         )
 
-        # if save_vis:
-        #     bg_hd_imgs = np.transpose(hd_imgs, [0, 3, 1, 2])
-        #     out_img['hd_imgs'] = bg_hd_imgs
-
-        # if render:
-        #     # Render the initial predictions on the original image resolution
-        #     hd_orig_overlays = hd_renderer(
-        #         model_vertices, faces,
-        #         focal_length=hd_params['focal_length_in_px'],
-        #         camera_translation=hd_params['transl'],
-        #         camera_center=hd_params['center'],
-        #         bg_imgs=bg_hd_imgs,
-        #         return_with_alpha=True,
-        #     )
-        #     out_img['hd_orig_overlay'] = hd_orig_overlays
-
         # bbox保持
         cbbox = body_targets[0].bbox.detach().cpu().numpy()
         bbox_size = np.array(body_targets[0].size)
@@ -295,105 +261,25 @@ def main(
         proj_joints = stage_n_out['proj_joints'][0].detach().cpu().numpy()
         hd_params['proj_joints'] = proj_joints
 
-        # # Render the overlays of the final prediction
-        # if render:
-        #     hd_overlays = hd_renderer(
-        #         final_model_vertices,
-        #         faces,
-        #         focal_length=hd_params['focal_length_in_px'],
-        #         camera_translation=hd_params['transl'],
-        #         camera_center=hd_params['center'],
-        #         bg_imgs=bg_hd_imgs,
-        #         return_with_alpha=True,
-        #         body_color=[0.4, 0.4, 0.7]
-        #     )
-
-        #     try:
-        #         # 横線
-        #         for x in range(img_bbox[0], img_bbox[2] + 1):
-        #             for y in [img_bbox[1], img_bbox[3] + 1]:
-        #                 if hd_overlays.shape[2] > x and hd_overlays[3] > y:
-        #                     hd_overlays[:, :, y, x] = np.array([1, 0, 0, 1])
-                
-        #         # 縦線
-        #         for x in [img_bbox[0], img_bbox[2] + 1]:
-        #             for y in range(img_bbox[1], img_bbox[3] + 1):
-        #                 if hd_overlays.shape[2] > x and hd_overlays[3] > y:
-        #                     hd_overlays[:, :, y, x] = np.array([1, 0, 0, 1])
-                
-        #         # カメラ中央
-        #         for x in range(int(hd_params['center'][0, 0] - 1), int(hd_params['center'][0, 0] + 2)):
-        #             for y in range(int(hd_params['center'][0, 1] - 1), int(hd_params['center'][0, 1] + 2)):
-        #                 if hd_overlays.shape[2] > x and hd_overlays[3] > y:
-        #                     hd_overlays[:, :, y, x] = np.array([0, 1, 0, 1])
-            
-        #         min_joints = np.min(proj_joints, axis=0)
-        #         max_joints = np.max(proj_joints, axis=0)
-        #         diff_joints = max_joints - min_joints
-        #         diff_bbox = np.array([hd_params['img_bbox'][2] - hd_params['img_bbox'][0], hd_params['img_bbox'][3] - hd_params['img_bbox'][1]])
-        #         jscale = diff_joints / diff_bbox
-        #         jscale = np.mean([jscale[0], jscale[1]])
-        #         for jidx, jname in enumerate(KEYPOINT_NAMES):
-        #             j2d = proj_joints[jidx] / jscale
-
-        #             # ジョイント
-        #             for x in range(int(hd_params['center'][0, 0] + j2d[0] - 1), int(hd_params['center'][0, 0] + j2d[0] + 2)):
-        #                 for y in range(int(hd_params['center'][0, 1] + j2d[1] - 1), int(hd_params['center'][0, 1] + j2d[1] + 2)):
-        #                     if hd_overlays.shape[2] > x and hd_overlays[3] > y:
-        #                         hd_overlays[:, :, y, x] = np.array([0, 0, 1, 1])
-            
-        #     except Exception as e:
-        #         print('hd_overlays error: %s' % e)
-        #         pass
-            
-        #     out_img['hd_overlay'] = hd_overlays
-
-        # for deg in degrees:
-        #     hd_overlays = hd_renderer(
-        #         final_model_vertices, faces,
-        #         focal_length=hd_params['focal_length_in_px'],
-        #         camera_translation=hd_params['transl'],
-        #         camera_center=hd_params['center'],
-        #         bg_imgs=bg_hd_imgs,
-        #         return_with_alpha=True,
-        #         render_bg=False,
-        #         body_color=[0.4, 0.4, 0.7],
-        #         deg=deg,
-        #     )
-        #     out_img[f'hd_rendering_{deg:03.0f}'] = hd_overlays
-
-        # if save_vis:
-        #     for key in out_img.keys():
-        #         out_img[key] = np.clip(
-        #             np.transpose(
-        #                 out_img[key], [0, 2, 3, 1]) * 255, 0, 255).astype(
-        #                     np.uint8)
-
         for idx in range(len(body_targets)):
             fname = body_targets[idx].get_field('fname')
             idx_dir = body_targets[idx].get_field('idx_dir')
 
-            params_json_path = osp.join(args.img_dir, idx_dir, f'{fname}_joints.json')
+            params_json_path = osp.join(args.img_dir, "frames", idx_dir, f'{fname}_joints.json')
 
             out_params = dict(fname=fname)
             for key, val in stage_n_out.items():
                 if torch.is_tensor(val):
                     val = val.detach().cpu().numpy()[idx]
                 out_params[key] = val
-            # for key, val in hd_params.items():
-            #     if torch.is_tensor(val):
-            #         val = val.detach().cpu().numpy()
-            #     if np.isscalar(val[idx]):
-            #         out_params[key] = val[idx].item()
-            #     else:
-            #         out_params[key] = val[idx]
 
             # json出力
             joint_dict = {}
             joint_dict["image"] = {"width": W, "height": H}
             joint_dict["depth"] = {"depth": float(hd_params["depth"][0][0])}
             joint_dict["center"] = {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}
-            joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), "width": float(hd_params["img_bbox"][2]), "height": float(hd_params["img_bbox"][3])}
+            joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), \
+                                  "width": float(hd_params["img_bbox"][2]) - float(hd_params["img_bbox"][0]), "height": float(hd_params["img_bbox"][3]) - float(hd_params["img_bbox"][1])}
             joint_dict["joints"] = {}
             joint_dict["proj_joints"] = {}
 
@@ -413,168 +299,6 @@ def main(
             with open(params_json_path, 'w') as f:
                 json.dump(joint_dict, f, indent=4)
 
-
-            # curr_out_path = osp.join(output_folder, fname)
-            # os.makedirs(curr_out_path, exist_ok=True)
-
-            # if save_vis:
-            #     for name, curr_img in out_img.items():
-            #         pil_img.fromarray(curr_img[idx]).save(
-            #             osp.join(curr_out_path, f'{name}.png'))
-
-            # if save_mesh:
-            #     # Store the mesh predicted by the body-crop network
-            #     naive_mesh = o3d.geometry.TriangleMesh()
-            #     naive_mesh.vertices = Vec3d(
-            #         model_vertices[idx] + hd_params['transl'][idx])
-            #     naive_mesh.triangles = Vec3i(faces)
-            #     mesh_fname = osp.join(curr_out_path, f'body_{fname}.ply')
-            #     o3d.io.write_triangle_mesh(mesh_fname, naive_mesh)
-
-            #     # Store the final mesh
-            #     expose_mesh = o3d.geometry.TriangleMesh()
-            #     expose_mesh.vertices = Vec3d(
-            #         final_model_vertices[idx] + hd_params['transl'][idx])
-            #     expose_mesh.triangles = Vec3i(faces)
-            #     mesh_fname = osp.join(curr_out_path, f'{fname}.ply')
-            #     o3d.io.write_triangle_mesh(mesh_fname, expose_mesh)
-
-            # if save_params:
-            #     params_fname = osp.join(curr_out_path, f'{fname}_params.npz')
-            #     out_params = dict(fname=fname)
-            #     for key, val in stage_n_out.items():
-            #         if torch.is_tensor(val):
-            #             val = val.detach().cpu().numpy()[idx]
-            #         out_params[key] = val
-            #     for key, val in hd_params.items():
-            #         if torch.is_tensor(val):
-            #             val = val.detach().cpu().numpy()
-            #         if np.isscalar(val[idx]):
-            #             out_params[key] = val[idx].item()
-            #         else:
-            #             out_params[key] = val[idx]
-
-            #     try:
-            #         for param_name in ['center']:
-            #             params_txt_fname = osp.join(curr_out_path, f'{fname}_params_{param_name}.txt')
-            #             np.savetxt(params_txt_fname, out_params[param_name])
-
-            #         for param_name in ['img_bbox']:
-            #             params_txt_fname = osp.join(curr_out_path, f'{fname}_params_{param_name}.txt')
-            #             np.savetxt(params_txt_fname, hd_params[param_name])
-
-            #         for param_name in ['joints']:
-            #             params_txt_fname = osp.join(curr_out_path, f'{fname}_params_{param_name}.json')
-                        
-            #             # json出力
-            #             joint_dict = {}
-            #             joint_dict["image"] = {"width": W, "height": H}
-            #             joint_dict["depth"] = {"depth": float(hd_params["depth"][0][0])}
-            #             joint_dict["center"] = {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}
-            #             joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), "width": float(hd_params["img_bbox"][2]), "height": float(hd_params["img_bbox"][3])}
-            #             joint_dict["joints"] = {}
-            #             joint_dict["proj_joints"] = {}
-
-            #             proj_joints = hd_params["proj_joints"]
-            #             joints = out_params["joints"]
-            #             min_joints = np.min(proj_joints, axis=0)
-            #             max_joints = np.max(proj_joints, axis=0)
-            #             diff_joints = max_joints - min_joints
-            #             diff_bbox = np.array([hd_params['img_bbox'][2] - hd_params['img_bbox'][0], hd_params['img_bbox'][3] - hd_params['img_bbox'][1]])
-            #             jscale = diff_joints / diff_bbox
-            #             jscale = np.mean([jscale[0], jscale[1]])
-            #             for jidx, jname in enumerate(KEYPOINT_NAMES):
-            #                 j2d = proj_joints[jidx] / jscale
-            #                 joint_dict["proj_joints"][jname] = {'x': float(hd_params['center'][0, 0] + j2d[0]), 'y': float(hd_params['center'][0, 1] + j2d[1])}
-            #                 joint_dict["joints"][jname] = {'x': float(joints[jidx][0]), 'y': float(-joints[jidx][1]), 'z': float(joints[jidx][2])}
-
-            #             with open(params_txt_fname, 'w') as f:
-            #                 json.dump(joint_dict, f, indent=4)
-
-            #             # 描画設定
-            #             fig = plt.figure(figsize=(15,15),dpi=100)
-            #             # 3DAxesを追加
-            #             ax = fig.add_subplot(111, projection='3d')
-
-            #             # ジョイント出力                    
-            #             ax.set_xlim3d(int(-(original_width / 2)), int(original_width / 2))
-            #             ax.set_ylim3d(0, int(original_height / 2))
-            #             ax.set_zlim3d(0, int(original_height))
-            #             ax.set(xlabel='x', ylabel='y', zlabel='z')
-
-            #             xs = []
-            #             ys = []
-            #             zs = []
-
-            #             for j3d_from_idx, j3d_to_idx in ALL_CONNECTIONS:
-            #                 jfname = KEYPOINT_NAMES[j3d_from_idx]
-            #                 jtname = KEYPOINT_NAMES[j3d_to_idx]
-
-            #                 xs = [joint_dict[jfname]['x'], joint_dict[jtname]['x']]
-            #                 ys = [joint_dict[jfname]['y'], joint_dict[jtname]['y']]
-            #                 zs = [joint_dict[jfname]['z'], joint_dict[jtname]['z']]
-
-            #                 ax.plot3D(xs, ys, zs, marker="o", ms=2, c="#0000FF")
-                        
-            #             plt.savefig(os.path.join(curr_out_path, f'{fname}_{param_name}.png'))
-            #             plt.close()
-
-            #             # posの出力
-            #             joint_names = [(0, 'pelvis'), (1, 'right_hip'), (2, 'right_knee'), (3, 'right_ankle'), \
-            #                         (6, 'left_hip'), (7, 'left_knee'), (8, 'left_ankle'), \
-            #                         (12, 'spine1'), (13, 'spine2'), (14, 'neck'), (15, 'head'), \
-            #                         (17, 'left_shoulder'), (18, 'left_elbow'), (19, 'left_wrist'), \
-            #                         (25, 'right_shoulder'), (26, 'right_elbow'), (27, 'right_wrist')
-            #                         ]
-
-            #             N = []
-            #             I = []
-
-            #             for (jnidx, iname) in joint_names:
-            #                 for jidx, smplx_jn in enumerate(KEYPOINT_NAMES):
-            #                     if smplx_jn == iname:
-            #                         N.append(jnidx)
-            #                         I.append([joint_dict[iname]['x'], joint_dict[iname]['y'], joint_dict[iname]['z']])
-
-            #             for i in np.arange( len(I) ):
-            #                 # 0: index, 1: x軸, 2:Y軸, 3:Z軸
-            #                 posf.write(str(N[i]) + " "+ str(I[i][0]) +" "+ str(I[i][2]) +" "+ str(I[i][1]) + ", ")
-
-            #             #終わったら改行
-            #             posf.write("\n")
-
-            #     except Exception as e:
-            #         print('savetxt error: %s' % e)
-            #         pass
-
-            #     np.savez_compressed(params_fname, **out_params)
-
-            # if show:
-            #     nrows = 1
-            #     ncols = 4 + len(degrees)
-            #     fig, axes = plt.subplots(
-            #         ncols=ncols, nrows=nrows, num=0,
-            #         gridspec_kw={'wspace': 0, 'hspace': 0})
-            #     axes = axes.reshape(nrows, ncols)
-            #     for ax in axes.flatten():
-            #         ax.clear()
-            #         ax.set_axis_off()
-
-            #     axes[0, 0].imshow(hd_imgs[idx])
-            #     axes[0, 1].imshow(out_img['rgb'][idx])
-            #     axes[0, 2].imshow(out_img['hd_orig_overlay'][idx])
-            #     axes[0, 3].imshow(out_img['hd_overlay'][idx])
-            #     start = 4
-            #     for deg in degrees:
-            #         axes[0, start].imshow(
-            #             out_img[f'hd_rendering_{deg:03.0f}'][idx])
-            #         start += 1
-
-            #     plt.draw()
-            #     if pause > 0:
-            #         plt.pause(pause)
-            #     else:
-            #         plt.show()
     return True
 
 

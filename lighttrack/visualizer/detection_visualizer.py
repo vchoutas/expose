@@ -67,7 +67,6 @@ def find_color_scalar(color_string):
         'red':    (0, 0, 255),
         'skyblue':(235,206,135),
         'navyblue': (128, 0, 0),
-        'azure': (255, 255, 240),
         'slate': (255, 0, 127),
         'chocolate': (30, 105, 210),
         'olive': (112, 255, 202),
@@ -79,10 +78,13 @@ def find_color_scalar(color_string):
 
 
 def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
+    if track_id < 0:
+        return img
+
     if track_id == -1:
         color = (255*rand(), 255*rand(), 255*rand())
     else:
-        color_list = ['purple', 'yellow', 'blue', 'green', 'red', 'skyblue', 'navyblue', 'azure', 'slate', 'chocolate', 'olive', 'orange', 'orchid']
+        color_list = ['purple', 'yellow', 'blue', 'green', 'red', 'skyblue', 'navyblue', 'slate', 'chocolate', 'olive', 'orange', 'orchid']
         color_name = color_list[track_id % 13]
         color = find_color_scalar(color_name)
 
@@ -92,19 +94,19 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
         color = find_color_scalar('blue')
 
     cv2.rectangle(img,
-                  (bbox[0], bbox[1]),
-                  (bbox[0]+ bbox[2], bbox[1] + bbox[3]),
+                  (int(bbox[0]), int(bbox[1])),
+                  (int(bbox[0]+ bbox[2]), int(bbox[1] + bbox[3])),
                   color = color,
                   thickness = 3)
 
-    cls_name = classes[0] if classes else ""
+    cls_name = classes[0] if classes else "none"
     font = cv2.FONT_HERSHEY_SIMPLEX
 
     if track_id == -1:
         cv2.putText(img,
                     #'{:s} {:.2f}'.format(cls_name, score),
                     '{:s}'.format(cls_name),
-                    (bbox[0], bbox[1]-5),
+                    (int(bbox[0]), int(bbox[1]-5)),
                     font,
                     fontScale=0.8,
                     color=color,
@@ -114,7 +116,7 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
         cv2.putText(img,
                     #'{:s} {:.2f}'.format("ID:"+str(track_id), score),
                     '{:s}'.format("ID:"+str(track_id)),
-                    (bbox[0], bbox[1]-5),
+                    (int(bbox[0]), int(bbox[1]-5)),
                     font,
                     fontScale=0.8,
                     color=color,
