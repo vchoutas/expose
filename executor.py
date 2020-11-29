@@ -30,9 +30,12 @@ if __name__ == "__main__":
     parser.add_argument('--img-dir', type=str, dest='img_dir', default='', help='Prepared image directory')
     parser.add_argument('--tracking-config', type=str, dest='tracking_config', default="config/tracking-config.yaml", help='Learning model for person tracking')
     parser.add_argument('--tracking-model', type=str, dest='tracking_model', default="lighttrack/weights/mobile-deconv/snapshot_296.ckpt", help='Learning model for person tracking')
+    parser.add_argument('--face-model', type=str, dest='face_model', default="data/shape_predictor_68_face_landmarks.dat", help='Learning model for person face')
     parser.add_argument('--order-file', type=str, dest='order_file', default='', help='Index ordering file path')
     parser.add_argument('--bone-config', type=str, dest='bone_config', default="config/あにまさ式ミク準標準ボーン.csv", help='MMD Model Bone csv')
+    parser.add_argument('--body-motion', type=int, dest='body_motion', default="0", help='Whether to generate body motion')
     parser.add_argument('--hand-motion', type=int, dest='hand_motion', default="0", help='Whether to generate hand motion')
+    parser.add_argument('--face-motion', type=int, dest='face_motion', default="0", help='Whether to generate face motion')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='Log level')
     parser.add_argument("--log-mode", type=int, dest='log_mode', default=0, help='Log output mode')
 
@@ -63,6 +66,16 @@ if __name__ == "__main__":
         # 人物追跡順番設定
         import mmd.order
         result = mmd.order.execute(args)
+
+    if result and "face" in args.process:
+        # 人物表情推定
+        import mmd.face
+        result = mmd.face.execute(args)
+
+    if result and "smooth" in args.process:
+        # 人物表情推定
+        import mmd.smooth
+        result = mmd.smooth.execute(args)
 
     if result and "motion" in args.process:
         # モーション生成

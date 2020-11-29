@@ -319,7 +319,7 @@ class VmdMotion:
 
             for fno in fnos:
                 bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
-                self.c_regist_bf(bf, bone_name, fno, copy_interpolation=False)
+                self.regist_bf(bf, bone_name, fno, copy_interpolation=False)
 
                 if not is_key and not bf.read:
                     # 無効化のままの場合、キーをOFFにしておく
@@ -676,7 +676,7 @@ class VmdMotion:
                         self.bones[bone_name][last_fno].interpolation = next_bf.interpolation
                         logger.debug("◇登録 %s: f: %s, next_bf(%s) rot:%s", bone_name, last_fno, next_bf.fno, next_bf.rotation.toEulerAngles4MMD().to_log())
                     else:
-                        self.c_regist_bf(next_bf, bone_name, last_fno, copy_interpolation=True)
+                        self.regist_bf(next_bf, bone_name, last_fno, copy_interpolation=True)
                         logger.debug("☆登録 %s: f: %s, next_bf(%s) rot:%s", bone_name, last_fno, next_bf.fno, next_bf.rotation.toEulerAngles4MMD().to_log())
                 
                 for f in range(start_fno + 1, last_fno):
@@ -771,6 +771,12 @@ class VmdMotion:
         prev_bf = self.calc_bf(bone_name, prev_fno, is_key=False, is_read=False, is_reset_interpolation=False)
         next_bf = self.calc_bf(bone_name, next_fno, is_key=False, is_read=False, is_reset_interpolation=False)
         self.split_bf_by_fno(bone_name, prev_bf, next_bf, fno)
+    
+    def regist_mf(self, mf: VmdMorphFrame, morph_name: str, fno: int):
+        if morph_name not in self.morphs:
+            self.morphs[morph_name] = {}
+        
+        self.morphs[morph_name][fno] = mf
 
     # 補間曲線を考慮した指定フレーム番号の位置
     # https://www55.atwiki.jp/kumiho_k/pages/15.html
