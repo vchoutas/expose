@@ -214,12 +214,12 @@ def main(
         if stage_n_out is not None:
             model_vertices = stage_n_out.get('vertices', None)
 
-        faces = stage_n_out['faces']
-        if model_vertices is not None:
-            model_vertices = model_vertices.detach().cpu().numpy()
-            camera_parameters = body_output.get('camera_parameters', {})
-            camera_scale = camera_parameters['scale'].detach()
-            camera_transl = camera_parameters['translation'].detach()
+        # faces = stage_n_out['faces']
+        # if model_vertices is not None:
+        #     model_vertices = model_vertices.detach().cpu().numpy()
+        #     camera_parameters = body_output.get('camera_parameters', {})
+        #     camera_scale = camera_parameters['scale'].detach()
+        #     camera_transl = camera_parameters['translation'].detach()
 
         out_img = OrderedDict()
 
@@ -244,58 +244,58 @@ def main(
             focal_length=focal_length,
         )
 
-        hd_imgs = full_imgs.images.detach().cpu().numpy().squeeze()
-        if render:
-            hd_imgs = np.transpose(undo_img_normalization(hd_imgs, means, std),
-                                   [0, 2, 3, 1])
-            hd_imgs = np.clip(hd_imgs, 0, 1.0)
-            right_hand_crops = body_output.get('right_hand_crops')
-            left_hand_crops = torch.flip(
-                body_output.get('left_hand_crops'), dims=[-1])
-            head_crops = body_output.get('head_crops')
-            bg_imgs = undo_img_normalization(body_imgs, means, std)
+        # hd_imgs = full_imgs.images.detach().cpu().numpy().squeeze()
+        # if render:
+        #     hd_imgs = np.transpose(undo_img_normalization(hd_imgs, means, std),
+        #                            [0, 2, 3, 1])
+        #     hd_imgs = np.clip(hd_imgs, 0, 1.0)
+        #     right_hand_crops = body_output.get('right_hand_crops')
+        #     left_hand_crops = torch.flip(
+        #         body_output.get('left_hand_crops'), dims=[-1])
+        #     head_crops = body_output.get('head_crops')
+        #     bg_imgs = undo_img_normalization(body_imgs, means, std)
 
-            right_hand_crops = undo_img_normalization(
-                right_hand_crops, means, std)
-            left_hand_crops = undo_img_normalization(
-                left_hand_crops, means, std)
-            head_crops = undo_img_normalization(head_crops, means, std)
+        #     right_hand_crops = undo_img_normalization(
+        #         right_hand_crops, means, std)
+        #     left_hand_crops = undo_img_normalization(
+        #         left_hand_crops, means, std)
+        #     head_crops = undo_img_normalization(head_crops, means, std)
 
-        if save_vis:
-            bg_hd_imgs = np.transpose(hd_imgs, [0, 3, 1, 2])
-            out_img['hd_imgs'] = bg_hd_imgs
-        if render:
-            # Render the initial predictions on the original image resolution
-            hd_orig_overlays = hd_renderer(
-                model_vertices, faces,
-                focal_length=hd_params['focal_length_in_px'],
-                camera_translation=hd_params['transl'],
-                camera_center=hd_params['center'],
-                bg_imgs=bg_hd_imgs,
-                return_with_alpha=True,
-            )            
-            out_img['hd_orig_overlay'] = hd_orig_overlays
+        # if save_vis:
+        #     bg_hd_imgs = np.transpose(hd_imgs, [0, 3, 1, 2])
+        #     out_img['hd_imgs'] = bg_hd_imgs
+        # if render:
+        #     # Render the initial predictions on the original image resolution
+        #     hd_orig_overlays = hd_renderer(
+        #         model_vertices, faces,
+        #         focal_length=hd_params['focal_length_in_px'],
+        #         camera_translation=hd_params['transl'],
+        #         camera_center=hd_params['center'],
+        #         bg_imgs=bg_hd_imgs,
+        #         return_with_alpha=True,
+        #     )            
+        #     out_img['hd_orig_overlay'] = hd_orig_overlays
 
-        # Render the overlays of the final prediction
-        if render:
-            hd_overlays = hd_renderer(
-                final_model_vertices,
-                faces,
-                focal_length=hd_params['focal_length_in_px'],
-                camera_translation=hd_params['transl'],
-                camera_center=hd_params['center'],
-                bg_imgs=bg_hd_imgs,
-                return_with_alpha=True,
-                body_color=[0.4, 0.4, 0.7]
-            )
-            out_img['hd_overlay'] = hd_overlays
+        # # Render the overlays of the final prediction
+        # if render:
+        #     hd_overlays = hd_renderer(
+        #         final_model_vertices,
+        #         faces,
+        #         focal_length=hd_params['focal_length_in_px'],
+        #         camera_translation=hd_params['transl'],
+        #         camera_center=hd_params['center'],
+        #         bg_imgs=bg_hd_imgs,
+        #         return_with_alpha=True,
+        #         body_color=[0.4, 0.4, 0.7]
+        #     )
+        #     out_img['hd_overlay'] = hd_overlays
 
-        if save_vis:
-            for key in out_img.keys():
-                out_img[key] = np.clip(
-                    np.transpose(
-                        out_img[key], [0, 2, 3, 1]) * 255, 0, 255).astype(
-                            np.uint8)
+        # if save_vis:
+        #     for key in out_img.keys():
+        #         out_img[key] = np.clip(
+        #             np.transpose(
+        #                 out_img[key], [0, 2, 3, 1]) * 255, 0, 255).astype(
+        #                     np.uint8)
 
         camera_scale_np = camera_scale.cpu().numpy()
         camera_tansl_np = camera_transl.cpu().numpy()
@@ -527,7 +527,7 @@ def get_parser():
     parser.add_argument('--pause', default=-1, type=float, help='How much to pause the display')
     parser.add_argument('--focal-length', dest='focal_length', type=float, default=5000, help='Focal length')
     parser.add_argument('--degrees', type=float, nargs='*', default=[], help='Degrees of rotation around the vertical axis')
-    parser.add_argument('--save-vis', dest='save_vis', default=True, type=lambda x: x.lower() in ['true'], help='Whether to save visualizations')
+    parser.add_argument('--save-vis', dest='save_vis', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save visualizations')
     parser.add_argument('--save-mesh', dest='save_mesh', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save meshes')
     parser.add_argument('--save-params', dest='save_params', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save parameters')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='log level')

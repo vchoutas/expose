@@ -247,7 +247,7 @@ class MLogger():
         msg_block = []
 
         for msg_line in msg.split("\n"):
-            msg_block.append("■■ {0} --------------------".format(msg_line))
+            msg_block.append("-- {0} --------------------".format(msg_line))
 
         return "\n".join(msg_block)
 

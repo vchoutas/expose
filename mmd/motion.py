@@ -54,6 +54,7 @@ def execute(args):
 
             motion = VmdMotion()
             all_frame_joints = {}
+            prev_fno = 9999999999
         
             for smooth_json_path in tqdm(smooth_json_pathes, desc=f"No.{oidx:03} ... "):
                 m = smooth_pattern.match(os.path.basename(smooth_json_path))
@@ -67,6 +68,26 @@ def execute(args):
                     all_frame_joints[fno] = frame_joints
                     
                     if args.body_motion == 1 or args.face_motion == 1:
+                        
+                        is_flip = False
+                        if prev_fno < fno and sorted(all_frame_joints.keys())[-1] <= sorted(all_frame_joints.keys())[-2] + 2:
+                            # 前のキーフレがある場合、体幹に近いボーンが反転していたらスルー(直近が3フレーム以上離れていたらスルーなし)
+                            for ljname in ['left_hip', 'left_shoulder']:
+                                rjname = ljname.replace('left', 'right')
+                                prev_lsign = np.sign(all_frame_joints[prev_fno]["joints"][ljname]["x"] - all_frame_joints[prev_fno]["joints"]["pelvis"]["x"])
+                                prev_rsign = np.sign(all_frame_joints[prev_fno]["joints"][rjname]["x"] - all_frame_joints[prev_fno]["joints"]["pelvis"]["x"])
+                                lsign = np.sign(all_frame_joints[fno]["joints"][ljname]["x"] - all_frame_joints[fno]["joints"]["pelvis"]["x"])
+                                rsign = np.sign(all_frame_joints[fno]["joints"][rjname]["x"] - all_frame_joints[fno]["joints"]["pelvis"]["x"])
+                                ldiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][ljname]["x"]]))
+                                rdiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][rjname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
+                                lrdiff = abs(np.diff([all_frame_joints[fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
+
+                                if prev_lsign != lsign and prev_rsign != rsign and ldiff > 0.1 and rdiff > 0.1 and lrdiff > 0.1:
+                                    is_flip = True
+                                    break
+                        
+                        if is_flip:
+                            continue
 
                         for jname, (bone_name, calc_bone, name_list, parent_list, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
                             if name_list is None:
@@ -78,6 +99,11 @@ def execute(args):
                             
                             if args.body_motion == 0 and args.face_motion == 1 and not is_head:
                                 continue
+                            
+                            # 前のキーフレから大幅に離れていたらスルー
+                            if prev_fno < fno and jname in all_frame_joints[prev_fno]["joints"]:
+                                if abs(all_frame_joints[prev_fno]["joints"][jname]["x"] - all_frame_joints[fno]["joints"][jname]["x"]) > 0.1:
+                                    continue
 
                             bf = VmdBoneFrame(fno)
                             bf.set_name(bone_name)
@@ -122,6 +148,8 @@ def execute(args):
 
                         # 眉
                         calc_eyebrow(fno, motion, frame_joints)
+                    
+                    prev_fno = fno
 
             if args.body_motion == 1:
                 # 最初の骨盤は地に足がついているとみなす
@@ -167,7 +195,7 @@ def execute(args):
                     motion.regist_bf(center_bf, center_bf.name, fno)
 
                     # Yはグルーブ
-                    groove_bf.position.setY((pelvis_relative_pos[1] * args.center_scale) - start_pelvis.y())
+                    groove_bf.position.setY(start_pelvis.y() - (pelvis_relative_pos[1] * args.center_scale))
                     motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                 logger.info("【No.%s】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
@@ -222,7 +250,7 @@ def execute(args):
             if "左手首" in motion.bones:
                 del motion.bones["左手首"]
             
-            motion_path = os.path.join(motion_dir_path, "output_no{0:03}_{1}.vmd".format(oidx, datetime.datetime.now().strftime('%Y%m%d_%H%M%S')))
+            motion_path = os.path.join(motion_dir_path, "output_{0}_no{1:03}.vmd".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S'), oidx))
             writer = VmdWriter(model, motion, motion_path)
             writer.write()
 

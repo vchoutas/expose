@@ -347,7 +347,7 @@ def get_pose_matching_score(keypoints_A, keypoints_B, bbox_A, bbox_B, img_width,
 
 # bbox単位で似ている場所にある前回フレームのbboxを抽出
 def get_similar_bbox_track_id(bbox_cur_frame, prev_bbox_frames):
-    thresh = 0.7
+    thresh = 0.5
     similar_bbox_idxs = []
 
     for bbox_index, bbox_det_dict in enumerate(prev_bbox_frames):
@@ -363,7 +363,7 @@ def get_similar_bbox_track_id(bbox_cur_frame, prev_bbox_frames):
 
 # 最もbboxが近いtrack_idを抽出
 def get_track_id_SpatialConsistency(bbox_cur_frame, bbox_list_prev_frame):
-    thresh = 0.7
+    thresh = 0.6
     max_iou_score = 0
     max_index = -1
 
