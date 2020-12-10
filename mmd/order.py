@@ -43,7 +43,7 @@ def execute(args):
             logger.error("指定された順番指定用ファイルのCSV読み取り処理に失敗しました", e, decoration=MLogger.DECORATION_BOX)
             return False
 
-        logger.info("人物追跡指定開始", decoration=MLogger.DECORATION_BOX)
+        logger.info("人物追跡指定開始", decoration=MLogger.DECORATION_LINE)
 
         # 全人物分の順番別フォルダ(順番INDEX分生成しておく)
 

@@ -1056,7 +1056,7 @@ class PmxModel:
                 reversed_links = BoneLinks()
                 
                 # リンクがある場合、反転させて返す
-                for lname in reversed(links.all()):
+                for lname in reversed(list(links.all().keys())):
                     reversed_links.append(links.get(lname))
 
                 return reversed_links

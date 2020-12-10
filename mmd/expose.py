@@ -180,9 +180,8 @@ def main(
     if render:
         hd_renderer = HDRenderer(img_size=body_crop_size)
 
-    logger.info("姿勢推定開始（人物×フレーム数分）", decoration=MLogger.DECORATION_BOX)
+    logger.info("姿勢推定開始（人物×フレーム数分）", decoration=MLogger.DECORATION_LINE)
 
-    total_time = 0
     cnt = 0
     for bidx, batch in enumerate(tqdm(expose_dloader, dynamic_ncols=True)):
 
@@ -194,15 +193,13 @@ def main(
         body_imgs = body_imgs.to(device=device)
         body_targets = [target.to(device) for target in body_targets]
         full_imgs = full_imgs.to(device=device)
+        camera_parameters = None
+        camera_scale = None
+        camera_transl = None
 
-        torch.cuda.synchronize()
-        start = time.perf_counter()
         model_output = model(body_imgs, body_targets, full_imgs=full_imgs,
                              device=device)
-        torch.cuda.synchronize()
-        elapsed = time.perf_counter() - start
         cnt += 1
-        total_time += elapsed
 
         body_imgs = body_imgs.detach().cpu().numpy()
         body_output = model_output.get('body')
@@ -247,6 +244,62 @@ def main(
             focal_length=focal_length,
         )
 
+        hd_imgs = full_imgs.images.detach().cpu().numpy().squeeze()
+        if render:
+            hd_imgs = np.transpose(undo_img_normalization(hd_imgs, means, std),
+                                   [0, 2, 3, 1])
+            hd_imgs = np.clip(hd_imgs, 0, 1.0)
+            right_hand_crops = body_output.get('right_hand_crops')
+            left_hand_crops = torch.flip(
+                body_output.get('left_hand_crops'), dims=[-1])
+            head_crops = body_output.get('head_crops')
+            bg_imgs = undo_img_normalization(body_imgs, means, std)
+
+            right_hand_crops = undo_img_normalization(
+                right_hand_crops, means, std)
+            left_hand_crops = undo_img_normalization(
+                left_hand_crops, means, std)
+            head_crops = undo_img_normalization(head_crops, means, std)
+
+        if save_vis:
+            bg_hd_imgs = np.transpose(hd_imgs, [0, 3, 1, 2])
+            out_img['hd_imgs'] = bg_hd_imgs
+        if render:
+            # Render the initial predictions on the original image resolution
+            hd_orig_overlays = hd_renderer(
+                model_vertices, faces,
+                focal_length=hd_params['focal_length_in_px'],
+                camera_translation=hd_params['transl'],
+                camera_center=hd_params['center'],
+                bg_imgs=bg_hd_imgs,
+                return_with_alpha=True,
+            )            
+            out_img['hd_orig_overlay'] = hd_orig_overlays
+
+        # Render the overlays of the final prediction
+        if render:
+            hd_overlays = hd_renderer(
+                final_model_vertices,
+                faces,
+                focal_length=hd_params['focal_length_in_px'],
+                camera_translation=hd_params['transl'],
+                camera_center=hd_params['center'],
+                bg_imgs=bg_hd_imgs,
+                return_with_alpha=True,
+                body_color=[0.4, 0.4, 0.7]
+            )
+            out_img['hd_overlay'] = hd_overlays
+
+        if save_vis:
+            for key in out_img.keys():
+                out_img[key] = np.clip(
+                    np.transpose(
+                        out_img[key], [0, 2, 3, 1]) * 255, 0, 255).astype(
+                            np.uint8)
+
+        camera_scale_np = camera_scale.cpu().numpy()
+        camera_tansl_np = camera_transl.cpu().numpy()
+
         # bbox保持
         cbbox = body_targets[0].bbox.detach().cpu().numpy()
         bbox_size = np.array(body_targets[0].size)
@@ -273,10 +326,16 @@ def main(
                     val = val.detach().cpu().numpy()[idx]
                 out_params[key] = val
 
+            if save_vis:
+                for name, curr_img in out_img.items():
+                    pil_img.fromarray(curr_img[idx]).save(
+                        osp.join(args.img_dir, "frames", idx_dir, f'{name}.png'))
+
             # json出力
             joint_dict = {}
             joint_dict["image"] = {"width": W, "height": H}
             joint_dict["depth"] = {"depth": float(hd_params["depth"][0][0])}
+            joint_dict["camera"] = {"scale": float(camera_scale_np[0][0]), "transl": {"x": float(camera_tansl_np[0, 0]), "y": float(camera_tansl_np[0, 1])}}
             joint_dict["center"] = {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}
             joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), \
                                   "width": float(hd_params["img_bbox"][2]) - float(hd_params["img_bbox"][0]), "height": float(hd_params["img_bbox"][3]) - float(hd_params["img_bbox"][1])}
@@ -295,6 +354,15 @@ def main(
                 j2d = proj_joints[jidx] / jscale
                 joint_dict["proj_joints"][jname] = {'x': float(hd_params['center'][0, 0] + j2d[0]), 'y': float(hd_params['center'][0, 1] + j2d[1])}
                 joint_dict["joints"][jname] = {'x': float(joints[jidx][0]), 'y': float(-joints[jidx][1]), 'z': float(joints[jidx][2])}
+
+            for pose_name in ["global_orient", "body_pose", "left_hand_pose", "right_hand_pose", "jaw_pose"]:
+                joint_dict[pose_name] = {}
+                for pidx, pvalues in enumerate(out_params[pose_name]):
+                    joint_dict[pose_name][pidx] = {
+                        'xAxis': {'x': float(pvalues[0,0]), 'y': float(pvalues[0,1]), 'z': float(pvalues[0,2])},
+                        'yAxis': {'x': float(pvalues[1,0]), 'y': float(pvalues[1,1]), 'z': float(pvalues[1,2])},
+                        'zAxis': {'x': float(pvalues[2,0]), 'y': float(pvalues[2,1]), 'z': float(pvalues[2,2])}
+                    }
 
             with open(params_json_path, 'w') as f:
                 json.dump(joint_dict, f, indent=4)
@@ -343,7 +411,7 @@ def preprocess_images(
         collate_fn=collate_fn
     )
 
-    logger.info("姿勢推定準備", decoration=MLogger.DECORATION_BOX)
+    logger.info("姿勢推定準備", decoration=MLogger.DECORATION_LINE)
 
     img_paths = []
     bboxes = []
@@ -459,7 +527,7 @@ def get_parser():
     parser.add_argument('--pause', default=-1, type=float, help='How much to pause the display')
     parser.add_argument('--focal-length', dest='focal_length', type=float, default=5000, help='Focal length')
     parser.add_argument('--degrees', type=float, nargs='*', default=[], help='Degrees of rotation around the vertical axis')
-    parser.add_argument('--save-vis', dest='save_vis', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save visualizations')
+    parser.add_argument('--save-vis', dest='save_vis', default=True, type=lambda x: x.lower() in ['true'], help='Whether to save visualizations')
     parser.add_argument('--save-mesh', dest='save_mesh', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save meshes')
     parser.add_argument('--save-params', dest='save_params', default=False, type=lambda x: x.lower() in ['true'], help='Whether to save parameters')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='log level')

@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import locale
+from loguru import logger
 
 from numpy.lib.arraysetops import isin
 

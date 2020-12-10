@@ -63,7 +63,7 @@ pip install cython opencv-python pillow matplotlib
 
 (expose) c:\MMD\lighttrack_mmd\graph\torchlight>python setup.py install
 
-pip install setproctitle
+pip install "C:\MMD\frankmocap_mmd\scripts\setproctitle-1.2.1-cp37-cp37m-win_amd64.whl"
 
 pip install scikit-image
 

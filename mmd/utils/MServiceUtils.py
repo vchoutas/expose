@@ -24,7 +24,7 @@ def calc_IK(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, targ
 
     for bone_name in bone_name_list:
         # bfをモーションに登録
-        bf = motion.c_calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+        bf = motion.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
         motion.regist_bf(bf, bone_name, fno)
     
     local_effector_pos = MVector3D()
@@ -75,7 +75,7 @@ def calc_IK(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int, targ
                 correct_qq = MQuaternion.fromAxisAndAngle(rotation_axis, min(rotation_degree, ik_bone.degree_limit))
 
                 # ジョイントに補正をかける
-                bf = motion.c_calc_bf(joint_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+                bf = motion.calc_bf(joint_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
                 new_ik_qq = correct_qq * bf.rotation
 
                 # IK軸制限がある場合、上限下限をチェック
@@ -314,7 +314,7 @@ def calc_relative_position(model: PmxModel, links: BoneLinks, motion: VmdMotion,
 
         if not limit_links or (limit_links and limit_links.get(link_bone_name)):
             # 上限リンクがある倍、ボーンが存在している場合のみ、モーション内のキー情報を取得
-            fill_bf = motion.c_calc_bf(link_bone.name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+            fill_bf = motion.calc_bf(link_bone.name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
         else:
             # 上限リンクでボーンがない場合、ボーンは初期値
             fill_bf = VmdBoneFrame(fno=fno)
@@ -340,7 +340,7 @@ def calc_relative_rotation(model: PmxModel, links: BoneLinks, motion: VmdMotion,
 
         if not limit_links or (limit_links and limit_links.get(link_bone_name)):
             # 上限リンクがある場合、ボーンが存在している場合のみ、モーション内のキー情報を取得
-            fill_bf = motion.c_calc_bf(link_bone.name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+            fill_bf = motion.calc_bf(link_bone.name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
         else:
             # 上限リンクでボーンがない場合、ボーンは初期値
             fill_bf = VmdBoneFrame(fno=fno)
@@ -372,7 +372,7 @@ def deform_rotation(model: PmxModel, motion: VmdMotion, bf: VmdBoneFrame):
 
         while cnt < 100:
             # 付与親が取得できたら、該当する付与親の回転を取得する
-            effect_bf = motion.c_calc_bf(effect_bone.name, bf.fno, is_key=False, is_read=False, is_reset_interpolation=False)
+            effect_bf = motion.calc_bf(effect_bone.name, bf.fno, is_key=False, is_read=False, is_reset_interpolation=False)
 
             # 自身の回転量に付与親の回転量を付与率を加味して付与する
             if effect_parent_bone.effect_factor == 0:

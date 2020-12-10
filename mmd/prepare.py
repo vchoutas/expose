@@ -45,7 +45,7 @@ def execute(args):
                     args.video_file, os.path.getsize(args.video_file), W, H, count, fps, decoration=MLogger.DECORATION_BOX)
 
         # 縮尺を調整
-        width = int(1280)
+        width = int(1920)
 
         process_img_dir = os.path.join(base_path, "output", os.path.basename(args.video_file).replace('.', '_'), \
                                     "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now()))

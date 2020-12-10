@@ -7,6 +7,7 @@ import json
 import csv
 import datetime
 import numpy as np
+from numpy.core.defchararray import center
 from tqdm import tqdm
 import math
 
@@ -17,10 +18,8 @@ from lighttrack.visualizer.detection_visualizer import draw_bbox
 from mmd.mmd.VmdWriter import VmdWriter
 from mmd.module.MMath import MQuaternion, MVector3D, MVector2D
 from mmd.mmd.VmdData import VmdBoneFrame, VmdMorphFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk, OneEuroFilter
-from mmd.mmd.PmxData import PmxModel, Bone, Vertex, Bdef1
+from mmd.mmd.PmxData import PmxModel, Bone, Vertex, Bdef1, Ik, IkLink
 from mmd.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate_local_qq
-
-SCALE_MIKU = 0.06
 
 logger = MLogger(__name__)
 
@@ -44,16 +43,17 @@ def execute(args):
         model = read_bone_csv(args.bone_config)
 
         # 全人物分の順番別フォルダ
-        ordered_person_dir_pathes = sorted(glob.glob(os.path.join(args.img_dir, "ordered", "*")), key=sort_by_numeric)
+        ordered_person_dir_pathes = sorted(glob.glob(os.path.join(args.img_dir, "smooth", "*")), key=sort_by_numeric)
 
         smooth_pattern = re.compile(r'^smooth_(\d+)\.')
 
         for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-            logger.info("【No.%s】モーション生成開始", f"{oidx:03}", decoration=MLogger.DECORATION_BOX)
+            logger.info("【No.%s】FKボーン角度計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             smooth_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "smooth_*.json")), key=sort_by_numeric)
 
             motion = VmdMotion()
+            all_frame_joints = {}
         
             for smooth_json_path in tqdm(smooth_json_pathes, desc=f"No.{oidx:03} ... "):
                 m = smooth_pattern.match(os.path.basename(smooth_json_path))
@@ -64,13 +64,8 @@ def execute(args):
                     frame_joints = {}
                     with open(smooth_json_path, 'r', encoding='utf-8') as f:
                         frame_joints = json.load(f)
+                    all_frame_joints[fno] = frame_joints
                     
-                    if args.body_motion == 1:
-                        bf = VmdBoneFrame(fno)
-                        bf.set_name("センター")
-                        bf.position = calc_center(frame_joints)
-                        motion.regist_bf(bf, bf.name, bf.fno)
-
                     if args.body_motion == 1 or args.face_motion == 1:
 
                         for jname, (bone_name, calc_bone, name_list, parent_list, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
@@ -118,9 +113,9 @@ def execute(args):
                     if "faces" in frame_joints and args.face_motion == 1:
                         # 表情がある場合出力
                         # まばたき・視線の向き
-                        calc_left_eye(fno, motion, frame_joints)
-                        calc_right_eye(fno, motion, frame_joints)
-                        blend_eye(fno, motion)
+                        left_eye_euler = calc_left_eye(fno, motion, frame_joints)
+                        right_eye_euler = calc_right_eye(fno, motion, frame_joints)
+                        blend_eye(fno, motion, left_eye_euler, right_eye_euler)
 
                         # 口
                         calc_lip(fno, motion, frame_joints)
@@ -128,43 +123,110 @@ def execute(args):
                         # 眉
                         calc_eyebrow(fno, motion, frame_joints)
 
-            # 動画内の半分は地面に足が着いていると見なす
             if args.body_motion == 1:
-                center_values = np.zeros((1, 3))
-                for bf in motion.bones["センター"].values():
-                    center_values = np.insert(center_values, 0, np.array([bf.position.x(), bf.position.y(), bf.position.z()]), axis=0)
-                
-                center_median = np.median(center_values, axis=0)
+                # 最初の骨盤は地に足がついているとみなす
+                start_pelvis = MVector3D()
 
-                for bf in motion.bones["センター"].values():
-                    bf.position.setY(bf.position.y() - center_median[1])
-                
-                # とりあえずIKoff
-                left_leg_ik = VmdShowIkFrame()
-                left_leg_ik.show = 1
-                left_leg_ik.ik.append(VmdInfoIk(name="左足ＩＫ", onoff=0))
-                motion.showiks.append(left_leg_ik)
+                logger.info("【No.%s】センター計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                right_leg_ik = VmdShowIkFrame()
-                right_leg_ik.show = 1
-                right_leg_ik.ik.append(VmdInfoIk(name="右足ＩＫ", onoff=0))
-                motion.showiks.append(right_leg_ik)
+                for fno, frame_joints in tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... "):
+                    # 画像サイズ
+                    image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
 
-                left_toe_ik = VmdShowIkFrame()
-                left_toe_ik.show = 1
-                left_toe_ik.ik.append(VmdInfoIk(name="左つま先ＩＫ", onoff=0))
-                motion.showiks.append(left_toe_ik)
+                    #bbox
+                    bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"]])
+                    bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"]])
 
-                right_toe_ik = VmdShowIkFrame()
-                right_toe_ik.show = 1
-                right_toe_ik.ik.append(VmdInfoIk(name="右つま先ＩＫ", onoff=0))
-                motion.showiks.append(right_toe_ik)
+                    # 骨盤のカメラの中心からの相対位置(Yはセンターからみて上が＋、下が－なので、反転させておく)
+                    pelvis_pos = np.array([all_frame_joints[fno]["joints"]["pelvis"]["x"] * -1 + 0.5, all_frame_joints[fno]["joints"]["pelvis"]["y"] * -1 + 1])
+                    pelvis_z = all_frame_joints[fno]["joints"]["pelvis"]["z"]
 
+                    # 骨盤のグローバル位置
+                    pelvis_global_pos = (bbox_size * pelvis_pos) + bbox_pos
+                    # 骨盤の画面全体からの相対位置
+                    pelvis_relative_pos = pelvis_global_pos / image_size
+                    pelvis_relative_pos[0] -= 0.5
+
+                    # まだ骨盤位置が保持されていない場合、保持
+                    if start_pelvis == MVector3D():
+                        start_pelvis.setX(pelvis_relative_pos[0] * args.center_scale)
+                        start_pelvis.setY(pelvis_relative_pos[1] * args.center_scale)
+                        start_pelvis.setZ(pelvis_z * args.center_scale)
+
+                    center_bf = VmdBoneFrame()
+                    center_bf.fno = fno
+                    center_bf.set_name("センター")
+
+                    groove_bf = VmdBoneFrame()
+                    groove_bf.fno = fno
+                    groove_bf.set_name("グルーブ")
+                    
+                    # XZはセンター
+                    center_bf.position.setX(pelvis_relative_pos[0] * args.center_scale)
+                    center_bf.position.setZ(pelvis_z * args.center_scale)
+                    motion.regist_bf(center_bf, center_bf.name, fno)
+
+                    # Yはグルーブ
+                    groove_bf.position.setY((pelvis_relative_pos[1] * args.center_scale) - start_pelvis.y())
+                    motion.regist_bf(groove_bf, groove_bf.name, fno)
+
+                logger.info("【No.%s】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                convert_leg_fk2ik(oidx, motion, model, "左")
+
+                logger.info("【No.%s】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                convert_leg_fk2ik(oidx, motion, model, "右")
+
+                # つま先IK末端までのリンク
+                right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
+                left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
+
+                # 最初のフレームは地に足がついていると見なす
+                logger.info("【No.%s】グルーブ調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                min_leg_y = 0
+                for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
+                    groove_bf = motion.calc_bf("グルーブ", fno)
+                    right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+                    left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+                    
+                    if fidx == 0:
+                        # 最低限調整するＹ値
+                        min_leg_y = min(right_leg_ik_bf.position.y(), left_leg_ik_bf.position.y())
+
+                    groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
+                    right_leg_ik_bf.position.setY(right_leg_ik_bf.position.y() - min_leg_y)
+                    left_leg_ik_bf.position.setY(left_leg_ik_bf.position.y() - min_leg_y)
+
+                    # IKのマイナス値はとりあえず0に補正
+                    if right_leg_ik_bf.position.y() < 0:
+                        right_leg_ik_bf.position.setY(0)
+
+                    if left_leg_ik_bf.position.y() < 0:
+                        left_leg_ik_bf.position.setY(0)
+                    
+                    # 一旦登録                    
+                    motion.regist_bf(groove_bf, groove_bf.name, fno)
+                    motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
+                    motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
+
+                    # つま先のグローバル位置がマイナスの場合、その分を上げる
+                    for toe_ik_links, leg_ik_bf in [(right_toe_ik_links, right_leg_ik_bf), (left_toe_ik_links, left_leg_ik_bf)]:
+                        toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
+                        toe_y = toe_ik_3ds_dic[toe_ik_links.last_name()].y()
+                        if toe_y < 0:
+                            leg_ik_bf.position.setY(leg_ik_bf.position.y() + -toe_y)
+                            motion.regist_bf(leg_ik_bf, leg_ik_bf.name, fno)
+
+            # 手首を削除
+            if "右手首" in motion.bones:
+                del motion.bones["右手首"]
+            if "左手首" in motion.bones:
+                del motion.bones["左手首"]
+            
             motion_path = os.path.join(motion_dir_path, "output_no{0:03}_{1}.vmd".format(oidx, datetime.datetime.now().strftime('%Y%m%d_%H%M%S')))
             writer = VmdWriter(model, motion, motion_path)
             writer.write()
 
-            logger.info("【No.%s】モーション生成開始: %s", f"{oidx:03}", motion_path, decoration=MLogger.DECORATION_BOX)
+            logger.info("【No.%s】モーション生成終了: %s", f"{oidx:03}", motion_path, decoration=MLogger.DECORATION_BOX)
 
         logger.info('モーション生成処理全件終了', decoration=MLogger.DECORATION_BOX)
 
@@ -172,6 +234,74 @@ def execute(args):
     except Exception as e:
         logger.critical("モーション生成で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
         return False
+
+
+# 足ＩＫ変換処理実行
+def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: str):
+    leg_ik_bone_name = "{0}足ＩＫ".format(direction)
+    toe_ik_bone_name = "{0}つま先ＩＫ".format(direction)
+    leg_bone_name = "{0}足".format(direction)
+    knee_bone_name = "{0}ひざ".format(direction)
+    ankle_bone_name = "{0}足首".format(direction)
+
+    # 足FK末端までのリンク
+    fk_links = model.create_link_2_top_one(ankle_bone_name, is_defined=False)
+    # 足IK末端までのリンク
+    ik_links = model.create_link_2_top_one(leg_ik_bone_name, is_defined=False)
+    # つま先IK末端までのリンク
+    toe_ik_links = model.create_link_2_top_one(toe_ik_bone_name, is_defined=False)
+    # つま先（足首の子ボーン）の名前
+    ankle_child_bone_name = model.bone_indexes[model.bones[toe_ik_bone_name].ik.target_index]
+    # つま先末端までのリンク
+    toe_fk_links = model.create_link_2_top_one(ankle_child_bone_name, is_defined=False)
+
+    fnos = motion.get_bone_fnos(leg_bone_name, knee_bone_name, ankle_bone_name)
+
+    ik_parent_name = ik_links.get(leg_ik_bone_name, offset=-1).name
+
+    # まずキー登録
+    logger.info("【No.%s】%s足IK準備", f"{oidx:03}", direction)
+    fno = 0
+    for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
+        bf = motion.calc_bf(leg_ik_bone_name, fno)
+        motion.regist_bf(bf, leg_ik_bone_name, fno)
+
+    # 足IKの移植
+    logger.info("【No.%s】%s足IK移植", f"{oidx:03}", direction)
+    fno = 0
+    for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
+        leg_fk_3ds_dic = calc_global_pos(model, fk_links, motion, fno)
+        _, leg_ik_matrixs = calc_global_pos(model, ik_links, motion, fno, return_matrix=True)
+
+        # 足首の角度がある状態での、つま先までのグローバル位置
+        leg_toe_fk_3ds_dic = calc_global_pos(model, toe_fk_links, motion, fno)
+
+        # IKの親から見た相対位置
+        leg_ik_parent_matrix = leg_ik_matrixs[ik_parent_name]
+
+        bf = motion.calc_bf(leg_ik_bone_name, fno)
+        # 足ＩＫの位置は、足ＩＫの親から見た足首のローカル位置（足首位置マイナス）
+        bf.position = leg_ik_parent_matrix.inverted() * (leg_fk_3ds_dic[ankle_bone_name] - (model.bones[ankle_bone_name].position - model.bones[ik_parent_name].position))
+        bf.rotation = MQuaternion()
+
+        # 一旦足ＩＫの位置が決まった時点で登録
+        motion.regist_bf(bf, leg_ik_bone_name, fno)
+        # 足ＩＫ回転なし状態でのつま先までのグローバル位置
+        leg_ik_3ds_dic, leg_ik_matrisxs = calc_global_pos(model, toe_ik_links, motion, fno, return_matrix=True)
+        [logger.debug("f: %s, leg_ik_3ds_dic[%s]: %s", fno, k, v.to_log()) for k, v in leg_ik_3ds_dic.items()]
+
+        # つま先のローカル位置
+        ankle_child_initial_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_ik_3ds_dic[toe_ik_bone_name]
+        ankle_child_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_toe_fk_3ds_dic[ankle_child_bone_name]
+
+        logger.debug("f: %s, ankle_child_initial_local_pos: %s", fno, ankle_child_initial_local_pos.to_log())
+        logger.debug("f: %s, ankle_child_local_pos: %s", fno, ankle_child_local_pos.to_log())
+
+        # 足ＩＫの回転は、足首から見たつま先の方向
+        bf.rotation = MQuaternion.rotationTo(ankle_child_initial_local_pos, ankle_child_local_pos)
+        logger.debug("f: %s, ik_rotation: %s", fno, bf.rotation.toEulerAngles4MMD().to_log())
+
+        motion.regist_bf(bf, leg_ik_bone_name, fno)
 
 
 def calc_direction_qq(bf: VmdBoneFrame, motion: VmdMotion, joints: dict, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):
@@ -254,7 +384,7 @@ def get_bone_vec3(model: PmxModel, joint_name: str):
 def get_vec3(joints: dict, jname: str):
     if jname in joints:
         joint = joints[jname]
-        return MVector3D(joint["x"], joint["y"], joint["z"]) / SCALE_MIKU
+        return MVector3D(joint["x"], joint["y"], joint["z"])
     else:
         if jname == "pelvis2":
             # 尾てい骨くらい
@@ -263,19 +393,6 @@ def get_vec3(joints: dict, jname: str):
             return (right_hip_vec + left_hip_vec) / 2
     
     return MVector3D()
-
-
-def calc_center(frame_joints: dict):
-    # プロジェクション座標系の位置
-    px = (frame_joints["proj_joints"]["pelvis"]["x"] - (frame_joints["image"]["width"] / 2)) * SCALE_MIKU
-
-    py = 0
-    if float(frame_joints["proj_joints"]["left_knee"]["y"]) < float(frame_joints["image"]["height"]):
-        # ひざまで映っている場合のみセンター設定
-        py = ((frame_joints["image"]["height"] / 2) - frame_joints["proj_joints"]["pelvis"]["y"]) * SCALE_MIKU
-
-    cz = frame_joints["depth"]["depth"] * SCALE_MIKU
-    return MVector3D(px, py, cz)
 
 
 def read_bone_csv(bone_csv_path: str):
@@ -299,8 +416,16 @@ def read_bone_csv(bone_csv_path: str):
                 bone = Bone(row[1], row[2], MVector3D(float(row[5]), float(row[6]), float(row[7])), row[13], int(row[3]), \
                             int(row[8]) | int(row[9]) | int(row[10]) | int(row[11]) | int(row[12]))
                 bone.index = ridx - 1
+
+                if len(row[37]) > 0:
+                    # IKターゲットがある場合、IK登録
+                    bone.ik = Ik(model.bones[row[37]].index, int(row[38]), math.radians(float(row[39])))
+
                 model.bones[row[1]] = bone
                 model.bone_indexes[bone.index] = row[1]
+            elif row[0] == "IKLink":
+                iklink = IkLink(model.bones[row[2]].index, int(row[3]), MVector3D(float(row[4]), float(row[6]), float(row[8])), MVector3D(float(row[5]), float(row[7]), float(row[9])))
+                model.bones[row[1]].ik.link.append(iklink)
     
     for bidx, bone in model.bones.items():
         # 親ボーンINDEXの設定
@@ -592,7 +717,7 @@ def calc_lip(fno: int, motion: VmdMotion, frame_joints: dict):
         mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
         motion.regist_mf(mf, mf.name, mf.fno)
 
-def blend_eye(fno: int, motion: VmdMotion):
+def blend_eye(fno: int, motion: VmdMotion, left_eye_euler: MVector3D, right_eye_euler: MVector3D):
     min_blink = min(motion.morphs["ウィンク右"][fno].ratio, motion.morphs["ウィンク"][fno].ratio)
     min_smile = min(motion.morphs["ｳｨﾝｸ２右"][fno].ratio, motion.morphs["ウィンク２"][fno].ratio)
 
@@ -613,23 +738,11 @@ def blend_eye(fno: int, motion: VmdMotion):
     mf.ratio = max(0, min(1, min_blink))
     motion.regist_mf(mf, mf.name, mf.fno)
 
-    right_eye_bf = motion.calc_bf("右目", fno)
-    left_eye_bf = motion.calc_bf("左目", fno)
-
-    right_eye_euler = right_eye_bf.rotation.toEulerAngles()
-    left_eye_euler = left_eye_bf.rotation.toEulerAngles()
-
     # 両目の平均とする
     mean_eye_euler = (right_eye_euler + left_eye_euler) / 2
     eye_bf = motion.calc_bf("両目", fno)
-    eye_bf.rotation = MQuaternion.fromEulerAngles(mean_eye_euler.x(), mean_eye_euler.y(), mean_eye_euler.z())
+    eye_bf.rotation = MQuaternion.fromEulerAngles(mean_eye_euler.x(), mean_eye_euler.y(), 0)
     motion.regist_bf(eye_bf, "両目", fno)
-
-    # キーがある場合、片目は除去
-    if fno in motion.bones["右目"]:
-        del motion.bones["右目"][fno]
-    if fno in motion.bones["左目"]:
-        del motion.bones["左目"][fno]
     
 
 def calc_left_eye(fno: int, motion: VmdMotion, frame_joints: dict):
@@ -646,7 +759,7 @@ def calc_left_eye(fno: int, motion: VmdMotion, frame_joints: dict):
         left_pupil = MVector2D()
 
     # 左目のEAR(eyes aspect ratio)
-    left_blink, left_smile, left_eye_qq = get_blink_ratio(left_eye1, left_eye2, left_eye3, left_eye4, left_eye5, left_eye6, left_pupil)
+    left_blink, left_smile, left_eye_euler = get_blink_ratio(fno, left_eye1, left_eye2, left_eye3, left_eye4, left_eye5, left_eye6, left_pupil)
 
     mf = VmdMorphFrame(fno)
     mf.set_name("ウィンク右")
@@ -660,13 +773,7 @@ def calc_left_eye(fno: int, motion: VmdMotion, frame_joints: dict):
 
     motion.regist_mf(mf, mf.name, mf.fno)
 
-    if left_eye_qq != MQuaternion():
-        # 初期qqでない場合、視線登録
-        bf = VmdBoneFrame(fno)
-        bf.set_name("左目")
-        bf.rotation = left_eye_qq
-
-        motion.regist_bf(bf, bf.name, bf.fno)
+    return left_eye_euler
 
 def calc_right_eye(fno: int, motion: VmdMotion, frame_joints: dict):
     right_eye1 = get_vec2(frame_joints["faces"], "right_eye1")
@@ -682,7 +789,7 @@ def calc_right_eye(fno: int, motion: VmdMotion, frame_joints: dict):
         right_pupil = MVector2D()
 
     # 右目のEAR(eyes aspect ratio)
-    right_blink, right_smile, right_eye_qq = get_blink_ratio(right_eye1, right_eye2, right_eye3, right_eye4, right_eye5, right_eye6, right_pupil, is_right=True)
+    right_blink, right_smile, right_eye_euler = get_blink_ratio(fno, right_eye1, right_eye2, right_eye3, right_eye4, right_eye5, right_eye6, right_pupil, is_right=True)
 
     mf = VmdMorphFrame(fno)
     mf.set_name("ウィンク")
@@ -694,18 +801,12 @@ def calc_right_eye(fno: int, motion: VmdMotion, frame_joints: dict):
     mf.ratio = max(0, min(1, right_blink))
     motion.regist_mf(mf, mf.name, mf.fno)
 
-    if right_eye_qq != MQuaternion():
-        # 初期qqでない場合、視線登録
-        bf = VmdBoneFrame(fno)
-        bf.set_name("右目")
-        bf.rotation = right_eye_qq
-
-        motion.regist_bf(bf, bf.name, bf.fno)
+    return right_eye_euler
 
 def euclidean_distance(point1: MVector2D, point2: MVector2D):
     return math.sqrt((point1.x() - point2.x())**2 + (point1.y() - point2.y())**2)
 
-def get_blink_ratio(eye1: MVector2D, eye2: MVector2D, eye3: MVector2D, eye4: MVector2D, eye5: MVector2D, eye6: MVector2D, pupil: MVector2D, is_right=False):
+def get_blink_ratio(fno: int, eye1: MVector2D, eye2: MVector2D, eye3: MVector2D, eye4: MVector2D, eye5: MVector2D, eye6: MVector2D, pupil: MVector2D, is_right=False):
     #loading all the required points
     corner_left  = eye4
     corner_right = eye1
@@ -726,22 +827,23 @@ def get_blink_ratio(eye1: MVector2D, eye2: MVector2D, eye3: MVector2D, eye4: MVe
 
     if smile_ratio > 1:
         # １より大きい場合、目頭よりも上瞼が下にあるという事なので、通常瞬きと見なす
-        return 1, 0, MQuaternion()
+        return 1, 0, MVector3D()
     
     # 目は四角の中にあるはず
-    eye_qq = MQuaternion()
+    pupil_x = 0
+    pupil_y = 0
     if pupil != MVector2D():
         eye_right = ((eye3 + eye5) / 2)
         eye_left = ((eye2 + eye6) / 2)
         pupil_horizonal_ratio = (pupil.x() - min(eye1.x(), eye4.x())) / (max(eye1.x(), eye4.x()) - min(eye1.x(), eye4.x()))
         pupil_vertical_ratio = (pupil.y() - center_top.y()) / (center_bottom.y() - center_top.y())
 
-        pupil_x = calc_ratio(pupil_vertical_ratio, 0, 1, -15, 15)
-        pupil_y = calc_ratio(pupil_horizonal_ratio, 0, 1, -30, 20)
+        if abs(pupil_horizonal_ratio) <= 1 and abs(pupil_vertical_ratio) <= 1:
+            # 比率を超えている場合、計測失敗してるので初期値            
+            pupil_x = calc_ratio(pupil_vertical_ratio, 0, 1, -15, 15)
+            pupil_y = calc_ratio(pupil_horizonal_ratio, 0, 1, -30, 20)
 
-        eye_qq = MQuaternion.fromEulerAngles(pupil_x * -1, pupil_y * -1, 0)
-
-    return new_ratio * (1 - smile_ratio), new_ratio * smile_ratio, eye_qq
+    return new_ratio * (1 - smile_ratio), new_ratio * smile_ratio, MVector3D(pupil_x * -1, pupil_y * -1, 0)
 
 def calc_ratio(ratio: float, oldmin: float, oldmax: float, newmin: float, newmax: float):
     # https://qastack.jp/programming/929103/convert-a-number-range-to-another-range-maintaining-ratio
@@ -848,9 +950,9 @@ VMD_CONNECTIONS = {
     'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], \
         {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
     'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], \
-        {"x": {"min": -45, "max": 45}, "y": {"min": -30, "max": 30}, "z": {"min": -90, "max": 90}}, True, False),
+        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 20}}, True, False),
     'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], \
-        {"x": {"min": -45, "max": 45}, "y": {"min": -30, "max": 30}, "z": {"min": -90, "max": 90}}, True, False),
+        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 20}}, True, False),
     'pelvis': ("下半身", None, ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], None, False, False),
     'pelvis2': ("尾てい骨", None, None, None, None, False, False),
     'right_hip': ("右足", None, ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], None, False, False),
@@ -868,13 +970,13 @@ VMD_CONNECTIONS = {
     'left_index1': ("左人指１", None, ['left_index1', 'left_index2', 'left_index1', 'left_pinky1', 'left_wrist', 'left_index1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], \
         {"x": {"min": -3, "max": 3}, "y": {"min": -30, "max": 30}, "z": {"min": -10, "max": 130}}, True, False),
     'right_index2': ("右人指２", None, ['right_index2', 'right_index3', 'right_index1', 'right_pinky1', 'right_index1', 'right_index2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_index2': ("左人指２", None, ['left_index2', 'left_index3', 'left_index1', 'left_pinky1', 'left_index1', 'left_index2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_index3': ("右人指３", None, ['right_index3', 'right_index', 'right_index1', 'right_pinky1', 'right_index2', 'right_index3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１", "右人指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_index3': ("左人指３", None, ['left_index3', 'left_index', 'left_index1', 'left_pinky1', 'left_index2', 'left_index3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１", "左人指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_index': ("右人差指先", None, None, None, None, True, False),
     'left_index': ("左人差指先", None, None, None, None, True, False),
     'right_middle1': ("右中指１", None, ['right_middle1', 'right_middle2', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], \
@@ -882,13 +984,13 @@ VMD_CONNECTIONS = {
     'left_middle1': ("左中指１", None, ['left_middle1', 'left_middle2', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], \
         {"x": {"min": -3, "max": 3}, "y": {"min": -30, "max": 30}, "z": {"min": -10, "max": 130}}, True, False),
     'right_middle2': ("右中指２", None, ['right_middle2', 'right_middle3', 'right_index1', 'right_pinky1', 'right_middle1', 'right_middle2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_middle2': ("左中指２", None, ['left_middle2', 'left_middle3', 'left_index1', 'left_pinky1', 'left_middle1', 'left_middle2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_middle3': ("右中指３", None, ['right_middle3', 'right_middle', 'right_index1', 'right_pinky1', 'right_middle2', 'right_middle3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１", "右中指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_middle3': ("左中指３", None, ['left_middle3', 'left_middle', 'left_index1', 'left_pinky1', 'left_middle2', 'left_middle3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１", "左中指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_middle': ("右中指先", None, None, None, None, True, False),
     'left_middle': ("左中指先", None, None, None, None, True, False),
     'right_ring1': ("右薬指１", None, ['right_ring1', 'right_ring2', 'right_index1', 'right_pinky1', 'right_wrist', 'right_ring1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], \
@@ -896,13 +998,13 @@ VMD_CONNECTIONS = {
     'left_ring1': ("左薬指１", None, ['left_ring1', 'left_ring2', 'left_index1', 'left_pinky1', 'left_wrist', 'left_ring1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], \
         {"x": {"min": -3, "max": 3}, "y": {"min": -30, "max": 30}, "z": {"min": -10, "max": 130}}, True, False),
     'right_ring2': ("右薬指２", None, ['right_ring2', 'right_ring3', 'right_index1', 'right_pinky1', 'right_ring1', 'right_ring2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_ring2': ("左薬指２", None, ['left_ring2', 'left_ring3', 'left_index1', 'left_pinky1', 'left_ring1', 'left_ring2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_ring3': ("右薬指３", None, ['right_ring3', 'right_ring', 'right_index1', 'right_pinky1', 'right_ring2', 'right_ring3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１", "右薬指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_ring3': ("左薬指３", None, ['left_ring3', 'left_ring', 'left_index1', 'left_pinky1', 'left_ring2', 'left_ring3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１", "左薬指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_ring': ("右薬指先", None, None, None, None, True, False),
     'left_ring': ("左薬指先", None, None, None, None, True, False),
     'right_pinky1': ("右小指１", None, ['right_pinky1', 'right_pinky2', 'right_index1', 'right_pinky1', 'right_wrist', 'right_pinky1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], \
@@ -910,13 +1012,13 @@ VMD_CONNECTIONS = {
     'left_pinky1': ("左小指１", None, ['left_pinky1', 'left_pinky2', 'left_index1', 'left_pinky1', 'left_wrist', 'left_pinky1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], \
         {"x": {"min": -3, "max": 3}, "y": {"min": -30, "max": 30}, "z": {"min": -10, "max": 130}}, True, False),
     'right_pinky2': ("右小指２", None, ['right_pinky2', 'right_pinky3', 'right_index1', 'right_pinky1', 'right_pinky1', 'right_pinky2'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_pinky2': ("左小指２", None, ['left_pinky2', 'left_pinky3', 'left_index1', 'left_pinky1', 'left_pinky1', 'left_pinky2'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_pinky3': ("右小指３", None, ['right_pinky3', 'right_pinky', 'right_index1', 'right_pinky1', 'right_pinky2', 'right_pinky3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１", "右小指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'left_pinky3': ("左小指３", None, ['left_pinky3', 'left_pinky', 'left_index1', 'left_pinky1', 'left_pinky2', 'left_pinky3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１", "左小指２"], \
-        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -10, "max": 130}}, True, False),
+        {"x": {"min": -3, "max": 3}, "y": {"min": -3, "max": 3}, "z": {"min": -3, "max": 130}}, True, False),
     'right_pinky': ("右小指先", None, None, None, None, True, False),
     'left_pinky': ("左小指先", None, None, None, None, True, False),
 }

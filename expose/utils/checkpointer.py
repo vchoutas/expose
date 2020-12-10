@@ -90,7 +90,7 @@ class Checkpointer(object):
         logger.info('Load pretrained: {}', load_pretrained)
         with open(save_fn, 'r') as f:
             latest_ckpt_fn = f.read().strip()
-        logger.warning(f'Loading checkpoint from {latest_ckpt_fn}!')
+        logger.info(f'Loading checkpoint from {latest_ckpt_fn}!')
 
         if self.distributed:
             map_location = torch.device(f'cuda:{self.rank}')

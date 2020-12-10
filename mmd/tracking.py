@@ -71,7 +71,7 @@ def execute(args):
         process_bbox_path = os.path.join(args.img_dir, "bbox.mp4")
         process_img_pathes = sorted(glob.glob(os.path.join(args.img_dir, "frames", "**", "frame_*.png")), key=sort_by_numeric)
 
-        logger.info("人物追跡開始", decoration=MLogger.DECORATION_BOX)
+        logger.info("人物追跡開始", decoration=MLogger.DECORATION_LINE)
 
         # process the frames sequentially
         all_bbox_frames = []
@@ -184,7 +184,7 @@ def execute(args):
             # 全データを保持（前回データはヒット分を削除したりするのでコピー保持）
             all_bbox_frames.append(cPickle.loads(cPickle.dumps(now_bbox_frames, -1)))
 
-        logger.info('追跡結果チェック開始', decoration=MLogger.DECORATION_BOX)
+        logger.info('追跡結果チェック開始', decoration=MLogger.DECORATION_LINE)
 
         # bboxのサイズの中央値を求める
         all_w = []
@@ -197,7 +197,7 @@ def execute(args):
         median_w = np.median(all_w)
         median_h = np.median(all_h)
 
-        logger.info('追跡結果生成開始', decoration=MLogger.DECORATION_BOX)
+        logger.info('追跡結果生成開始', decoration=MLogger.DECORATION_LINE)
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(process_bbox_path, fourcc, 30.0, (width, height))

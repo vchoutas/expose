@@ -35,7 +35,7 @@ def execute(args):
         frame_pattern = re.compile(r'^frame_(\d+)\.')
 
         for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-            logger.info("【No.%s】関節スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_BOX)
+            logger.info("【No.%s】関節スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             frame_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "frame_*.json")), key=sort_by_numeric)
 
@@ -91,10 +91,15 @@ def execute(args):
 
             # スムージング
             for (jname, axis), joints in tqdm(all_joints.items(), desc=f"Filter No.{oidx:03} ... "):
-                filter = OneEuroFilter(freq=30, mincutoff=1, beta=0.01, dcutoff=1)
+                filter = OneEuroFilter(freq=30, mincutoff=0.3, beta=0.01, dcutoff=0.25)
                 for fno, joint in joints.items():
                     all_joints[(jname, axis)][fno] = filter(joint, fno)
-            
+
+            # 出力先ソート済みフォルダ
+            smoothed_person_dir_path = os.path.join(args.img_dir, "smooth", f"{oidx:03}")
+
+            os.makedirs(smoothed_person_dir_path, exist_ok=True)
+
             # 出力
             for frame_json_path in tqdm(frame_json_pathes, desc=f"Save No.{oidx:03} ... "):
                 m = frame_pattern.match(os.path.basename(frame_json_path))
@@ -124,7 +129,7 @@ def execute(args):
                             frame_joints["faces"][ename]["x"] = all_joints[(ename, 'fx')][fno]
                             frame_joints["faces"][ename]["y"] = all_joints[(ename, 'fy')][fno]
 
-                    smooth_json_path = os.path.join(ordered_person_dir_path, f"smooth_{fno:012}.json")
+                    smooth_json_path = os.path.join(smoothed_person_dir_path, f"smooth_{fno:012}.json")
                     
                     with open(smooth_json_path, 'w', encoding='utf-8') as f:
                         json.dump(frame_joints, f, indent=4)
