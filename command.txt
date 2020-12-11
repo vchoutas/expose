@@ -1,6 +1,7 @@
 conda create -n expose pip python=3.7
 
 conda install pytorch torchvision cudatoolkit=10.2 -c pytorch
+conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.2 -c pytorch
 
 pip install -r requirements.txt
 
@@ -37,7 +38,7 @@ python demo2.py --video-path samples/girl2/girl_46949.mp4 --exp-cfg data/conf.ya
 
 -----------
 for MMD
-pip install cython
+
 pip install numpy-quaternion
 pip install bezier
 
@@ -82,5 +83,29 @@ if明度調節→ifコントラスト→シャープネス→ダストアンド�
 グレスケ処理して　ヒストグラム取得　カーブの傾向でどうするか決めるってのが
 ちょっと　ヒストグラムの取得周りが謎だけど　一番妥当な解決策ﾄｵﾓﾜﾚﾙ
 
+FF階調しかないものを　FF階調前提の処理をしても
+FFの範囲
+擬似的にレンジを広げてから　トーン伸張をしてから　FFに戻すのが大事
+実写系映像の認識の問題は　シャドーで隠れるが殆どなんで　　シャドー部分だけを伸張するのが
+大事大事
+暗い部分の階調を広げる
+
+less今日 02:35
+曲線弄れたなら
+もうｲｹﾙ
+kumaris今日 02:35
+やってることは　RGBカラーの　反比例曲線的算出につき
+少し考えてみるのをオススメ
+
+kumaris今日 02:36
+但しアクセラレーションを使わないので
+処理時間がやべえくらい増えるとおもわるる
+ﾊﾟｲﾁｮﾝ
+less今日 02:36
+処理的にはLUTが一番早いと思われる
+kumaris今日 02:36
+ﾀｶｼ
+less今日 02:37
+最初に、適当なそういう曲線を作る式を使ってLUTを生成して、あとは辞書処理
 
 

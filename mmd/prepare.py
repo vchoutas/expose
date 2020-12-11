@@ -94,18 +94,22 @@ def execute(args):
                         # 画像の縦横を指定サイズに変形
                         img = img.resize((width, height), Image.ANTIALIAS)
                         
-                        # floatに変換
-                        img = img_as_float(img)
+                        # # floatに変換
+                        # img = img_as_float(img)
 
                         # # コントラストを強調
                         # img = exposure.equalize_hist(img)
+
+                        # # TV filter
+                        # img = restoration.denoise_tv_chambolle(img, weight=0.1)
 
                     except Exception as e:
                         # エラーするようなら無視
                         logger.error(e)
 
                     # opencv用に変換
-                    out_frame = img_as_ubyte(img)  # np.array(img_gray*255, dtype=np.uint8)
+                    # out_frame = img_as_ubyte(img)
+                    out_frame = np.array(img, dtype=np.uint8)
 
                     # PNG出力
                     cv2.imwrite(resize_img_path.format(n), out_frame)

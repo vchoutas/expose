@@ -178,7 +178,7 @@ def execute(args):
                     # まだ骨盤位置が保持されていない場合、保持
                     if start_pelvis == MVector3D():
                         start_pelvis.setX(pelvis_relative_pos[0] * args.center_scale)
-                        start_pelvis.setY(pelvis_relative_pos[1] * args.center_scale)
+                        start_pelvis.setY(pelvis_relative_pos[1] * args.center_scale * (all_frame_joints[fno]["bbox"]["height"] / all_frame_joints[fno]["bbox"]["width"]))
                         start_pelvis.setZ(pelvis_z * args.center_scale)
 
                     center_bf = VmdBoneFrame()
