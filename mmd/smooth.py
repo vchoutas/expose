@@ -89,6 +89,18 @@ def execute(args):
                             all_joints[(ename, 'ex')][fno] = eye["x"]
                             all_joints[(ename, 'ey')][fno] = eye["y"]
 
+                    if "depth" in frame_joints:
+                        if ("depth", 'dx') not in all_joints:
+                            all_joints[("depth", 'dx')] = {}
+                        if ("depth", 'dy') not in all_joints:
+                            all_joints[("depth", 'dy')] = {}
+                        if ("depth", 'dz') not in all_joints:
+                            all_joints[("depth", 'dz')] = {}
+
+                        all_joints[("depth", 'dx')][fno] = frame_joints["depth"]["x"]
+                        all_joints[("depth", 'dy')][fno] = frame_joints["depth"]["y"]
+                        all_joints[("depth", 'dz')][fno] = frame_joints["depth"]["z"]
+
             # スムージング
             for (jname, axis), joints in tqdm(all_joints.items(), desc=f"Filter No.{oidx:03} ... "):
                 # filter = OneEuroFilter(freq=30, mincutoff=0.3, beta=0.01, dcutoff=0.25)
@@ -130,6 +142,11 @@ def execute(args):
                         for ename, eye in frame_joints["faces"].items():
                             frame_joints["faces"][ename]["x"] = all_joints[(ename, 'fx')][fno]
                             frame_joints["faces"][ename]["y"] = all_joints[(ename, 'fy')][fno]
+
+                    if "depth" in frame_joints:
+                        frame_joints["depth"]["x"] = all_joints[("depth", 'dx')][fno]
+                        frame_joints["depth"]["y"] = all_joints[("depth", 'dy')][fno]
+                        frame_joints["depth"]["z"] = all_joints[("depth", 'dz')][fno]
 
                     smooth_json_path = os.path.join(smoothed_person_dir_path, f"smooth_{fno:012}.json")
                     

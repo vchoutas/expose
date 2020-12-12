@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument('--upper-motion', type=int, dest='upper_motion', default="0", help='Whether to generate upper motion only')
     parser.add_argument('--hand-motion', type=int, dest='hand_motion', default="0", help='Whether to generate hand motion')
     parser.add_argument('--face-motion', type=int, dest='face_motion', default="0", help='Whether to generate face motion')
-    parser.add_argument('--center-scale', type=float, dest='center_scale', default="40", help='center scale')
+    parser.add_argument('--center-scale', type=float, dest='center_scale', default="30", help='center scale')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='Log level')
     parser.add_argument("--log-mode", type=int, dest='log_mode', default=0, help='Log output mode')
 
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    logger.info("MMD自動トレース開始\n　処理対象映像ファイル: %s\n　処理対象: %s", args.video_file, args.process, decoration=MLogger.DECORATION_BOX)
+    logger.info("MMD自動トレース開始\n　処理対象映像ファイル: %s\n　処理内容: %s", args.video_file, args.process, decoration=MLogger.DECORATION_BOX)
 
     if "prepare" in args.process:
         # 準備
@@ -58,6 +58,11 @@ if __name__ == "__main__":
         # exposeによる人物推定
         import mmd.expose
         result = mmd.expose.execute(args)
+
+    if result and "depth" in args.process:
+        # monoloclによる人物推定
+        import mmd.depth
+        result = mmd.depth.execute(args)
 
     if result and "tracking" in args.process:
         # lighttrackによる人物追跡
@@ -91,5 +96,6 @@ if __name__ == "__main__":
 
     elapsed_time = time.time() - start
 
-    logger.info("MMD自動トレース終了\n　トレース結果: %s\n　処理時間: %s", args.video_file, show_worked_time(elapsed_time), decoration=MLogger.DECORATION_BOX)
+    logger.info("MMD自動トレース終了\n　処理対象映像ファイル: %s\n　処理内容: %s\n　トレース結果: %s\n　処理時間: %s", \
+                args.video_file, args.process, args.video_file, show_worked_time(elapsed_time), decoration=MLogger.DECORATION_BOX)
     

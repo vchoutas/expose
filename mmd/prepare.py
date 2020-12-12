@@ -47,8 +47,7 @@ def execute(args):
         # 縮尺を調整
         width = int(1920)
 
-        process_img_dir = os.path.join(base_path, "output", os.path.basename(args.video_file).replace('.', '_'), \
-                                    "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now()))
+        process_img_dir = os.path.join(base_path, os.path.basename(args.video_file).replace('.', '_'), "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now()))
 
         # 既存は削除
         if os.path.exists(process_img_dir):

@@ -84,9 +84,9 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
     if track_id == -1:
         color = (255*rand(), 255*rand(), 255*rand())
     else:
-        color_list = ['purple', 'yellow', 'blue', 'green', 'red', 'skyblue', 'navyblue', 'slate', 'chocolate', 'olive', 'orange', 'orchid']
-        color_name = color_list[track_id % 12]
-        color = find_color_scalar(color_name)
+        color_list = [(255,0,0), (0,255,0), (0,0,255), (255,127,0), (255,0,127), (127,255,0), (255,127,0), (0,127,255), (0,255,127), (127,127,0), \
+                      (255,51,51), (51,255,51), (51,51,255), (255,127,51), (255,51,127), (127,255,51), (255,127,51), (51,127,255), (51,255,127), (127,127,51)]
+        color = color_list[track_id % len(color_list)]
 
     if img_id % 10 == 0:
         color = find_color_scalar('red')

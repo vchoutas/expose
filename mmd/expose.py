@@ -334,7 +334,7 @@ def main(
             # json出力
             joint_dict = {}
             joint_dict["image"] = {"width": W, "height": H}
-            joint_dict["depth"] = {"depth": float(hd_params["depth"][0][0])}
+            joint_dict["depth"] = {"x": float(hd_params["depth"][0][0]), "y": float(hd_params["depth"][0][0]), "z": float(hd_params["depth"][0][0])}
             joint_dict["camera"] = {"scale": float(camera_scale_np[0][0]), "transl": {"x": float(camera_tansl_np[0, 0]), "y": float(camera_tansl_np[0, 1])}}
             joint_dict["center"] = {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}
             joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), \

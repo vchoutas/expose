@@ -9,33 +9,6 @@ https://expose.is.tue.mpg.de/
 https://smpl-x.is.tue.mpg.de/
 Model DL
 
-python demo.py --image-folder samples --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis False --save-mesh False
-
-
-python demo2.py --video-path "C:/MMD/expose_mmd/samples/45seconds_452-652.mp4" --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis True --save-mesh True
-
-
-python inference.py --exp-cfg data/conf.yaml --datasets openpose --exp-opts datasets.body.batch_size 48 datasets.body.openpose.data_folder samples/images --show=False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --video-path "C:/MMD/expose_mmd/samples/input_100-110.mp4" --exp-cfg data/conf.yaml --show=False --output-folder output --save-params True --save-vis True --save-mesh False --degrees 90
-
-
-python demo2.py --video-path samples/default.avi --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --video-path samples/cat_30fps_2807-2907.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --video-path samples/cat_30fps_512-1200.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --video-path samples/magic_doi_7877-9260.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False --video-path samples/cat_30fps_512-1200.mp4
-
-python demo2.py --video-path samples/magic_3250-3930.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --video-path samples/girl/girl_45132.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
-python demo2.py --video-path samples/girl2/girl_46949.mp4 --exp-cfg data/conf.yaml --show False --output-folder output --save-params True --save-vis True --save-mesh False
-
 -----------
 for MMD
 
@@ -67,6 +40,10 @@ pip install cython opencv-python pillow matplotlib
 pip install "C:\MMD\frankmocap_mmd\scripts\setproctitle-1.2.1-cp37-cp37m-win_amd64.whl"
 
 pip install scikit-image
+
+---------
+for monoloco
+
 
 
 ---------
