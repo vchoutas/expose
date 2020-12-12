@@ -19,3 +19,4 @@ imutils
 tensorflow-gpu==1.15
 cython
 scikit-image
+setproctitle

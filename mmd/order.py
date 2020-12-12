@@ -38,7 +38,7 @@ def execute(args):
         try:
             with open(args.order_file, "r", encoding='utf-8') as of:
                 reader = csv.reader(of)
-                order_list = [row for row in reader]
+                order_list = [row for row in reader if len(row) > 0]
         except Exception as e:
             logger.error("指定された順番指定用ファイルのCSV読み取り処理に失敗しました", e, decoration=MLogger.DECORATION_BOX)
             return False

@@ -8,9 +8,6 @@ import sys
 import os
 import json
 import locale
-from loguru import logger
-
-from numpy.lib.arraysetops import isin
 
 from mmd.utils.MException import MKilledException
 
@@ -199,8 +196,10 @@ class MLogger():
             target_decoration = kwargs.pop("decoration", None)
             title = kwargs.pop("title", None)
 
-            print_msg = log_record.getMessage()
-            
+            print_msg = str(trans_msg)
+            if args:
+                print_msg = print_msg % (args)
+
             if target_decoration:
                 if target_decoration == MLogger.DECORATION_BOX:
                     output_msg = self.create_box_message(print_msg, target_level, title)
