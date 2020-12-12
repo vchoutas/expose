@@ -12,3 +12,10 @@ torch>=1.6.0
 torchvision>=0.7.0+cu101
 tqdm>=4.48.2
 trimesh>=3.8.1
+numpy-quaternion
+bezier
+dlib
+imutils
+tensorflow-gpu==1.15
+cython
+scikit-image

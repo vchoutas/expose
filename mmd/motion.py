@@ -238,10 +238,16 @@ def execute(args):
                     right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
                     left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
 
-                    # とりあえず直立分をマイナス
-                    groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
-                    right_leg_ik_bf.position.setY(right_leg_ik_bf.position.y() - min_leg_y)
-                    left_leg_ik_bf.position.setY(left_leg_ik_bf.position.y() - min_leg_y)
+                    # # とりあえず直立分をマイナス
+                    # if groove_bf.position.y() >= abs(min_leg_y / 2):
+                    #     groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
+                    # right_leg_ik_bf.position.setY(right_leg_ik_bf.position.y() - min_leg_y)
+                    # left_leg_ik_bf.position.setY(left_leg_ik_bf.position.y() - min_leg_y)
+
+                    # # 一旦登録
+                    # motion.regist_bf(groove_bf, groove_bf.name, fno)
+                    # motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
+                    # motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
 
                     min_leg_ys = []
                     for toe_ik_links, leg_ik_bf, leg_ik_name in [(right_toe_ik_links, right_leg_ik_bf, "右足ＩＫ"), (left_toe_ik_links, left_leg_ik_bf, "左足ＩＫ")]:
@@ -256,7 +262,8 @@ def execute(args):
                     # 大体床に接地していると見なしてマイナス
                     if len(min_leg_ys) > 0:
                         min_leg_y = min(min_leg_ys)
-                        groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
+                        if groove_bf.position.y() >= abs(min_leg_y / 2):
+                            groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
                         right_leg_ik_bf.position.setY(right_leg_ik_bf.position.y() - min_leg_y)
                         left_leg_ik_bf.position.setY(left_leg_ik_bf.position.y() - min_leg_y)
 
@@ -289,11 +296,11 @@ def execute(args):
                             leg_ik_bf.position.setY(leg_ik_bf.position.y() + -toe_y)
                             motion.regist_bf(leg_ik_bf, leg_ik_bf.name, fno)
 
-            # 手首を削除
-            if "右手首" in motion.bones:
-                del motion.bones["右手首"]
-            if "左手首" in motion.bones:
-                del motion.bones["左手首"]
+            # # 手首を削除
+            # if "右手首" in motion.bones:
+            #     del motion.bones["右手首"]
+            # if "左手首" in motion.bones:
+            #     del motion.bones["左手首"]
             
             motion_path = os.path.join(motion_dir_path, "output_{0}_no{1:03}.vmd".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S'), oidx))
             writer = VmdWriter(model, motion, motion_path)
@@ -1054,9 +1061,9 @@ VMD_CONNECTIONS = {
     'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], \
         {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
     'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], \
-        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 20}}, True, False),
+        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
     'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], \
-        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 20}}, True, False),
+        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
     'pelvis': ("下半身", None, ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], None, False, False),
     'pelvis2': ("尾てい骨", None, None, None, None, False, False),
     'right_hip': ("右足", None, ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], None, False, False),

@@ -14,15 +14,15 @@ cimport numpy as np
 assert sizeof(int) == sizeof(np.int32_t)
 
 cdef extern from "gpu_nms.hpp":
-    void _nms(np.int32_t*, int*, np.float32_t*, int, int, float, int)
+    void _nms(np.int_t*, int*, np.float32_t*, int, int, float, int)
 
 def gpu_nms(np.ndarray[np.float32_t, ndim=2] dets, np.float thresh,
             np.int32_t device_id=0):
     cdef int boxes_num = dets.shape[0]
     cdef int boxes_dim = dets.shape[1]
     cdef int num_out
-    cdef np.ndarray[np.int32_t, ndim=1] \
-        keep = np.zeros(boxes_num, dtype=np.int32)
+    cdef np.ndarray[np.int_t, ndim=1] \
+        keep = np.zeros(boxes_num, dtype=np.int)
     cdef np.ndarray[np.float32_t, ndim=1] \
         scores = dets[:, 4]
     cdef np.ndarray[np.int32_t, ndim=1] \

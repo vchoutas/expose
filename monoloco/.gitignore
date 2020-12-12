@@ -1,0 +1,11 @@
+.idea/
+data/
+.DS_store
+__pycache__
+Monoloco/*.pyc
+.pytest*
+dist/
+build/
+*.egg-info
+tests/*.png
+kitti-eval/*
