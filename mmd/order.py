@@ -69,8 +69,9 @@ def execute(args):
         if len(process_img_pathes) > 0:
             process_img_path = process_img_pathes[0]
             img = cv2.imread(process_img_path)
-            avi_width = int(img.shape[1] * 0.32)
-            avi_height = int(img.shape[0] * 0.32)
+            scale = min(1, 50 / len(process_img_pathes))
+            avi_width = int(img.shape[1] * scale)
+            avi_height = int(img.shape[0] * scale)
             avi_out = cv2.VideoWriter(ordered_bbox_path, fourcc, 30.0, (avi_width, avi_height))
     
         # 順番指定正規表現
