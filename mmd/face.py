@@ -16,14 +16,14 @@ logger = MLogger(__name__)
 
 def execute(args):
     try:
-        logger.info('表情推定処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('表情推定処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         if not os.path.exists(os.path.join(args.img_dir, "ordered")):
-            logger.error("指定された順番ディレクトリが存在しません。\n順番指定が完了していない可能性があります。: %s", \
+            logger.error("指定された順番ディレクトリが存在しません。\n順番指定が完了していない可能性があります。: {0}", \
                          os.path.join(args.img_dir, "ordered"), decoration=MLogger.DECORATION_BOX)
             return False
 
@@ -36,7 +36,7 @@ def execute(args):
         detector = dlib.get_frontal_face_detector()
 
         for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-            logger.info("【No.%s】表情推定開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+            logger.info("【No.{0}】表情推定開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             frame_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "frame_*.json")), key=sort_by_numeric)
 
@@ -102,7 +102,7 @@ def execute(args):
                             with open(frame_json_path, 'w') as f:
                                 json.dump(frame_joints, f, indent=4)
 
-        logger.info('表情推定処理終了: %s', os.path.join(args.img_dir, "ordered"), decoration=MLogger.DECORATION_BOX)
+        logger.info('表情推定処理終了: {0}', os.path.join(args.img_dir, "ordered"), decoration=MLogger.DECORATION_BOX)
 
         return True
     except Exception as e:

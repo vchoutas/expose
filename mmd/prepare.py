@@ -25,7 +25,7 @@ def execute(args):
         logger.info("動画準備開始", decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.video_file):
-            logger.error("指定されたファイルパスが存在しません。\n%s", args.video_file, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定されたファイルパスが存在しません。\n{0}", args.video_file, decoration=MLogger.DECORATION_BOX)
             return False, None
 
         # 親パス(指定がなければ動画のある場所。Colabはローカルで作成するので指定あり想定)
@@ -41,7 +41,7 @@ def execute(args):
         # fps
         fps = video.get(cv2.CAP_PROP_FPS)
 
-        logger.info("【初回チェック】\n　ファイル名: %s, ファイルサイズ: %s, 横: %s, 縦: %s, フレーム数: %s, fps: %s", \
+        logger.info("【初回チェック】\n　ファイル名: {0}, ファイルサイズ: {1}, 横: {2}, 縦: {3}, フレーム数: {4}, fps: {5}", \
                     args.video_file, os.path.getsize(args.video_file), W, H, count, fps, decoration=MLogger.DECORATION_BOX)
 
         # 縮尺を調整
@@ -131,7 +131,7 @@ def execute(args):
                 inter_cnt = k * fps_interpolation
                 # INDEXと比率（整数部と小数部）
                 inter_cnt_rate, inter_cnt_idx = math.modf(inter_cnt)
-                # logger.debug("フレーム補間: %s -> %s, idx: %s, rate: %s" % ( cnt, inter_cnt, inter_cnt_idx, inter_cnt_rate ))
+                # logger.debug("フレーム補間: {0} -> {1}, idx: {2}, rate: {3}" % ( cnt, inter_cnt, inter_cnt_idx, inter_cnt_rate ))
 
                 # 前のフレーム
                 past_frame = cv2.imread(resize_img_path.format(int(inter_cnt_idx)))
@@ -158,14 +158,14 @@ def execute(args):
             # 終わったら開放
             cap.release()
 
-            logger.info("【再チェック】\n　準備フォルダ: %s, 横: %s, 縦: %s, フレーム数: %s, fps: %s", process_img_dir, width, height, last_k, 30)
+            logger.info("【再チェック】\n　準備フォルダ: {0}, 横: {1}, 縦: {2}, フレーム数: {3}, fps: {4}", process_img_dir, width, height, last_k, 30)
         except Exception as e:
             logger.error("再エンコード失敗", e)
             return False, None
 
         cv2.destroyAllWindows()
 
-        logger.info("動画準備完了: %s", process_img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info("動画準備完了: {0}", process_img_dir, decoration=MLogger.DECORATION_BOX)
 
         return True, process_img_dir
     except Exception as e:

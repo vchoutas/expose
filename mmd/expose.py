@@ -69,10 +69,10 @@ logger = MLogger(__name__, level=MLogger.DEBUG)
 
 def execute(args):
     try:
-        logger.info('人物姿勢推定開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物姿勢推定開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         torch.backends.cudnn.benchmark = True
@@ -119,7 +119,7 @@ def execute(args):
                 rcnn_batch=rcnn_batch,
             )
 
-        logger.info('人物姿勢推定終了: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物姿勢推定終了: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
         
         return result
     except Exception as e:

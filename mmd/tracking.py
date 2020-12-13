@@ -33,19 +33,19 @@ logger = MLogger(__name__)
 
 def execute(args):
     try:
-        logger.info('人物追跡処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物追跡処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         if not os.path.exists(args.tracking_config):
-            logger.error("指定された人物追跡設定ファイルが存在しません。: %s", args.tracking_config, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された人物追跡設定ファイルが存在しません。: {0}", args.tracking_config, decoration=MLogger.DECORATION_BOX)
             return False
 
         if not os.path.exists(f"{args.tracking_model}.meta") or not os.path.exists(f"{args.tracking_model}.index") or not os.path.exists(f"{args.tracking_model}.data-00000-of-00001"):
             model_dir_path = os.path.abspath(str(pathlib.Path(args.tracking_model).parent))
-            logger.error("追跡に必要な学習モデルが見つかりません。\nモデルディレクトリパス: %s\n上記ディレクトリの中に、%sから始まる3ファイルがある事を確認してください", 
+            logger.error("追跡に必要な学習モデルが見つかりません。\nモデルディレクトリパス: {0}\n上記ディレクトリの中に、{1}から始まる3ファイルがある事を確認してください", 
                         model_dir_path, "snapshot_296.ckpt", decoration=MLogger.DECORATION_BOX)
             return False
 
@@ -229,7 +229,7 @@ def execute(args):
         out.release()
         cv2.destroyAllWindows()
 
-        logger.info('人物追跡処理終了: %s', process_bbox_path, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物追跡処理終了: {0}', process_bbox_path, decoration=MLogger.DECORATION_BOX)
 
         return True
     except Exception as e:

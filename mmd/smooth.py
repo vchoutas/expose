@@ -23,10 +23,10 @@ logger = MLogger(__name__, level=MLogger.DEBUG)
 
 def execute(args):
     try:
-        logger.info('関節スムージング処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('関節スムージング処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         # 全人物分の順番別フォルダ
@@ -35,7 +35,7 @@ def execute(args):
         frame_pattern = re.compile(r'^frame_(\d+)\.')
 
         for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-            logger.info("【No.%s】関節スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+            logger.info("【No.{0}】関節スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             frame_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "frame_*.json")), key=sort_by_numeric)
 
@@ -153,7 +153,7 @@ def execute(args):
                     with open(smooth_json_path, 'w', encoding='utf-8') as f:
                         json.dump(frame_joints, f, indent=4)
 
-        logger.info('関節スムージング処理終了: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('関節スムージング処理終了: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         return True
     except Exception as e:

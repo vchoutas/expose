@@ -189,7 +189,8 @@ class MLogger():
 
             # ログレコード生成
             if args and isinstance(args[0], Exception) or (args and len(args) > 1 and isinstance(args[0], Exception)):
-                log_record = self.logger.makeRecord('name', target_level, "(unknown file)", 0, f"{trans_msg}\n\n{traceback.format_exc()}", None, None, self.module_name)
+                args[0] = f"{trans_msg}\n\n{traceback.format_exc()}"
+                log_record = self.logger.makeRecord('name', target_level, "(unknown file)", 0, args, None, None, self.module_name)
             else:
                 log_record = self.logger.makeRecord('name', target_level, "(unknown file)", 0, trans_msg, args, None, self.module_name)
             
@@ -198,7 +199,7 @@ class MLogger():
 
             print_msg = str(trans_msg)
             if args:
-                print_msg = print_msg % (args)
+                print_msg = print_msg.format(*args)
 
             if target_decoration:
                 if target_decoration == MLogger.DECORATION_BOX:
@@ -304,8 +305,8 @@ class MLogger():
             cls.target_lang = langs[0]
         else:
             # 実行環境言語に対応した言語が出力対象である場合、その言語を出力する
-            # cls.target_lang = "en_US"
-            cls.target_lang = lang
+            cls.target_lang = "ja_JP"
+            # cls.target_lang = lang
 
         # メッセージファイルパス
         try:

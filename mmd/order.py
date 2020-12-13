@@ -23,14 +23,14 @@ logger = MLogger(__name__, level=MLogger.DEBUG)
 
 def execute(args):
     try:
-        logger.info('人物再追跡処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物再追跡処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         if not os.path.exists(args.order_file):
-            logger.error("指定された順番指定用ファイルが存在しません。: %s", args.order_file, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された順番指定用ファイルが存在しません。: {0}", args.order_file, decoration=MLogger.DECORATION_BOX)
             return False
         
         # 行：人物、列：INDEX指定
@@ -132,7 +132,7 @@ def execute(args):
         avi_out.release()
         cv2.destroyAllWindows()
 
-        logger.info('人物再追跡処理終了: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物再追跡処理終了: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         return True
     except Exception as e:

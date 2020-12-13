@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    logger.info("MMD自動トレース開始\n　処理対象映像ファイル: %s\n　処理内容: %s", args.video_file, args.process, decoration=MLogger.DECORATION_BOX)
+    logger.info("MMD自動トレース開始\n　処理対象映像ファイル: {0}\n　処理内容: {1}", args.video_file, args.process, decoration=MLogger.DECORATION_BOX)
 
     if "prepare" in args.process:
         # 準備
@@ -96,6 +96,6 @@ if __name__ == "__main__":
 
     elapsed_time = time.time() - start
 
-    logger.info("MMD自動トレース終了\n　処理対象映像ファイル: %s\n　処理内容: %s\n　トレース結果: %s\n　処理時間: %s", \
+    logger.info("MMD自動トレース終了\n　処理対象映像ファイル: {0}\n　処理内容: {1}\n　トレース結果: {2}\n　処理時間: {3}", \
                 args.video_file, args.process, args.video_file, show_worked_time(elapsed_time), decoration=MLogger.DECORATION_BOX)
     

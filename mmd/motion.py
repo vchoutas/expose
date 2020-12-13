@@ -26,14 +26,14 @@ logger = MLogger(__name__)
 
 def execute(args):
     try:
-        logger.info('モーション生成処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('モーション生成処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         if not os.path.exists(os.path.join(args.img_dir, "smooth")):
-            logger.error("指定された順番ディレクトリが存在しません。\n順番指定が完了していない可能性があります。: %s", \
+            logger.error("指定された順番ディレクトリが存在しません。\n順番指定が完了していない可能性があります。: {0}", \
                          os.path.join(args.img_dir, "smooth"), decoration=MLogger.DECORATION_BOX)
             return False
 
@@ -50,7 +50,7 @@ def execute(args):
         start_z = 9999999999
 
         for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-            logger.info("【No.%s】FKボーン角度計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+            logger.info("【No.{0}】FKボーン角度計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             smooth_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "smooth_*.json")), key=sort_by_numeric)
 
@@ -154,7 +154,7 @@ def execute(args):
                     prev_fno = fno
 
             if args.body_motion == 1:
-                logger.info("【No.%s】直立姿勢開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】直立姿勢開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 
                 leg_lengths = []
                 foot_ys = []
@@ -189,7 +189,7 @@ def execute(args):
                 # 直立キーフレの骨盤は地に足がついているとみなす
                 upright_pelvis_vec = get_pelvis_vec(all_frame_joints, upright_fno, 0, args)
 
-                logger.info("【No.%s】センター計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】センター計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
                 for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
                     pelvis_vec = get_pelvis_vec(all_frame_joints, fno, upright_pelvis_vec.y(), args)
@@ -215,10 +215,10 @@ def execute(args):
                     center_bf.position.setZ(pelvis_vec.z() - start_z)
                     motion.regist_bf(center_bf, center_bf.name, fno)
 
-                logger.info("【No.%s】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, "左")
 
-                logger.info("【No.%s】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, "右")
 
                 # つま先IK末端までのリンク
@@ -226,7 +226,7 @@ def execute(args):
                 left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
 
                 # 直立フレームは地に足がついていると見なす
-                logger.info("【No.%s】グルーブ調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】グルーブ調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 right_leg_ik_bf = motion.calc_bf("右足ＩＫ", upright_fno)
                 left_leg_ik_bf = motion.calc_bf("左足ＩＫ", upright_fno)
                 # 最低限調整するＹ値
@@ -306,7 +306,7 @@ def execute(args):
             writer = VmdWriter(model, motion, motion_path)
             writer.write()
 
-            logger.info("【No.%s】モーション生成終了: %s", f"{oidx:03}", motion_path, decoration=MLogger.DECORATION_BOX)
+            logger.info("【No.{0}】モーション生成終了: {1}", f"{oidx:03}", motion_path, decoration=MLogger.DECORATION_BOX)
 
         logger.info('モーション生成処理全件終了', decoration=MLogger.DECORATION_BOX)
 
@@ -368,14 +368,14 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: 
     ik_parent_name = ik_links.get(leg_ik_bone_name, offset=-1).name
 
     # まずキー登録
-    logger.info("【No.%s】%s足IK準備", f"{oidx:03}", direction)
+    logger.info("【No.{0}】{1}足IK準備", f"{oidx:03}", direction)
     fno = 0
     for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
         bf = motion.calc_bf(leg_ik_bone_name, fno)
         motion.regist_bf(bf, leg_ik_bone_name, fno)
 
     # 足IKの移植
-    logger.info("【No.%s】%s足IK移植", f"{oidx:03}", direction)
+    logger.info("【No.{0}】{1}足IK移植", f"{oidx:03}", direction)
     fno = 0
     for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
         leg_fk_3ds_dic = calc_global_pos(model, fk_links, motion, fno)
@@ -396,18 +396,13 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: 
         motion.regist_bf(bf, leg_ik_bone_name, fno)
         # 足ＩＫ回転なし状態でのつま先までのグローバル位置
         leg_ik_3ds_dic, leg_ik_matrisxs = calc_global_pos(model, toe_ik_links, motion, fno, return_matrix=True)
-        [logger.debug("f: %s, leg_ik_3ds_dic[%s]: %s", fno, k, v.to_log()) for k, v in leg_ik_3ds_dic.items()]
 
         # つま先のローカル位置
         ankle_child_initial_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_ik_3ds_dic[toe_ik_bone_name]
         ankle_child_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_toe_fk_3ds_dic[ankle_child_bone_name]
 
-        logger.debug("f: %s, ankle_child_initial_local_pos: %s", fno, ankle_child_initial_local_pos.to_log())
-        logger.debug("f: %s, ankle_child_local_pos: %s", fno, ankle_child_local_pos.to_log())
-
         # 足ＩＫの回転は、足首から見たつま先の方向
         bf.rotation = MQuaternion.rotationTo(ankle_child_initial_local_pos, ankle_child_local_pos)
-        logger.debug("f: %s, ik_rotation: %s", fno, bf.rotation.toEulerAngles4MMD().to_log())
 
         motion.regist_bf(bf, leg_ik_bone_name, fno)
 

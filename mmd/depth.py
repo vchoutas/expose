@@ -22,10 +22,10 @@ logger = MLogger(__name__, level=MLogger.DEBUG)
 
 def execute(args):
     try:
-        logger.info('人物深度処理開始: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物深度処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
-            logger.error("指定された処理用ディレクトリが存在しません。: %s", args.img_dir, decoration=MLogger.DECORATION_BOX)
+            logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
             return False
 
         parser = get_parser()
@@ -116,7 +116,7 @@ def execute(args):
                         with open(joint_json_path, "w") as f:
                             json.dump(bbox_frames[joint_json_path], f, indent=4)
 
-        logger.info('人物深度処理終了: %s', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('人物深度処理終了: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         return True
     except Exception as e:
