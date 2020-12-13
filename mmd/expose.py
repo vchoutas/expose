@@ -153,8 +153,9 @@ def main(
     # 準備
     expose_dloader = preprocess_images(process_img_pathes, exp_cfg, batch_size=rcnn_batch, device=device)
 
-    model = SMPLXNet(exp_cfg)
+    model = None
     try:
+        model = SMPLXNet(exp_cfg)
         model = model.to(device=device)
     except RuntimeError:
         logger.error('学習モデルが解析出来ませんでした')

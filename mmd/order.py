@@ -60,17 +60,18 @@ def execute(args):
 
         process_img_pathes = sorted(glob.glob(os.path.join(args.img_dir, "frames", "**", "frame_*.png")), key=sort_by_numeric)
 
-        # 順番指定後はMMDに読み込めるよう、AVI形式とする
-        ordered_bbox_path = os.path.join(args.img_dir, "ordered_bbox.avi")
-        fourcc_name = "IYUV" if os.name == "nt" else "I420"
-        fourcc = cv2.VideoWriter_fourcc(*fourcc_name)
+        # 順番指定後はDLを早くするため、mp4のままとする
+        ordered_bbox_path = os.path.join(args.img_dir, "ordered_bbox.mp4")
+        # fourcc_name = "IYUV" if os.name == "nt" else "I420"
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         avi_out = None
         avi_width = 0
         avi_height = 0
         if len(process_img_pathes) > 0:
             process_img_path = process_img_pathes[0]
             img = cv2.imread(process_img_path)
-            scale = min(1, 500 / len(process_img_pathes))
+            # scale = min(1, 2000 / len(process_img_pathes))
+            scale = 1
             avi_width = int(img.shape[1] * scale)
             avi_height = int(img.shape[0] * scale)
             avi_out = cv2.VideoWriter(ordered_bbox_path, fourcc, 30.0, (avi_width, avi_height))

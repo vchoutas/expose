@@ -243,6 +243,7 @@ class SMPLXHead(nn.Module):
         self.body_model_cfg = body_model_cfg.copy()
 
         model_path = osp.expandvars(body_model_cfg.pop('model_folder', ''))
+        logger.info(f'model_path: {model_path}')
         model_type = body_model_cfg.pop('type', 'smplx')
         self.body_model = build_body_model(
             model_path,
