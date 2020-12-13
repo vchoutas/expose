@@ -97,5 +97,5 @@ if __name__ == "__main__":
     elapsed_time = time.time() - start
 
     logger.info("MMD自動トレース終了\n　処理対象映像ファイル: {0}\n　処理内容: {1}\n　トレース結果: {2}\n　処理時間: {3}", \
-                args.video_file, args.process, args.video_file, show_worked_time(elapsed_time), decoration=MLogger.DECORATION_BOX)
+                args.video_file, args.process, args.img_dir, show_worked_time(elapsed_time), decoration=MLogger.DECORATION_BOX)
     

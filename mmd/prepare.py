@@ -47,10 +47,10 @@ def execute(args):
         # 縮尺を調整
         width = int(1920)
 
-        if args.parent_dir:
+        if len(args.parent_dir) > 0:
             process_img_dir = base_path
         else:
-            process_img_dir = os.path.join(base_path, os.path.basename(args.video_file).replace('.', '_'), "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now()))
+            process_img_dir = os.path.join(base_path, "{0}_{1:%Y%m%d_%H%M%S}".format(os.path.basename(args.video_file).replace('.', '_'), datetime.datetime.now()))
 
         # 既存は削除
         if os.path.exists(process_img_dir):
@@ -164,6 +164,9 @@ def execute(args):
             return False, None
 
         cv2.destroyAllWindows()
+
+        # resizeは削除
+        shutil.rmtree(os.path.join(process_img_dir, "resize"))
 
         logger.info("動画準備完了: {0}", process_img_dir, decoration=MLogger.DECORATION_BOX)
 

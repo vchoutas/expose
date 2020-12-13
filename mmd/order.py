@@ -8,6 +8,7 @@ import csv
 import cv2
 import shutil
 import sys
+import pathlib
 
 # import vision essentials
 import numpy as np
@@ -78,6 +79,11 @@ def execute(args):
         order_pattern = re.compile(r'(\d+)\:(\d*)\-(\d*)')
 
         for iidx, process_img_path in enumerate(tqdm(process_img_pathes)):
+            # 元のbboxは削除
+            bbox_path = os.path.join(str(pathlib.Path(process_img_path).parent), os.path.basename(process_img_path).replace("frame", "bbox"))
+            if os.path.exists(bbox_path):
+                os.remove(bbox_path)
+
             # 入力画像パス
             out_frame = cv2.imread(process_img_path)
             # 人数分読み込む
