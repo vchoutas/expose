@@ -335,7 +335,7 @@ def main(
             # json出力
             joint_dict = {}
             joint_dict["image"] = {"width": W, "height": H}
-            joint_dict["depth"] = {"x": float(hd_params["depth"][0][0]), "y": float(hd_params["depth"][0][0]), "z": float(hd_params["depth"][0][0])}
+            joint_dict["depth"] = {"depth": float(hd_params["depth"][0][0])}
             joint_dict["camera"] = {"scale": float(camera_scale_np[0][0]), "transl": {"x": float(camera_tansl_np[0, 0]), "y": float(camera_tansl_np[0, 1])}}
             joint_dict["center"] = {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}
             joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), \
@@ -356,14 +356,14 @@ def main(
                 joint_dict["proj_joints"][jname] = {'x': float(hd_params['center'][0, 0] + j2d[0]), 'y': float(hd_params['center'][0, 1] + j2d[1])}
                 joint_dict["joints"][jname] = {'x': float(joints[jidx][0]), 'y': float(-joints[jidx][1]), 'z': float(joints[jidx][2])}
 
-            for pose_name in ["global_orient", "body_pose", "left_hand_pose", "right_hand_pose", "jaw_pose"]:
-                joint_dict[pose_name] = {}
-                for pidx, pvalues in enumerate(out_params[pose_name]):
-                    joint_dict[pose_name][pidx] = {
-                        'xAxis': {'x': float(pvalues[0,0]), 'y': float(pvalues[0,1]), 'z': float(pvalues[0,2])},
-                        'yAxis': {'x': float(pvalues[1,0]), 'y': float(pvalues[1,1]), 'z': float(pvalues[1,2])},
-                        'zAxis': {'x': float(pvalues[2,0]), 'y': float(pvalues[2,1]), 'z': float(pvalues[2,2])}
-                    }
+            # for pose_name in ["global_orient", "body_pose", "left_hand_pose", "right_hand_pose", "jaw_pose"]:
+            #     joint_dict[pose_name] = {}
+            #     for pidx, pvalues in enumerate(out_params[pose_name]):
+            #         joint_dict[pose_name][pidx] = {
+            #             'xAxis': {'x': float(pvalues[0,0]), 'y': float(pvalues[0,1]), 'z': float(pvalues[0,2])},
+            #             'yAxis': {'x': float(pvalues[1,0]), 'y': float(pvalues[1,1]), 'z': float(pvalues[1,2])},
+            #             'zAxis': {'x': float(pvalues[2,0]), 'y': float(pvalues[2,1]), 'z': float(pvalues[2,2])}
+            #         }
 
             with open(params_json_path, 'w') as f:
                 json.dump(joint_dict, f, indent=4)

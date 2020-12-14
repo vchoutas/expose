@@ -68,6 +68,23 @@ def execute(args):
                     with open(smooth_json_path, 'r', encoding='utf-8') as f:
                         frame_joints = json.load(f)
                     all_frame_joints[fno] = frame_joints
+
+                    # センター・グルーブ・足IKは初期値
+                    center_bf = VmdBoneFrame(fno)
+                    center_bf.set_name("センター")
+                    motion.regist_bf(center_bf, center_bf.name, fno)
+
+                    groove_bf = VmdBoneFrame(fno)
+                    groove_bf.set_name("グルーブ")
+                    motion.regist_bf(groove_bf, groove_bf.name, fno)
+
+                    left_leg_ik_bf = VmdBoneFrame(fno)
+                    left_leg_ik_bf.set_name("左足ＩＫ")
+                    motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
+
+                    right_leg_ik_bf = VmdBoneFrame(fno)
+                    right_leg_ik_bf.set_name("右足ＩＫ")
+                    motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
                     
                     if args.body_motion == 1 or args.face_motion == 1:
                         
@@ -137,7 +154,7 @@ def execute(args):
                                     bf.rotation = qq
 
                                 motion.regist_bf(bf, bf.name, bf.fno)
-
+                                
                     if "faces" in frame_joints and args.face_motion == 1:
                         # 表情がある場合出力
                         # まばたき・視線の向き
@@ -154,8 +171,10 @@ def execute(args):
                     prev_fno = fno
 
             if args.body_motion == 1:
-                logger.info("【No.{0}】直立姿勢開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】直立姿勢計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 
+                right_leg_lengths = []
+                left_leg_lengths = []
                 leg_lengths = []
                 foot_ys = []
                 for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
@@ -164,6 +183,8 @@ def execute(args):
                     right_hip_vec = get_vec3(all_frame_joints[fno]["joints"], "right_hip")
                     right_foot_vec = get_vec3(all_frame_joints[fno]["joints"], "right_foot")
 
+                    right_leg_lengths.append(right_hip_vec.distanceToPoint(right_foot_vec))
+                    left_leg_lengths.append(left_hip_vec.distanceToPoint(left_foot_vec))
                     # 両足の長さを平均
                     leg_lengths.append(np.mean([left_hip_vec.distanceToPoint(left_foot_vec), right_hip_vec.distanceToPoint(right_foot_vec)]))
                     # 踵の位置を平均
@@ -185,9 +206,18 @@ def execute(args):
                 upright_fidx = 0 if upright_fidx < 0 else upright_fidx
                 # 直立キーフレ
                 upright_fno = list(all_frame_joints.keys())[upright_fidx]
+                # 直立の足の長さ
+                upright_right_leg_length = right_leg_lengths[upright_fidx]
+                upright_left_leg_length = left_leg_lengths[upright_fidx]
 
                 # 直立キーフレの骨盤は地に足がついているとみなす
                 upright_pelvis_vec = get_pelvis_vec(all_frame_joints, upright_fno, 0, args)
+
+                logger.info("【No.{0}】直立キーフレ: {1}", f"{oidx:03}", upright_fno)
+
+                # つま先末端までのリンク
+                right_toe_links = model.create_link_2_top_one("右つま先", is_defined=False)
+                left_toe_links = model.create_link_2_top_one("左つま先", is_defined=False)
 
                 logger.info("【No.{0}】センター計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
@@ -197,104 +227,89 @@ def execute(args):
                     if start_z == 9999999999:
                         # 最初の人物の深度を0にする
                         start_z = pelvis_vec.z()
+                    
+                    # # 直立姿勢からのグルーブ位置判定
+                    # pelvis_y = pelvis_vec.y() - upright_pelvis_vec.y()
+
+                    # # Yはグルーブ
+                    # groove_bf.position.setY(pelvis_y)
+                    # motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                     center_bf = VmdBoneFrame()
                     center_bf.fno = fno
                     center_bf.set_name("センター")
-
-                    groove_bf = VmdBoneFrame()
-                    groove_bf.fno = fno
-                    groove_bf.set_name("グルーブ")
-                    
-                    # Yはグルーブ
-                    groove_bf.position.setY(pelvis_vec.y())
-                    motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                     # XZはセンター
                     center_bf.position.setX(pelvis_vec.x())
                     center_bf.position.setZ(pelvis_vec.z() - start_z)
                     motion.regist_bf(center_bf, center_bf.name, fno)
 
+                    # つま先からのグルーブ調整
+                    min_leg_ys = []
+                    for direction, toe_links, now_leg_length, upright_leg_length in [("右", right_toe_links, right_leg_lengths[fidx], upright_right_leg_length), \
+                                                                                     ("左", left_toe_links, left_leg_lengths[fidx], upright_left_leg_length)]:
+                        toe_ik_3ds_dic = calc_global_pos(model, toe_links, motion, fno)
+                        toe_y = toe_ik_3ds_dic[toe_links.last_name()].y()
+
+                        leg_bf = motion.calc_bf(f"{direction}足首", fno)
+                        knee_bf = motion.calc_bf(f"{direction}ひざ", fno)
+                        ankle_bf = motion.calc_bf(f"{direction}足首", fno)
+
+                        # 大体床に接地しているっぽい時はその分をマイナスする
+                        # 足がほとんど曲がっておらず、足がつま先立っていない場合、床に接地と見なす
+                        ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, MVector3D(1, 0, 0))
+                        if leg_bf.rotation.toDegree() < 20 and knee_bf.rotation.toDegree() < 30 and ankle_x_qq.toDegree() < 20:
+                            min_leg_ys.append(toe_y)
+
+                    pelvis_y = pelvis_vec.y()
+                
+                    # 大体床に接地していると見なしてマイナス
+                    if len(min_leg_ys) > 0:
+                        pelvis_y -= min(min_leg_ys)
+
+                    groove_bf = VmdBoneFrame()
+                    groove_bf.fno = fno
+                    groove_bf.set_name("グルーブ")
+                    
+                    if args.upper_motion == 1:
+                        # 上半身モーションの場合、グルーブを0に強制変換
+                        groove_bf.setY(0)
+                    else:
+                        # 調整後のグルーブ登録
+                        groove_bf.position.setY(pelvis_y)
+
+                    motion.regist_bf(groove_bf, groove_bf.name, fno)
+                
                 logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, "左")
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, "右")
 
-                # つま先IK末端までのリンク
-                right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
-                left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
+                # # つま先IK末端までのリンク
+                # right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
+                # left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
 
-                # 直立フレームは地に足がついていると見なす
-                logger.info("【No.{0}】グルーブ調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                right_leg_ik_bf = motion.calc_bf("右足ＩＫ", upright_fno)
-                left_leg_ik_bf = motion.calc_bf("左足ＩＫ", upright_fno)
-                # 最低限調整するＹ値
-                min_leg_y = min(right_leg_ik_bf.position.y(), left_leg_ik_bf.position.y())
+                # # 直立フレームは地に足がついていると見なす
+                # logger.info("【No.{0}】つま先調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
-                    center_bf = motion.calc_bf("センター", fno)
-                    groove_bf = motion.calc_bf("グルーブ", fno)
-                    right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-                    left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+                # for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
+                #     right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+                #     left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
 
-                    # # とりあえず直立分をマイナス
-                    # if groove_bf.position.y() >= abs(min_leg_y / 2):
-                    #     groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
-                    # right_leg_ik_bf.position.setY(right_leg_ik_bf.position.y() - min_leg_y)
-                    # left_leg_ik_bf.position.setY(left_leg_ik_bf.position.y() - min_leg_y)
+                #     if args.upper_motion == 1:
+                #         # 上半身モーションの場合、グルーブを0に強制変換
+                #         groove_bf = motion.calc_bf("グルーブ", fno)
+                #         groove_bf.setY(0)
+                #         motion.regist_bf(groove_bf, groove_bf.name, fno)
 
-                    # # 一旦登録
-                    # motion.regist_bf(groove_bf, groove_bf.name, fno)
-                    # motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
-                    # motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
-
-                    min_leg_ys = []
-                    for toe_ik_links, leg_ik_bf, leg_ik_name in [(right_toe_ik_links, right_leg_ik_bf, "右足ＩＫ"), (left_toe_ik_links, left_leg_ik_bf, "左足ＩＫ")]:
-                        toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
-                        toe_y = toe_ik_3ds_dic[toe_ik_links.last_name()].y()
-
-                        # 大体床に接地しているっぽい時はその分をマイナスする
-                        leg_ik_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, leg_ik_name, leg_ik_bf.rotation, MVector3D(1, 0, 0))
-                        if 0 < toe_y < 3 and leg_ik_x_qq.toDegree() < 15:
-                            min_leg_ys.append(toe_y)
-                    
-                    # 大体床に接地していると見なしてマイナス
-                    if len(min_leg_ys) > 0:
-                        min_leg_y = min(min_leg_ys)
-                        if groove_bf.position.y() >= abs(min_leg_y / 2):
-                            groove_bf.position.setY(groove_bf.position.y() - min_leg_y)
-                        right_leg_ik_bf.position.setY(right_leg_ik_bf.position.y() - min_leg_y)
-                        left_leg_ik_bf.position.setY(left_leg_ik_bf.position.y() - min_leg_y)
-
-                    # IKのマイナス値はとりあえず0に補正
-                    if right_leg_ik_bf.position.y() < 0:
-                        right_leg_ik_bf.position.setY(0)
-
-                    if left_leg_ik_bf.position.y() < 0:
-                        left_leg_ik_bf.position.setY(0)
-                    
-                    if fidx > 0 and groove_bf.position.y() < 0:
-                        # しゃがんでる場合は深度がズレるので、前のキーフレをコピー
-                        prev_center_bf = motion.calc_bf("センター", fnos[fidx - 1])
-                        z_diff = center_bf.position.z() - prev_center_bf.position.z()
-                        center_bf.position.setZ(prev_center_bf.position.z())
-                        right_leg_ik_bf.position.setZ(right_leg_ik_bf.position.z() - z_diff)
-                        left_leg_ik_bf.position.setZ(left_leg_ik_bf.position.z() - z_diff)
-
-                    # 一旦登録
-                    motion.regist_bf(center_bf, center_bf.name, fno)
-                    motion.regist_bf(groove_bf, groove_bf.name, fno)
-                    motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
-                    motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
-
-                    # つま先のグローバル位置がマイナスの場合、その分を上げる
-                    for toe_ik_links, leg_ik_bf in [(right_toe_ik_links, right_leg_ik_bf), (left_toe_ik_links, left_leg_ik_bf)]:
-                        toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
-                        toe_y = toe_ik_3ds_dic[toe_ik_links.last_name()].y()
-                        if toe_y < 0:
-                            leg_ik_bf.position.setY(leg_ik_bf.position.y() + -toe_y)
-                            motion.regist_bf(leg_ik_bf, leg_ik_bf.name, fno)
+                #     # つま先のグローバル位置がマイナスの場合、その分を上げる
+                #     for toe_ik_links, leg_ik_bf in [(right_toe_ik_links, right_leg_ik_bf), (left_toe_ik_links, left_leg_ik_bf)]:
+                #         toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
+                #         toe_y = toe_ik_3ds_dic[toe_ik_links.last_name()].y()
+                #         if toe_y < 0:
+                #             leg_ik_bf.position.setY(leg_ik_bf.position.y() + -toe_y)
+                #             motion.regist_bf(leg_ik_bf, leg_ik_bf.name, fno)
 
             # # 手首を削除
             # if "右手首" in motion.bones:
@@ -325,7 +340,7 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
 
     # 骨盤のカメラの中心からの相対位置(Yはセンターからみて上が＋、下が－なので、反転させておく)
     pelvis_pos = np.array([all_frame_joints[fno]["joints"]["pelvis"]["x"] * -1 + 0.5, all_frame_joints[fno]["joints"]["pelvis"]["y"] * -1 + 1, all_frame_joints[fno]["joints"]["pelvis"]["z"]])
-    # pelvis_z = all_frame_joints[fno]["depth"]["z"]
+    pelvis_z = all_frame_joints[fno]["depth"]["depth"]
 
     # 骨盤のグローバル位置
     pelvis_global_pos = (bbox_size * pelvis_pos) + bbox_pos
@@ -340,7 +355,7 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     pelvis_vec = MVector3D()
     pelvis_vec.setX(pelvis_relative_pos[0] * args.center_scale)
     pelvis_vec.setY(pelvis_relative_pos[1] * args.center_scale)
-    pelvis_vec.setZ(pelvis_relative_pos[2] * args.center_scale * 0.1)
+    pelvis_vec.setZ(pelvis_z)
 
     return pelvis_vec
 
@@ -367,15 +382,15 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: 
 
     ik_parent_name = ik_links.get(leg_ik_bone_name, offset=-1).name
 
-    # まずキー登録
-    logger.info("【No.{0}】{1}足IK準備", f"{oidx:03}", direction)
-    fno = 0
-    for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
-        bf = motion.calc_bf(leg_ik_bone_name, fno)
-        motion.regist_bf(bf, leg_ik_bone_name, fno)
+    # # まずキー登録
+    # logger.info("【No.{0}】{1}足IK準備", f"{oidx:03}", direction)
+    # fno = 0
+    # for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
+    #     bf = motion.calc_bf(leg_ik_bone_name, fno)
+    #     motion.regist_bf(bf, leg_ik_bone_name, fno)
 
     # 足IKの移植
-    logger.info("【No.{0}】{1}足IK移植", f"{oidx:03}", direction)
+    # logger.info("【No.{0}】{1}足IK移植", f"{oidx:03}", direction)
     fno = 0
     for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
         leg_fk_3ds_dic = calc_global_pos(model, fk_links, motion, fno)
@@ -405,6 +420,13 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: 
         bf.rotation = MQuaternion.rotationTo(ankle_child_initial_local_pos, ankle_child_local_pos)
 
         motion.regist_bf(bf, leg_ik_bone_name, fno)
+
+        # つま先のグローバル位置がマイナスの場合、その分を上げる
+        toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
+        toe_y = toe_ik_3ds_dic[toe_ik_links.last_name()].y()
+        if toe_y < 0:
+            bf.position.setY(bf.position.y() + -toe_y)
+            motion.regist_bf(bf, bf.name, fno)
 
 
 def calc_direction_qq(bf: VmdBoneFrame, motion: VmdMotion, joints: dict, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):

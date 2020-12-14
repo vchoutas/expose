@@ -109,8 +109,11 @@ def execute(args):
                 for bidx, bbox in enumerate(boxes):
                     if bbox[0] == out_bbox[0] and bbox[1] == out_bbox[1] and bbox[2] == out_bbox[2] and bbox[3] == out_bbox[3]:
                         # bboxが合っている要素のトコに出力する
+                        # depth自身は既にあるので、追記
                         joint_json_path = joint_json_pathes[bidx]
-                        bbox_frames[joint_json_path]["depth"] = {"x": dic_out["xyz_pred"][oidx][0], "y": dic_out["xyz_pred"][oidx][1], "z": dic_out["xyz_pred"][oidx][2]}
+                        bbox_frames[joint_json_path]["depth"]["x"] = dic_out["xyz_pred"][oidx][0]
+                        bbox_frames[joint_json_path]["depth"]["y"] = dic_out["xyz_pred"][oidx][1]
+                        bbox_frames[joint_json_path]["depth"]["z"] = dic_out["xyz_pred"][oidx][2]
 
                         # JSON出力
                         with open(joint_json_path, "w") as f:

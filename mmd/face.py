@@ -2,6 +2,7 @@
 import os
 import glob
 import re
+import traceback
 from tqdm import tqdm
 import json
 import cv2
@@ -74,22 +75,28 @@ def execute(args):
 
                             frame_joints["faces"] = {}
 
-                            landmarks = predictor(image_trim, face)
-                            shape = face_utils.shape_to_np(landmarks)
-                            j = 0    
-                            for (x, y) in shape:
-                                j += 1
-                                frame_joints["faces"][j] = {"x": float(bbox_x+x), "y": float(bbox_y+y)}
+                            try:                                
+                                landmarks = predictor(image_trim, face)
+                                shape = face_utils.shape_to_np(landmarks)
+                                j = 0    
+                                for (x, y) in shape:
+                                    j += 1
+                                    frame_joints["faces"][j] = {"x": float(bbox_x+x), "y": float(bbox_y+y)}
 
-                            # 目の重心を求める
-                            left_cx, left_cy, left_eye_image = get_eye_point(image_trim, shape, True)
-                            right_cx, right_cy, right_eye_image = get_eye_point(image_trim, shape, False)
-                            frame_joints["eyes"] = {
-                                "left": {"x": bbox_x+left_cx, "y": bbox_y+left_cy}, 
-                                "right": {"x": bbox_x+right_cx, "y": bbox_y+right_cy}
-                            }
+                                # 目の重心を求める
+                                left_cx, left_cy, left_eye_image = get_eye_point(image_trim, shape, True)
+                                right_cx, right_cy, right_eye_image = get_eye_point(image_trim, shape, False)
+                                frame_joints["eyes"] = {
+                                    "left": {"x": bbox_x+left_cx, "y": bbox_y+left_cy}, 
+                                    "right": {"x": bbox_x+right_cx, "y": bbox_y+right_cy}
+                                }
+                            except Exception as e:
+                                logger.debug("表情推定失敗: fno: {0}\n\n{1}", fno_name, traceback.extract_stack(), decoration=MLogger.DECORATION_BOX)
+                                
+                                # 表情認識をスルーさせるため、辞書除去
+                                del frame_joints["faces"]
 
-                            cv2.imwrite(os.path.join(args.img_dir, "frames", fno_name, "pupil.png"), right_eye_image)
+                            # cv2.imwrite(os.path.join(args.img_dir, "frames", fno_name, "pupil.png"), right_eye_image)
 
                             # parts = landmarks.parts()
                             # left_eye_point = get_eye_point(image_trim, parts)
