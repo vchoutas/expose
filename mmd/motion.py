@@ -57,6 +57,13 @@ def execute(args):
             motion = VmdMotion()
             all_frame_joints = {}
             prev_fno = 9999999999
+
+            right_leg_lengths = []
+            left_leg_lengths = []
+            leg_lengths = []
+            # foot_ys = []
+            leg_degrees = []
+            flip_fnos = []
         
             for smooth_json_path in tqdm(smooth_json_pathes, desc=f"No.{oidx:03} ... "):
                 m = smooth_pattern.match(os.path.basename(smooth_json_path))
@@ -69,23 +76,18 @@ def execute(args):
                         frame_joints = json.load(f)
                     all_frame_joints[fno] = frame_joints
 
-                    # センター・グルーブ・足IKは初期値
-                    center_bf = VmdBoneFrame(fno)
-                    center_bf.set_name("センター")
-                    motion.regist_bf(center_bf, center_bf.name, fno)
+                    left_hip_vec = get_vec3(all_frame_joints[fno]["joints"], "left_hip")
+                    left_foot_vec = get_vec3(all_frame_joints[fno]["joints"], "left_foot")
+                    right_hip_vec = get_vec3(all_frame_joints[fno]["joints"], "right_hip")
+                    right_foot_vec = get_vec3(all_frame_joints[fno]["joints"], "right_foot")
 
-                    groove_bf = VmdBoneFrame(fno)
-                    groove_bf.set_name("グルーブ")
-                    motion.regist_bf(groove_bf, groove_bf.name, fno)
+                    right_leg_lengths.append(right_hip_vec.distanceToPoint(right_foot_vec))
+                    left_leg_lengths.append(left_hip_vec.distanceToPoint(left_foot_vec))
+                    # 両足の長さを平均
+                    leg_lengths.append(np.mean([left_hip_vec.distanceToPoint(left_foot_vec), right_hip_vec.distanceToPoint(right_foot_vec)]))
+                    # # 踵の位置を平均
+                    # foot_ys.append(np.mean([left_foot_vec.y(), right_foot_vec.y()]))
 
-                    left_leg_ik_bf = VmdBoneFrame(fno)
-                    left_leg_ik_bf.set_name("左足ＩＫ")
-                    motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
-
-                    right_leg_ik_bf = VmdBoneFrame(fno)
-                    right_leg_ik_bf.set_name("右足ＩＫ")
-                    motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
-                    
                     if args.body_motion == 1 or args.face_motion == 1:
                         
                         is_flip = False
@@ -101,11 +103,14 @@ def execute(args):
                                 rdiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][rjname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
                                 lrdiff = abs(np.diff([all_frame_joints[fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
 
-                                if prev_lsign != lsign and prev_rsign != rsign and ldiff > 0.1 and rdiff > 0.1 and lrdiff > 0.1:
+                                if prev_lsign != lsign and prev_rsign != rsign and ldiff > 0.15 and rdiff > 0.15 and lrdiff > 0.15:
                                     is_flip = True
                                     break
                         
                         if is_flip:
+                            flip_fnos.append(fno)
+                            # 最もデカいのを挿入
+                            leg_degrees.append(999999999)
                             continue
 
                         for jname, (bone_name, calc_bone, name_list, parent_list, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
@@ -154,6 +159,29 @@ def execute(args):
                                     bf.rotation = qq
 
                                 motion.regist_bf(bf, bf.name, bf.fno)
+
+                        # センター・グルーブ・足IKは初期値
+                        center_bf = VmdBoneFrame(fno)
+                        center_bf.set_name("センター")
+                        motion.regist_bf(center_bf, center_bf.name, fno)
+
+                        groove_bf = VmdBoneFrame(fno)
+                        groove_bf.set_name("グルーブ")
+                        motion.regist_bf(groove_bf, groove_bf.name, fno)
+
+                        left_leg_ik_bf = VmdBoneFrame(fno)
+                        left_leg_ik_bf.set_name("左足ＩＫ")
+                        motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
+
+                        right_leg_ik_bf = VmdBoneFrame(fno)
+                        right_leg_ik_bf.set_name("右足ＩＫ")
+                        motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
+
+                        right_leg_bf = motion.calc_bf("右足", fno)
+                        right_knee_bf = motion.calc_bf("右ひざ", fno)
+                        left_leg_bf = motion.calc_bf("左足", fno)
+                        left_knee_bf = motion.calc_bf("左ひざ", fno)
+                        leg_degrees.append(right_leg_bf.rotation.toDegree() + right_knee_bf.rotation.toDegree() + left_leg_bf.rotation.toDegree() + left_knee_bf.rotation.toDegree())
                                 
                     if "faces" in frame_joints and args.face_motion == 1:
                         # 表情がある場合出力
@@ -173,39 +201,25 @@ def execute(args):
             if args.body_motion == 1:
                 logger.info("【No.{0}】直立姿勢計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 
-                right_leg_lengths = []
-                left_leg_lengths = []
-                leg_lengths = []
-                foot_ys = []
-                for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
-                    left_hip_vec = get_vec3(all_frame_joints[fno]["joints"], "left_hip")
-                    left_foot_vec = get_vec3(all_frame_joints[fno]["joints"], "left_foot")
-                    right_hip_vec = get_vec3(all_frame_joints[fno]["joints"], "right_hip")
-                    right_foot_vec = get_vec3(all_frame_joints[fno]["joints"], "right_foot")
-
-                    right_leg_lengths.append(right_hip_vec.distanceToPoint(right_foot_vec))
-                    left_leg_lengths.append(left_hip_vec.distanceToPoint(left_foot_vec))
-                    # 両足の長さを平均
-                    leg_lengths.append(np.mean([left_hip_vec.distanceToPoint(left_foot_vec), right_hip_vec.distanceToPoint(right_foot_vec)]))
-                    # 踵の位置を平均
-                    foot_ys.append(np.mean([left_foot_vec.y(), right_foot_vec.y()]))
-
-                fnos = list(all_frame_joints.keys())
-                # 両足が最も直立している（距離が長いフレーム）を対象とする
-                max_leg_fidxs = list(reversed(np.argsort(leg_lengths)))
-                # 踵がもっとも値が小さい（最も下）を対象とする
-                ground_fidxs = np.argsort(foot_ys)
-                # 両足が最も直立しており、かつ踵が小さいINDEXを取得
-                upright_fidx = -1
-                for limit in range(50, fnos[-1], 50):
-                    upright_fidxs_set = set(max_leg_fidxs[:limit]) & set(ground_fidxs[:limit])
-                    upright_fidxs = [x for x in max_leg_fidxs if x in upright_fidxs_set]
-                    if len(upright_fidxs) > 0:
-                        upright_fidx = upright_fidxs[0]
-                        break
-                upright_fidx = 0 if upright_fidx < 0 else upright_fidx
-                # 直立キーフレ
+                # fnos = list(all_frame_joints.keys())
+                # # 両足が最も直立している（距離が長いフレーム）を対象とする
+                # max_leg_fidxs = list(reversed(np.argsort(leg_lengths)))
+                # # # 踵がもっとも値が小さい（最も下）を対象とする
+                # # ground_fidxs = np.argsort(foot_ys)
+                # 足とひざの角度が最も小さい（最も伸びている）を対象とする
+                degree_fidxs = np.argsort(leg_degrees)
+                upright_fidx = degree_fidxs[0]
                 upright_fno = list(all_frame_joints.keys())[upright_fidx]
+                # upright_fidx = -1
+                # for limit in range(50, fnos[-1], 50):
+                #     upright_fidxs_set = set(max_leg_fidxs[:limit]) & set(degree_fidxs[:limit])
+                #     upright_fidxs = [x for x in degree_fidxs if x in upright_fidxs_set]
+                #     if len(upright_fidxs) > 0:
+                #         upright_fidx = upright_fidxs[0]
+                #         break
+                # upright_fidx = 0 if upright_fidx < 0 else upright_fidx
+                # # 直立キーフレ
+                # upright_fno = list(all_frame_joints.keys())[upright_fidx]
                 # 直立の足の長さ
                 upright_right_leg_length = right_leg_lengths[upright_fidx]
                 upright_left_leg_length = left_leg_lengths[upright_fidx]
@@ -222,18 +236,24 @@ def execute(args):
                 logger.info("【No.{0}】センター計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
                 for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
+                    if fno in flip_fnos:
+                        # フリップはセンター計算もおかしくなるのでスキップ
+                        continue
+
                     pelvis_vec = get_pelvis_vec(all_frame_joints, fno, upright_pelvis_vec.y(), args)
 
                     if start_z == 9999999999:
                         # 最初の人物の深度を0にする
                         start_z = pelvis_vec.z()
                     
-                    # # 直立姿勢からのグルーブ位置判定
-                    # pelvis_y = pelvis_vec.y() - upright_pelvis_vec.y()
+                    pelvis_y = pelvis_vec.y()
 
-                    # # Yはグルーブ
-                    # groove_bf.position.setY(pelvis_y)
-                    # motion.regist_bf(groove_bf, groove_bf.name, fno)
+                    # Yはグルーブ
+                    groove_bf = VmdBoneFrame()
+                    groove_bf.fno = fno
+                    groove_bf.set_name("グルーブ")                    
+                    groove_bf.position.setY(pelvis_y)
+                    motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                     center_bf = VmdBoneFrame()
                     center_bf.fno = fno
@@ -251,19 +271,15 @@ def execute(args):
                         toe_ik_3ds_dic = calc_global_pos(model, toe_links, motion, fno)
                         toe_y = toe_ik_3ds_dic[toe_links.last_name()].y()
 
-                        leg_bf = motion.calc_bf(f"{direction}足首", fno)
-                        knee_bf = motion.calc_bf(f"{direction}ひざ", fno)
                         ankle_bf = motion.calc_bf(f"{direction}足首", fno)
 
                         # 大体床に接地しているっぽい時はその分をマイナスする
                         # 足がほとんど曲がっておらず、足がつま先立っていない場合、床に接地と見なす
                         ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, MVector3D(1, 0, 0))
-                        if leg_bf.rotation.toDegree() < 20 and knee_bf.rotation.toDegree() < 30 and ankle_x_qq.toDegree() < 20:
-                            min_leg_ys.append(toe_y)
-
-                    pelvis_y = pelvis_vec.y()
+                        # if now_leg_length >= upright_leg_length * 0.9 or ankle_x_qq.toDegree() < 20:
+                        min_leg_ys.append(toe_y)
                 
-                    # 大体床に接地していると見なしてマイナス
+                    # 大体床に接地していると見なしてマイナス(地面にめり込んでたら上げる)
                     if len(min_leg_ys) > 0:
                         pelvis_y -= min(min_leg_ys)
 
@@ -340,6 +356,7 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
 
     # 骨盤のカメラの中心からの相対位置(Yはセンターからみて上が＋、下が－なので、反転させておく)
     pelvis_pos = np.array([all_frame_joints[fno]["joints"]["pelvis"]["x"] * -1 + 0.5, all_frame_joints[fno]["joints"]["pelvis"]["y"] * -1 + 1, all_frame_joints[fno]["joints"]["pelvis"]["z"]])
+    # Zはカメラ深度
     pelvis_z = all_frame_joints[fno]["depth"]["depth"]
 
     # 骨盤のグローバル位置
@@ -350,12 +367,12 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     pelvis_relative_pos[0] -= 0.5
     # Y相対位置は直立からの位置に基づく
     if upright_y != 0:
-        pelvis_relative_pos[1] = (upright_y / args.center_scale) - pelvis_relative_pos[1]
+        pelvis_relative_pos[1] -= (upright_y / args.center_scale)
 
     pelvis_vec = MVector3D()
     pelvis_vec.setX(pelvis_relative_pos[0] * args.center_scale)
     pelvis_vec.setY(pelvis_relative_pos[1] * args.center_scale)
-    pelvis_vec.setZ(pelvis_z)
+    pelvis_vec.setZ(pelvis_z * args.center_scale * 0.06)
 
     return pelvis_vec
 
@@ -948,9 +965,9 @@ def get_blink_ratio(fno: int, eye1: MVector2D, eye2: MVector2D, eye3: MVector2D,
     vertical_length = euclidean_distance(center_top, center_bottom)
 
     ratio = horizontal_length / vertical_length
-    new_ratio = min(1, calc_ratio(ratio, 0, 12, 0, 1))
+    new_ratio = min(1, math.sin(calc_ratio(ratio, 0, 12, 0, 1)))
 
-    # 笑いの比率
+    # 笑いの比率(日本人用に比率半分)
     smile_ratio = (center_bottom.y() - corner_center.y()) / (center_bottom.y() - center_top.y())
 
     if smile_ratio > 1:
@@ -1061,26 +1078,35 @@ VMD_CONNECTIONS = {
     'spine1': ("上半身", None, ['pelvis', 'spine1', 'left_shoulder', 'right_shoulder', 'spine1', 'spine2'], [], None, False, False),
     'spine2': ("上半身2", None, ['spine1', 'spine2', 'left_shoulder', 'right_shoulder', 'spine2', 'spine3'], ["上半身"], None, False, False),
     'spine3': ("首根元", None, None, None, None, False, False),
+    # 'neck': ("首", None, ['spine3', 'neck', 'left_eye', 'right_eye', 'neck', 'nose'], ["上半身", "上半身2"], None, False, True),
+    'head': ("頭", None, ['nose', 'head', 'left_eye', 'right_eye', 'nose', 'head'], ["上半身", "上半身2", "首"], None, False, True),
+    # 'head': ("頭", None, None, None, None, False, True),
     'neck': ("首", None, ['spine3', 'neck', 'left_eye', 'right_eye', 'neck', 'nose'], ["上半身", "上半身2"], \
-        {"x": {"min": -30, "max": 40}, "y": {"min": -20, "max": 20}, "z": {"min": -20, "max": 20}}, False, True),
-    'head': ("頭", None, ['neck', 'head', 'left_eye', 'right_eye', 'neck', 'head'], ["上半身", "上半身2", "首"], \
-        {"x": {"min": -10, "max": 20}, "y": {"min": -30, "max": 30}, "z": {"min": -20, "max": 20}}, False, True),
+        {"x": {"min": -30, "max": 40}, "y": {"min": -50, "max": 50}, "z": {"min": -50, "max": 50}}, False, True),
+    # 'head': ("頭", None, ['neck', 'head', 'left_eye', 'right_eye', 'neck', 'head'], ["上半身", "上半身2", "首"], \
+    #     {"x": {"min": -20, "max": 40}, "y": {"min": -30, "max": 30}, "z": {"min": -30, "max": 30}}, False, True),
     'pelvis': ("下半身", None, None, None, None, False, False),
     'nose': ("鼻", None, None, None, None, False, False),
     'right_eye': ("右目", None, None, None, None, False, False),
     'left_eye': ("左目", None, None, None, None, False, False),
+    'right_ear': ("右耳", None, None, None, None, False, False),
+    'left_ear': ("左耳", None, None, None, None, False, False),
     'right_shoulder': ("右肩", None, ['spine3', 'right_shoulder', 'spine1', 'spine3', 'right_shoulder', 'left_shoulder'], ["上半身", "上半身2"], None, False, False),
     'left_shoulder': ("左肩", None, ['spine3', 'left_shoulder', 'spine1', 'spine3', 'left_shoulder', 'right_shoulder'], ["上半身", "上半身2"], None, False, False),
     'right_arm': ("右腕", None, ['right_shoulder', 'right_elbow', 'spine3', 'right_shoulder', 'right_shoulder', 'right_elbow'], ["上半身", "上半身2", "右肩"], None, False, False),
     'left_arm': ("左腕", None, ['left_shoulder', 'left_elbow', 'spine3', 'left_shoulder', 'left_shoulder', 'left_elbow'], ["上半身", "上半身2", "左肩"], None, False, False),
-    'right_elbow': ("右ひじ", None, ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], \
-        {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
-    'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], \
-        {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
-    'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], \
-        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
-    'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], \
-        {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
+    # 'right_elbow': ("右ひじ", None, ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], \
+    #     {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
+    # 'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], \
+    #     {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
+    # 'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], \
+    #     {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
+    # 'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], \
+    #     {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
+    'right_elbow': ("右ひじ", None, ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], None, False, False),
+    'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], None, False, False),
+    'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], None, True, False),
+    'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], None, True, False),
     'pelvis': ("下半身", None, ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], None, False, False),
     'pelvis2': ("尾てい骨", None, None, None, None, False, False),
     'right_hip': ("右足", None, ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], None, False, False),

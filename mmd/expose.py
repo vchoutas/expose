@@ -216,11 +216,11 @@ def main(
             model_vertices = stage_n_out.get('vertices', None)
 
         # faces = stage_n_out['faces']
-        # if model_vertices is not None:
-        #     model_vertices = model_vertices.detach().cpu().numpy()
-        #     camera_parameters = body_output.get('camera_parameters', {})
-        #     camera_scale = camera_parameters['scale'].detach()
-        #     camera_transl = camera_parameters['translation'].detach()
+        if model_vertices is not None:
+            # model_vertices = model_vertices.detach().cpu().numpy()
+            camera_parameters = body_output.get('camera_parameters', {})
+            camera_scale = camera_parameters['scale'].detach()
+            camera_transl = camera_parameters['translation'].detach()
 
         out_img = OrderedDict()
 
@@ -230,7 +230,7 @@ def main(
             final_model_vertices = stage_n_out.get('vertices', None)
 
         if final_model_vertices is not None:
-            final_model_vertices = final_model_vertices.detach().cpu().numpy()
+            # final_model_vertices = final_model_vertices.detach().cpu().numpy()
             camera_parameters = model_output.get('body', {}).get(
                 'camera_parameters', {})
             camera_scale = camera_parameters['scale'].detach()
