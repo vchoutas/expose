@@ -108,7 +108,7 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
                     '{:s}'.format(cls_name),
                     (int(bbox[0]), int(bbox[1]-5)),
                     font,
-                    fontScale=0.8,
+                    fontScale=0.9,
                     color=color,
                     thickness = 2,
                     lineType = cv2.LINE_AA)

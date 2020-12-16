@@ -218,7 +218,7 @@ def execute(args):
                         out_frame = draw_bbox(out_frame, bbox_frame['bbox'], 1, None, track_id=track_id)
             
             # フレーム番号追記
-            cv2.putText(out_frame, f'{iidx:05}F', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(182, 0, 182), thickness = 2, lineType = cv2.LINE_AA)
+            cv2.putText(out_frame, f'{iidx:05}F', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.9, color=(182, 0, 182), thickness = 2, lineType = cv2.LINE_AA)
 
             # 画像出力
             cv2.imwrite(os.path.join(args.img_dir, "frames", f"{iidx:012}", f"bbox_{iidx:012}.png"), out_frame)

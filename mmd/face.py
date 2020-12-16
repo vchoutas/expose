@@ -93,18 +93,7 @@ def execute(args):
                             except Exception as e:
                                 logger.debug("表情推定失敗: fno: {0}\n\n{1}", fno_name, traceback.extract_stack(), decoration=MLogger.DECORATION_BOX)
                                 
-                                # 表情認識をスルーさせるため、辞書除去
-                                del frame_joints["faces"]
-
                             # cv2.imwrite(os.path.join(args.img_dir, "frames", fno_name, "pupil.png"), right_eye_image)
-
-                            # parts = landmarks.parts()
-                            # left_eye_point = get_eye_point(image_trim, parts)
-                            # right_eye_point = get_eye_point(image_trim, parts, False)
-                            # frame_joints["eyes"] = {
-                            #     "left": {"x": left_eye_point[0], "y": left_eye_point[1]}, 
-                            #     "right": {"x": right_eye_point[0], "y": right_eye_point[1]}
-                            # }
 
                             with open(frame_json_path, 'w') as f:
                                 json.dump(frame_joints, f, indent=4)
