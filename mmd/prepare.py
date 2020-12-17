@@ -45,7 +45,7 @@ def execute(args):
                     args.video_file, os.path.getsize(args.video_file), W, H, count, fps, decoration=MLogger.DECORATION_BOX)
 
         # 縮尺を調整
-        width = int(1920)
+        width = int(1280)
 
         if len(args.parent_dir) > 0:
             process_img_dir = base_path
