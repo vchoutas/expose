@@ -290,7 +290,7 @@ def execute(args):
                     
                     if args.upper_motion == 1:
                         # 上半身モーションの場合、グルーブを0に強制変換
-                        groove_bf.setY(0)
+                        groove_bf.position.setY(0)
                     else:
                         # 調整後のグルーブ登録
                         groove_bf.position.setY(pelvis_y)
@@ -298,10 +298,10 @@ def execute(args):
                     motion.regist_bf(groove_bf, groove_bf.name, fno)
                 
                 logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                convert_leg_fk2ik(oidx, motion, model, "左")
+                convert_leg_fk2ik(oidx, motion, model, flip_fnos, "左")
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                convert_leg_fk2ik(oidx, motion, model, "右")
+                convert_leg_fk2ik(oidx, motion, model, flip_fnos, "右")
 
                 # # つま先IK末端までのリンク
                 # right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
@@ -354,7 +354,6 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     #bbox
     bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"], all_frame_joints[fno]["bbox"]["x"]])
     bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"], all_frame_joints[fno]["bbox"]["width"]])
-    bbox_scale = image_size / bbox_size
 
     # 骨盤のカメラの中心からの相対位置(Yはセンターからみて上が＋、下が－なので、反転させておく)
     center_pos = (get_vec3(all_frame_joints[fno]["joints"], "pelvis") + get_vec3(all_frame_joints[fno]["joints"], "spine1")) / 2
@@ -365,22 +364,22 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     # 骨盤のグローバル位置
     pelvis_global_pos = (bbox_size * pelvis_pos) + bbox_pos
     # 骨盤の画面全体からの相対位置
-    pelvis_relative_pos = pelvis_global_pos / bbox_size
+    pelvis_relative_pos = pelvis_global_pos / image_size
     # X相対位置は画面中央に基づく
     pelvis_relative_pos[0] -= 0.5
     # Y相対位置は直立からの位置に基づく
     if upright_y != 0:
-        pelvis_relative_pos[1] -= (upright_y / bbox_scale[1])
+        pelvis_relative_pos[1] -= (upright_y / args.center_scale / 10)
 
     pelvis_vec = MVector3D()
-    pelvis_vec.setX(pelvis_relative_pos[0])
-    pelvis_vec.setY(pelvis_relative_pos[1])
-    pelvis_vec.setZ(pelvis_z * 3)
+    pelvis_vec.setX(pelvis_relative_pos[0] * args.center_scale)
+    pelvis_vec.setY(pelvis_relative_pos[1] * args.center_scale / 10)
+    pelvis_vec.setZ(pelvis_z * args.center_scale / 10)
 
     return pelvis_vec
 
 # 足ＩＫ変換処理実行
-def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: str):
+def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):
     leg_ik_bone_name = "{0}足ＩＫ".format(direction)
     toe_ik_bone_name = "{0}つま先ＩＫ".format(direction)
     leg_bone_name = "{0}足".format(direction)
@@ -413,6 +412,10 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, direction: 
     # logger.info("【No.{0}】{1}足IK移植", f"{oidx:03}", direction)
     fno = 0
     for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
+        if fno in flip_fnos:
+            # フリップはセンター計算もおかしくなるのでスキップ
+            continue
+
         leg_fk_3ds_dic = calc_global_pos(model, fk_links, motion, fno)
         _, leg_ik_matrixs = calc_global_pos(model, ik_links, motion, fno, return_matrix=True)
 
