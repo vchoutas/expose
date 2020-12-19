@@ -49,7 +49,8 @@ def execute(args):
         smooth_pattern = re.compile(r'^smooth_(\d+)\.')
         start_z = 9999999999
 
-        for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
+        for ooidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
+            oidx = ooidx + 1
             logger.info("【No.{0}】FKボーン角度計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             smooth_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "smooth_*.json")), key=sort_by_numeric)
@@ -353,26 +354,28 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     #bbox
     bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"], all_frame_joints[fno]["bbox"]["x"]])
     bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"], all_frame_joints[fno]["bbox"]["width"]])
+    bbox_scale = image_size / bbox_size
 
     # 骨盤のカメラの中心からの相対位置(Yはセンターからみて上が＋、下が－なので、反転させておく)
-    pelvis_pos = np.array([all_frame_joints[fno]["joints"]["pelvis"]["x"] * -1 + 0.5, all_frame_joints[fno]["joints"]["pelvis"]["y"] * -1 + 1, all_frame_joints[fno]["joints"]["pelvis"]["z"]])
+    center_pos = (get_vec3(all_frame_joints[fno]["joints"], "pelvis") + get_vec3(all_frame_joints[fno]["joints"], "spine1")) / 2
+    pelvis_pos = np.array([center_pos.x() * -1 + 0.5, center_pos.y() * -1 + 1, center_pos.z()])
     # Zはカメラ深度
     pelvis_z = all_frame_joints[fno]["depth"]["depth"]
 
     # 骨盤のグローバル位置
     pelvis_global_pos = (bbox_size * pelvis_pos) + bbox_pos
     # 骨盤の画面全体からの相対位置
-    pelvis_relative_pos = pelvis_global_pos / image_size
+    pelvis_relative_pos = pelvis_global_pos / bbox_size
     # X相対位置は画面中央に基づく
     pelvis_relative_pos[0] -= 0.5
     # Y相対位置は直立からの位置に基づく
     if upright_y != 0:
-        pelvis_relative_pos[1] -= (upright_y / args.center_scale)
+        pelvis_relative_pos[1] -= (upright_y / bbox_scale[1])
 
     pelvis_vec = MVector3D()
-    pelvis_vec.setX(pelvis_relative_pos[0] * args.center_scale)
-    pelvis_vec.setY(pelvis_relative_pos[1] * args.center_scale)
-    pelvis_vec.setZ(pelvis_z * args.center_scale * 0.06)
+    pelvis_vec.setX(pelvis_relative_pos[0])
+    pelvis_vec.setY(pelvis_relative_pos[1])
+    pelvis_vec.setZ(pelvis_z * 3)
 
     return pelvis_vec
 
@@ -1078,13 +1081,9 @@ VMD_CONNECTIONS = {
     'spine1': ("上半身", None, ['pelvis', 'spine1', 'left_shoulder', 'right_shoulder', 'spine1', 'spine2'], [], None, False, False),
     'spine2': ("上半身2", None, ['spine1', 'spine2', 'left_shoulder', 'right_shoulder', 'spine2', 'spine3'], ["上半身"], None, False, False),
     'spine3': ("首根元", None, None, None, None, False, False),
-    # 'neck': ("首", None, ['spine3', 'neck', 'left_eye', 'right_eye', 'neck', 'nose'], ["上半身", "上半身2"], None, False, True),
     'head': ("頭", None, ['nose', 'head', 'left_eye', 'right_eye', 'nose', 'head'], ["上半身", "上半身2", "首"], None, False, True),
-    # 'head': ("頭", None, None, None, None, False, True),
     'neck': ("首", None, ['spine3', 'neck', 'left_eye', 'right_eye', 'neck', 'nose'], ["上半身", "上半身2"], \
         {"x": {"min": -30, "max": 40}, "y": {"min": -50, "max": 50}, "z": {"min": -50, "max": 50}}, False, True),
-    # 'head': ("頭", None, ['neck', 'head', 'left_eye', 'right_eye', 'neck', 'head'], ["上半身", "上半身2", "首"], \
-    #     {"x": {"min": -20, "max": 40}, "y": {"min": -30, "max": 30}, "z": {"min": -30, "max": 30}}, False, True),
     'pelvis': ("下半身", None, None, None, None, False, False),
     'nose': ("鼻", None, None, None, None, False, False),
     'right_eye': ("右目", None, None, None, None, False, False),
@@ -1095,14 +1094,6 @@ VMD_CONNECTIONS = {
     'left_shoulder': ("左肩", None, ['spine3', 'left_shoulder', 'spine1', 'spine3', 'left_shoulder', 'right_shoulder'], ["上半身", "上半身2"], None, False, False),
     'right_arm': ("右腕", None, ['right_shoulder', 'right_elbow', 'spine3', 'right_shoulder', 'right_shoulder', 'right_elbow'], ["上半身", "上半身2", "右肩"], None, False, False),
     'left_arm': ("左腕", None, ['left_shoulder', 'left_elbow', 'spine3', 'left_shoulder', 'left_shoulder', 'left_elbow'], ["上半身", "上半身2", "左肩"], None, False, False),
-    # 'right_elbow': ("右ひじ", None, ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], \
-    #     {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
-    # 'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], \
-    #     {"x": {"min": -10, "max": 10}, "y": {"min": -180, "max": 180}, "z": {"min": -180, "max": 180}}, False, False),
-    # 'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], \
-    #     {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
-    # 'left_wrist': ("左手首", None, ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], \
-    #     {"x": {"min": -45, "max": 45}, "y": {"min": -5, "max": 5}, "z": {"min": -20, "max": 60}}, True, False),
     'right_elbow': ("右ひじ", None, ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], None, False, False),
     'left_elbow': ("左ひじ", None, ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], None, False, False),
     'right_wrist': ("右手首", None, ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], None, True, False),

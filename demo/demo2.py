@@ -269,7 +269,7 @@ def main(
     cap.release()
 
     expose_dloader = preprocess_images(
-        image_folder, exp_cfg, batch_size=rcnn_batch, device=device)
+        image_folder + "/*.png", exp_cfg, batch_size=rcnn_batch, device=device)
 
     demo_output_folder = osp.join(osp.expanduser(osp.expandvars(demo_output_folder)), osp.basename(video_path).replace(".", "_"), datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
     logger.info(f'Saving results to: {demo_output_folder}')

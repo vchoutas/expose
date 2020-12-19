@@ -36,7 +36,8 @@ def execute(args):
         # 表情推定detector
         detector = dlib.get_frontal_face_detector()
 
-        for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
+        for ooidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
+            oidx = ooidx + 1
             logger.info("【No.{0}】表情推定開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             frame_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "frame_*.json")), key=sort_by_numeric)
