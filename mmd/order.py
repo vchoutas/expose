@@ -79,8 +79,7 @@ def execute(args):
         # 順番指定正規表現
         order_pattern = re.compile(r'(\d+)\:(\d*)\-(\d*)')
 
-        for iiidx, process_img_path in enumerate(tqdm(process_img_pathes)):
-            iidx = iiidx + 1
+        for iidx, process_img_path in enumerate(tqdm(process_img_pathes)):
             # 元のbboxは削除
             bbox_path = os.path.join(str(pathlib.Path(process_img_path).parent), os.path.basename(process_img_path).replace("frame", "bbox"))
             if os.path.exists(bbox_path):

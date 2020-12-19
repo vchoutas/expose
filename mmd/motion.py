@@ -17,7 +17,7 @@ from mmd.utils.MServiceUtils import sort_by_numeric
 from lighttrack.visualizer.detection_visualizer import draw_bbox
 
 from mmd.mmd.VmdWriter import VmdWriter
-from mmd.module.MMath import MQuaternion, MVector3D, MVector2D
+from mmd.module.MMath import MQuaternion, MVector3D, MVector2D, MMatrix4x4, MRect
 from mmd.mmd.VmdData import VmdBoneFrame, VmdMorphFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk, OneEuroFilter
 from mmd.mmd.PmxData import PmxModel, Bone, Vertex, Bdef1, Ik, IkLink
 from mmd.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate_local_qq
@@ -49,8 +49,7 @@ def execute(args):
         smooth_pattern = re.compile(r'^smooth_(\d+)\.')
         start_z = 9999999999
 
-        for ooidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-            oidx = ooidx + 1
+        for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
             logger.info("【No.{0}】FKボーン角度計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
             smooth_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "smooth_*.json")), key=sort_by_numeric)
@@ -272,11 +271,11 @@ def execute(args):
                         toe_ik_3ds_dic = calc_global_pos(model, toe_links, motion, fno)
                         toe_y = toe_ik_3ds_dic[toe_links.last_name()].y()
 
-                        ankle_bf = motion.calc_bf(f"{direction}足首", fno)
+                        # ankle_bf = motion.calc_bf(f"{direction}足首", fno)
 
-                        # 大体床に接地しているっぽい時はその分をマイナスする
-                        # 足がほとんど曲がっておらず、足がつま先立っていない場合、床に接地と見なす
-                        ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, MVector3D(1, 0, 0))
+                        # # 大体床に接地しているっぽい時はその分をマイナスする
+                        # # 足がほとんど曲がっておらず、足がつま先立っていない場合、床に接地と見なす
+                        # ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, MVector3D(1, 0, 0))
                         # if now_leg_length >= upright_leg_length * 0.9 or ankle_x_qq.toDegree() < 20:
                         min_leg_ys.append(toe_y)
                 
@@ -303,9 +302,9 @@ def execute(args):
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, flip_fnos, "右")
 
-                # # つま先IK末端までのリンク
-                # right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
-                # left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
+                # つま先IK末端までのリンク
+                right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
+                left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
 
                 # # 直立フレームは地に足がついていると見なす
                 # logger.info("【No.{0}】つま先調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
@@ -349,15 +348,15 @@ def execute(args):
 
 def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     # 画像サイズ
-    image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"], all_frame_joints[fno]["image"]["width"]])
+    image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
 
     #bbox
-    bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"], all_frame_joints[fno]["bbox"]["x"]])
-    bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"], all_frame_joints[fno]["bbox"]["width"]])
+    bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"]])
+    bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"]])
 
     # 骨盤のカメラの中心からの相対位置(Yはセンターからみて上が＋、下が－なので、反転させておく)
     center_pos = (get_vec3(all_frame_joints[fno]["joints"], "pelvis") + get_vec3(all_frame_joints[fno]["joints"], "spine1")) / 2
-    pelvis_pos = np.array([center_pos.x() * -1 + 0.5, center_pos.y() * -1 + 1, center_pos.z()])
+    pelvis_pos = np.array([center_pos.x() * -1 + 0.5, center_pos.y() * -1 + 1])
     # Zはカメラ深度
     pelvis_z = all_frame_joints[fno]["depth"]["depth"]
 
@@ -367,6 +366,29 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     pelvis_relative_pos = pelvis_global_pos / image_size
     # X相対位置は画面中央に基づく
     pelvis_relative_pos[0] -= 0.5
+    # pelvis_relative_pos[1] -= 1
+
+    # # 1ミクセルは8cm(80mm)
+    # focal_length_in_mm = all_frame_joints[fno]["others"]["focal_length_in_mm"]
+
+    # # MMDスケール
+    # mk_scale = np.array([12, 3 * 9 / 16]) * 4
+    # # モデル座標系
+    # model_view = create_model_view(focal_length_in_mm, pelvis_relative_pos[0] * mk_scale[0], pelvis_relative_pos[1] * mk_scale[1])
+    # # プロジェクション座標系
+    # projection_view = create_projection_view(image_size, focal_length_in_mm)
+
+    # # viewport
+    # viewport_rect = MRect(0, 0, 16, 9)
+
+    # pelvis_project_vec = MVector3D(pelvis_relative_pos[0] * mk_scale[0], pelvis_relative_pos[1] * mk_scale[1], center_pos.z())
+
+    # # 逆プロジェクション座標位置
+    # pelvis_global_vec = pelvis_project_vec.unproject(model_view, projection_view, viewport_rect)
+
+    # # Zはカメラ深度
+    # pelvis_global_vec.setZ(pelvis_z * 5)
+
     # Y相対位置は直立からの位置に基づく
     if upright_y != 0:
         pelvis_relative_pos[1] -= (upright_y / args.center_scale / 10)
@@ -377,6 +399,40 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, upright_y: float, args):
     pelvis_vec.setZ(pelvis_z * args.center_scale / 10)
 
     return pelvis_vec
+
+# モデル座標系作成
+def create_model_view(focal_length_in_mm: float, center_x: float, center_y: float):
+    # モデル座標系（原点を見るため、単位行列）
+    model_view = MMatrix4x4()
+    model_view.setToIdentity()
+
+    camera_pos = MVector3D(center_x, center_y, -focal_length_in_mm)
+
+    # カメラの原点（グローバル座標）
+    mat_origin = MMatrix4x4()
+    mat_origin.setToIdentity()
+    mat_origin.translate(camera_pos)
+    camera_origin = mat_origin * MVector3D()
+
+    camera_center = MVector3D(center_x, center_y, 0)
+
+    # カメラ座標系の行列
+    # eye: カメラの原点（グローバル座標）
+    # center: カメラの注視点（グローバル座標）
+    # up: カメラの上方向ベクトル
+    model_view.lookAt(camera_origin, camera_center, MVector3D(0, 1, 0))
+
+    return model_view
+
+# プロジェクション座標系作成
+def create_projection_view(image_size: list, focal_length_in_mm: float):
+    mat = MMatrix4x4()
+    mat.setToIdentity()
+    # MMDの縦の視野角。
+    # https://ch.nicovideo.jp/t-ebiing/blomaga/ar510610
+    mat.perspective(30 * 0.98, image_size[0] / image_size[1], 0.001, focal_length_in_mm)
+
+    return mat
 
 # 足ＩＫ変換処理実行
 def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):

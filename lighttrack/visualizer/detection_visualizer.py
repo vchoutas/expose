@@ -115,7 +115,7 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
     else:
         cv2.putText(img,
                     #'{:s} {:.2f}'.format("ID:"+str(track_id), score),
-                    '{:s}'.format("ID:"+str(track_id + 1)),
+                    '{:s}'.format("ID:"+str(track_id)),
                     (int(bbox[0]), int(bbox[1]-5)),
                     font,
                     fontScale=0.8,

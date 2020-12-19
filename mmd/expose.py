@@ -337,12 +337,13 @@ def main(
             joint_dict["image"] = {"width": W, "height": H}
             joint_dict["depth"] = {"depth": float(hd_params["depth"][0][0])}
             joint_dict["camera"] = {"scale": float(camera_scale_np[0][0]), "transl": {"x": float(camera_tansl_np[0, 0]), "y": float(camera_tansl_np[0, 1])}}
-            joint_dict["center"] = {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}
             joint_dict["bbox"] = {"x": float(hd_params["img_bbox"][0]), "y": float(hd_params["img_bbox"][1]), \
                                   "width": float(hd_params["img_bbox"][2]) - float(hd_params["img_bbox"][0]), "height": float(hd_params["img_bbox"][3]) - float(hd_params["img_bbox"][1])}
+            joint_dict["others"] = {'shift_x': float(hd_params["shift_x"][0]), 'shift_y': float(hd_params["shift_y"][0]), \
+                                    'focal_length_in_mm': float(hd_params["focal_length_in_mm"][0]), 'focal_length_in_px': float(hd_params["focal_length_in_px"][0]), \
+                                    'sensor_width': float(hd_params["sensor_width"][0]), 'center': {"x": float(hd_params['center'][0, 0]), "y": float(hd_params['center'][0, 1])}}
             joint_dict["joints"] = {}
             joint_dict["proj_joints"] = {}
-            joint_dict["others"] = {}
 
             proj_joints = hd_params["proj_joints"]
             joints = out_params["joints"]
@@ -356,9 +357,6 @@ def main(
                 j2d = proj_joints[jidx] / jscale
                 joint_dict["proj_joints"][jname] = {'x': float(hd_params['center'][0, 0] + j2d[0]), 'y': float(hd_params['center'][0, 1] + j2d[1])}
                 joint_dict["joints"][jname] = {'x': float(joints[jidx][0]), 'y': float(-joints[jidx][1]), 'z': float(joints[jidx][2])}
-                joint_dict["others"][jname] = {'shift_x': float(hd_params["shift_x"][jidx]), 'shift_y': float(hd_params["shift_y"][jidx]), 'transl': float(hd_params["transl"][jidx]), \
-                                               'focal_length_in_mm': float(hd_params["focal_length_in_mm"][jidx]), 'focal_length_in_px': float(hd_params["focal_length_in_px"][jidx]), \
-                                               'center': float(hd_params["center"][jidx]), 'depth': float(hd_params["depth"][jidx]), 'sensor_width': float(hd_params["sensor_width"][jidx])}
 
             # for pose_name in ["global_orient", "body_pose", "left_hand_pose", "right_hand_pose", "jaw_pose"]:
             #     joint_dict[pose_name] = {}
