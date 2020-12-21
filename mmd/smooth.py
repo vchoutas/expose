@@ -97,9 +97,9 @@ def execute(args):
 
             # スムージング
             for (jname, axis), joints in tqdm(all_joints.items(), desc=f"Filter No.{oidx:03} ... "):
-                # filter = OneEuroFilter(freq=30, mincutoff=0.3, beta=0.01, dcutoff=0.25)
+                filter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
                 # filter = OneEuroFilter(freq=30, mincutoff=1, beta=0.1, dcutoff=1)
-                filter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.05, dcutoff=0.5)
+                # filter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.05, dcutoff=0.5)
                 for fno, joint in joints.items():
                     all_joints[(jname, axis)][fno] = filter(joint, fno)
 

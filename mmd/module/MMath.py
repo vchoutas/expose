@@ -1467,7 +1467,8 @@ class MMatrix4x4:
         self.__data[:, 3] += np.sum(data_mat, axis=1)
 
     # 縮尺行列
-    def scale(self, vec3):
+    def scale(self, scale):
+        vec3 = MVector3D(scale, scale, scale)
         vec_mat = np.array([[vec3.x(), vec3.y(), vec3.z()], 
                             [vec3.x(), vec3.y(), vec3.z()], 
                             [vec3.x(), vec3.y(), vec3.z()], 

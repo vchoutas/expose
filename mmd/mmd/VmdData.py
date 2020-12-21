@@ -753,7 +753,7 @@ class VmdMotion:
         logger.debug("remove_unnecessary_bf after: %s, %s, all: %s", bone_name, active_fnos, len(fnos))
 
     # 補間曲線分割ありで登録
-    def regist_bf(self, bf: VmdBoneFrame, bone_name: str, fno: int, copy_interpolation=False):
+    def regist_bf(self, bf: VmdBoneFrame, bone_name: str, fno: int, copy_interpolation=False, is_key=True):
         # 登録対象の場合のみ、補間曲線リセットで登録する
         regist_bf = self.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=True)
         regist_bf.position = bf.position.copy()
@@ -763,7 +763,7 @@ class VmdMotion:
             regist_bf.interpolation = cPickle.loads(cPickle.dumps(bf.interpolation, -1))
             
         # キーを登録
-        regist_bf.key = True
+        regist_bf.key = is_key
         self.bones[bone_name][fno] = regist_bf
         # 補間曲線を設定（有効なキーのみ）
         prev_fno, next_fno = self.get_bone_prev_next_fno(bone_name, fno=fno, is_key=True)
