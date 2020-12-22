@@ -91,28 +91,28 @@ def execute(args):
 
                     if args.body_motion == 1 or args.face_motion == 1:
                         
-                        # is_flip = False
-                        # if prev_fno < fno and sorted(all_frame_joints.keys())[-1] <= sorted(all_frame_joints.keys())[-2] + 2:
-                        #     # 前のキーフレがある場合、体幹に近いボーンが反転していたらスルー(直近が3フレーム以上離れていたらスルーなし)
-                        #     for ljname in ['left_hip', 'left_shoulder']:
-                        #         rjname = ljname.replace('left', 'right')
-                        #         prev_lsign = np.sign(all_frame_joints[prev_fno]["joints"][ljname]["x"] - all_frame_joints[prev_fno]["joints"]["pelvis"]["x"])
-                        #         prev_rsign = np.sign(all_frame_joints[prev_fno]["joints"][rjname]["x"] - all_frame_joints[prev_fno]["joints"]["pelvis"]["x"])
-                        #         lsign = np.sign(all_frame_joints[fno]["joints"][ljname]["x"] - all_frame_joints[fno]["joints"]["pelvis"]["x"])
-                        #         rsign = np.sign(all_frame_joints[fno]["joints"][rjname]["x"] - all_frame_joints[fno]["joints"]["pelvis"]["x"])
-                        #         ldiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][ljname]["x"]]))
-                        #         rdiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][rjname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
-                        #         lrdiff = abs(np.diff([all_frame_joints[fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
+                        is_flip = False
+                        if prev_fno < fno and sorted(all_frame_joints.keys())[-1] <= sorted(all_frame_joints.keys())[-2] + 2:
+                            # 前のキーフレがある場合、体幹に近いボーンが反転していたらスルー(直近が3フレーム以上離れていたらスルーなし)
+                            for ljname in ['left_hip', 'left_shoulder']:
+                                rjname = ljname.replace('left', 'right')
+                                prev_lsign = np.sign(all_frame_joints[prev_fno]["joints"][ljname]["x"] - all_frame_joints[prev_fno]["joints"]["pelvis"]["x"])
+                                prev_rsign = np.sign(all_frame_joints[prev_fno]["joints"][rjname]["x"] - all_frame_joints[prev_fno]["joints"]["pelvis"]["x"])
+                                lsign = np.sign(all_frame_joints[fno]["joints"][ljname]["x"] - all_frame_joints[fno]["joints"]["pelvis"]["x"])
+                                rsign = np.sign(all_frame_joints[fno]["joints"][rjname]["x"] - all_frame_joints[fno]["joints"]["pelvis"]["x"])
+                                ldiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][ljname]["x"]]))
+                                rdiff = abs(np.diff([all_frame_joints[prev_fno]["joints"][rjname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
+                                lrdiff = abs(np.diff([all_frame_joints[fno]["joints"][ljname]["x"], all_frame_joints[fno]["joints"][rjname]["x"]]))
 
-                        #         if prev_lsign != lsign and prev_rsign != rsign and ldiff > 0.15 and rdiff > 0.15 and lrdiff > 0.15:
-                        #             is_flip = True
-                        #             break
+                                if prev_lsign != lsign and prev_rsign != rsign and ldiff > 0.15 and rdiff > 0.15 and lrdiff > 0.15:
+                                    is_flip = True
+                                    break
                         
-                        # if is_flip:
-                        #     flip_fnos.append(fno)
-                        #     # 最もデカいのを挿入
-                        #     leg_degrees.append(999999999)
-                        #     continue
+                        if is_flip:
+                            flip_fnos.append(fno)
+                            # 最もデカいのを挿入
+                            leg_degrees.append(999999999)
+                            continue
 
                         for jname, (bone_name, name_list, parent_list, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
                             if name_list is None:
@@ -145,8 +145,24 @@ def execute(args):
                                 qq *= motion.calc_bf(parent_name, bf.fno).rotation.inverted()
                             qq = qq * rotation * initial.inverted()
                             bf.rotation = qq
-                            # 一旦無効化状態で登録
-                            motion.regist_bf(bf, bf.name, bf.fno, is_key=False)
+
+                            if sidx > 0:
+                                prev_fno, _ = motion.get_bone_prev_next_fno(bf.name, fno=bf.fno, is_key=True)
+                                prev_bf = motion.calc_bf(bf.name, prev_fno)
+                                fno_diff = bf.fno - prev_fno
+
+                                if abs(MQuaternion.dotProduct(prev_bf.rotation, bf.rotation)) >= (1 - (fno_diff * (0.2 if bf.name in ["上半身", "下半身"] else 0.04))):
+                                    # 前のキーと大差が無い場合、採用
+                                    bf.key = True
+                                else:
+                                    # フリップしている可能性がある場合、キー登録なし
+                                    bf.key = False
+                                    if bf.name in ["上半身", "下半身"]:
+                                        flip_fnos.append(fno)
+                            else:
+                                bf.key = True
+
+                            motion.regist_bf(bf, bf.name, bf.fno, is_key=bf.key)
                                 
                     if "faces" in frame_joints and args.face_motion == 1:
                         # 表情がある場合出力
@@ -184,28 +200,14 @@ def execute(args):
                             # 可動域指定がある場合、制限する
                             local_x_axis = model.get_local_x_axis(bf.name)
                             x_qq, y_qq, z_qq, _ = separate_local_qq(bf.fno, bf.name, bf.rotation, local_x_axis)
-                            local_z_axis = MVector3D(0, 0, -1 * (-1 if "right" in jname else 1))
+                            local_z_axis = MVector3D(0, 0, (-1 if "right" in jname else 1))
                             local_y_axis = MVector3D.crossProduct(local_x_axis, local_z_axis)
                             x_limited_qq = MQuaternion.fromAxisAndAngle(local_x_axis, max(ranges["x"]["min"], min(ranges["x"]["max"], x_qq.toDegree() * MVector3D.dotProduct(local_x_axis, x_qq.vector()))))
                             y_limited_qq = MQuaternion.fromAxisAndAngle(local_y_axis, max(ranges["y"]["min"], min(ranges["y"]["max"], y_qq.toDegree() * MVector3D.dotProduct(local_y_axis, y_qq.vector()))))
                             z_limited_qq = MQuaternion.fromAxisAndAngle(local_z_axis, max(ranges["z"]["min"], min(ranges["z"]["max"], z_qq.toDegree() * MVector3D.dotProduct(local_z_axis, z_qq.vector()))))
                             bf.rotation = y_limited_qq * x_limited_qq * z_limited_qq
 
-                        if fidx > 0:
-                            prev_fno, _ = motion.get_bone_prev_next_fno(bf.name, fno=bf.fno, is_key=True)
-                            prev_bf = motion.calc_bf(bf.name, prev_fno)
-                            fno_diff = bf.fno - prev_fno
-
-                            if abs(MQuaternion.dotProduct(prev_bf.rotation, bf.rotation)) >= (1 - (0.06 * fno_diff)):
-                                # 前のキーと大差が無い場合、採用
-                                bf.key = True
-                            else:
-                                # フリップしている可能性がある場合、キー登録なし
-                                bf.key = False
-                                if bf.name in ["上半身", "下半身"]:
-                                    flip_fnos.append(fno)
-
-                        motion.regist_bf(bf, bf.name, bf.fno, is_key=bf.key)
+                            motion.regist_bf(bf, bf.name, bf.fno, is_key=bf.key)
 
                     if fno not in flip_fnos:
                         # センター・グルーブ・足IKは初期値
@@ -282,7 +284,7 @@ def execute(args):
                         # 最初の人物の深度を0にする
                         start_z = pelvis_vec.z()
                     
-                    pelvis_y = upright_pelvis_vec.y() - pelvis_vec.y()
+                    pelvis_y = pelvis_vec.y() - upright_pelvis_vec.y()
 
                     # Yはグルーブ
                     groove_bf = VmdBoneFrame()
@@ -297,9 +299,9 @@ def execute(args):
 
                     # XZはセンター
                     center_bf.position.setX(pelvis_vec.x())
-                    # center_bf.position.setZ(pelvis_vec.z() - start_z)
-                    # center_bf.position.setY(pelvis_vec.y())
                     center_bf.position.setZ(pelvis_vec.z() - start_z)
+                    # center_bf.position.setY(pelvis_vec.y())
+                    # center_bf.position.setZ(pelvis_vec.z())
                     motion.regist_bf(center_bf, center_bf.name, fno)
 
                     # つま先からのグルーブ調整
@@ -312,9 +314,9 @@ def execute(args):
                         ankle_bf = motion.calc_bf(f"{direction}足首", fno)
 
                         # 大体床に接地しているっぽい時はその分をマイナスする
-                        # 足がほとんど曲がっておらず、足がつま先立っていない場合、床に接地と見なす
+                        # 足がつま先立っていない場合、床に接地と見なす
                         ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, MVector3D(1, 0, 0))
-                        if toe_y < 2 and (now_leg_length >= upright_leg_length * 0.9 or ankle_x_qq.toDegree() < 20):
+                        if ankle_x_qq.toDegree() < 30:
                             min_leg_ys.append(toe_y)
                 
                     # 大体床に接地していると見なしてマイナス(地面にめり込んでたら上げる)
@@ -333,23 +335,79 @@ def execute(args):
                         groove_bf.position.setY(pelvis_y)
 
                     motion.regist_bf(groove_bf, groove_bf.name, fno)
-                
+
+                    if fidx > 0:
+                        prev_fno, _ = motion.get_bone_prev_next_fno(groove_bf.name, fno=groove_bf.fno, is_key=True)
+                        prev_bf = motion.calc_bf(groove_bf.name, prev_fno)
+                        fno_diff = groove_bf.fno - prev_fno
+
+                        if abs(pelvis_y - prev_bf.position.y()) > 0.25 * fno_diff:
+                            # 差がでかい場合、削除
+                            del motion.bones[groove_bf.name][fno]
+
+                logger.info("【No.{0}】センタースムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                xfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                yfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                zfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
+                    center_bf = motion.calc_bf("センター", fno)
+                    center_bf.position.setX(xfilter(center_bf.position.x(), fno))
+                    center_bf.position.setZ(zfilter(center_bf.position.z(), fno))
+
+                    groove_bf = motion.calc_bf("グルーブ", fno)
+                    groove_bf.position.setY(yfilter(groove_bf.position.y(), fno))
+
+                    if fno not in flip_fnos:
+                        motion.regist_bf(center_bf, center_bf.name, fno, is_key=center_bf.key)
+                        motion.regist_bf(groove_bf, groove_bf.name, fno, is_key=groove_bf.key)
+
                 logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, flip_fnos, "左")
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, flip_fnos, "右")
 
-            #     # つま先IK末端までのリンク
-            #     right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
-            #     left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
+                # # つま先IK末端までのリンク
+                # right_toe_ik_links = model.create_link_2_top_one("右つま先ＩＫ", is_defined=False)
+                # left_toe_ik_links = model.create_link_2_top_one("左つま先ＩＫ", is_defined=False)
 
                 # # 直立フレームは地に足がついていると見なす
-                # logger.info("【No.{0}】つま先調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                # logger.info("【No.{0}】センター・足ＩＫ調整", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                # for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
+                # prev_center_bf = None
+                # prev_right_leg_ik_bf = None
+                # prev_left_leg_ik_bf = None
+                # for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):                    
+                #     if fno in flip_fnos:
+                #         continue
+
                 #     right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
                 #     left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+
+                #     if fidx > 0:
+                #         leg_z_diffs = []
+                #         # 1番目以降で、ＩＫのＹが0の場合、ＩＫを動かさない（センターの動きも止める）
+                #         if right_leg_ik_bf.position.y() < 1:
+                #             leg_z_diffs.append(right_leg_ik_bf.position.z() - prev_right_leg_ik_bf.position.z())
+                #         # 1番目以降で、ＩＫのＹが0の場合、ＩＫを動かさない（センターの動きも止める）
+                #         if left_leg_ik_bf.position.y() < 1:
+                #             leg_z_diffs.append(left_leg_ik_bf.position.z() - prev_left_leg_ik_bf.position.z())
+
+                #         z_idx = np.abs(np.asarray(leg_z_diffs) - 0).argmin() if len(leg_z_diffs) > 0 else -1
+                #         if z_idx >= 0:
+                #             # zが調整対象である場合
+                #             center_bf = motion.calc_bf("センター", fno)
+
+                #             center_bf.position.setZ(center_bf.position.z() - leg_z_diffs[z_idx])
+                #             right_leg_ik_bf.position.setZ(right_leg_ik_bf.position.z() - leg_z_diffs[z_idx])
+                #             left_leg_ik_bf.position.setZ(left_leg_ik_bf.position.z() - leg_z_diffs[z_idx])
+
+                #             motion.regist_bf(center_bf, center_bf.name, fno)
+                #             motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
+                #             motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
+
+                #     prev_right_leg_ik_bf = right_leg_ik_bf
+                #     prev_left_leg_ik_bf = left_leg_ik_bf
 
                 #     if args.upper_motion == 1:
                 #         # 上半身モーションの場合、グルーブを0に強制変換
@@ -388,13 +446,6 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     # 画像サイズ
     image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
 
-    # # 直立の骨盤グローバル位置
-    # upright_bbox_pos = np.array([all_frame_joints[upright_fno]["bbox"]["x"], all_frame_joints[upright_fno]["bbox"]["y"]])
-    # upright_bbox_size = np.array([all_frame_joints[upright_fno]["bbox"]["width"], all_frame_joints[upright_fno]["bbox"]["height"]])
-    # upright_pelvis_vec = (get_vec3(all_frame_joints[upright_fno]["joints"], "pelvis") + get_vec3(all_frame_joints[upright_fno]["joints"], "spine1")) / 2
-    # upright_pelvis_pos = np.array([upright_pelvis_vec.x(), upright_pelvis_vec.y() * -1 + 1])
-    # upright_pelvis_global_pos = (upright_bbox_size * upright_pelvis_pos) + upright_bbox_pos
-
     #bbox
     bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"]])
     bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"]])
@@ -406,17 +457,22 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     pelvis_pos = np.array([(pelvis_vec.x() / 2) + 0.5, (pelvis_vec.y() / -2) + 0.5])
 
     # 骨盤の画面内グローバル位置
-    pelvis_global_pos = (bbox_size * pelvis_pos) + bbox_pos
+    pelvis_3d_global_pos = (bbox_size * pelvis_pos) + bbox_pos
+    pelvis_global_pos = (np.array([all_frame_joints[fno]["proj_joints"]["pelvis"]["x"], all_frame_joints[fno]["proj_joints"]["pelvis"]["y"]]) + \
+                         np.array([all_frame_joints[fno]["proj_joints"]["spine1"]["x"], all_frame_joints[fno]["proj_joints"]["spine1"]["y"]])) / 2
     pelvis_global_pos[0] -= image_size[0] / 2
+    # pelvis_global_pos[1] = image_size[1] / 2 - pelvis_global_pos[1]
     # pelvis_global_pos[1] -= image_size[1] * 0.6
 
     # カメラ中央
     camera_center_pos = np.array([all_frame_joints[fno]["others"]["center"]["x"], all_frame_joints[fno]["others"]["center"]["y"]])
     # カメラ倍率
     camera_scale = all_frame_joints[fno]["camera"]["scale"]
+    # センサー幅（画角？）
+    sensor_width = all_frame_joints[fno]["others"]["sensor_width"]
     # camera_center_pos -= image_size / 2
     # Zはカメラ深度
-    depth = all_frame_joints[fno]["depth"]["depth"] / camera_scale
+    depth = all_frame_joints[fno]["depth"]["depth"]
 
     # # 骨盤の画面全体からの相対位置
     # pelvis_relative_pos = pelvis_global_pos / image_size
@@ -431,10 +487,10 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     # モデル座標系
     model_view = create_model_view(camera_center_pos, camera_scale, image_size, depth, focal_length_in_px)
     # プロジェクション座標系
-    projection_view = create_projection_view(image_size)
+    projection_view = create_projection_view(image_size, sensor_width)
 
     # viewport
-    viewport_rect = MRect(0, 0, 30, 40)
+    viewport_rect = MRect(0, 0, args.center_scale * 10, args.center_scale * 10)
     # viewport_rect = MRect(-(image_size[0] / 2), 0, image_size[0], image_size[1])
     # viewport_rect = MRect(-(image_size[0] / 2), -image_size[1], image_size[0], image_size[1])
     # viewport_rect = MRect(-(16 / 2 / 10), 0, 16 / 10, 9 / 10)
@@ -456,17 +512,14 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     # pe = pelvis_global_vec - eye_position_vec
     # pe *= 30
     # pe *= MVector3D.dotProduct(floor_direction_vec.normalized(), fe.normalized()) / MVector3D.dotProduct(floor_direction_vec.normalized(), pe.normalized())
-    pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), depth * 2)
+    pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), depth * args.center_scale)
 
-    # # pe.setZ(pelvis_z * 2)
     return pelvis_mmd_vec
 
     # # 骨盤の画面全体からの相対位置
     # pelvis_relative_pos = pelvis_global_pos / image_size
-    # # X相対位置は画面中央に基づく
-    # pelvis_relative_pos[0] -= 0.5
-    # # 画面中央をゼロとする
-    # pelvis_global_pos *= image_size
+    # # # X相対位置は画面中央に基づく
+    # # pelvis_relative_pos[0] -= 0.5
 
     # # # Y相対位置は直立からの位置に基づく
     # # if upright_y != 0:
@@ -475,7 +528,7 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     # pelvis_vec = MVector3D()
     # pelvis_vec.setX(pelvis_relative_pos[0] * args.center_scale)
     # pelvis_vec.setY(pelvis_relative_pos[1] * args.center_scale / 10)
-    # pelvis_vec.setZ(depth * args.center_scale / 10)
+    # pelvis_vec.setZ(depth * args.center_scale / 25)
 
     # return pelvis_vec
 
@@ -521,10 +574,10 @@ def create_model_view(camera_center_pos: list, camera_scale: float, image_size: 
     return model_view
 
 # プロジェクション座標系作成
-def create_projection_view(image_size: list):
+def create_projection_view(image_size: list, sensor_width: float):
     mat = MMatrix4x4()
     mat.setToIdentity()
-    mat.perspective(35, image_size[0] / image_size[1], 0, 50000)
+    mat.perspective(sensor_width, image_size[0] / image_size[1], 0, 50000)
 
     return mat
 
@@ -593,15 +646,13 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, flip_fnos: 
         # 足ＩＫの回転は、足首から見たつま先の方向
         bf.rotation = MQuaternion.rotationTo(ankle_child_initial_local_pos, ankle_child_local_pos)
 
-        # 大体床に接地しているっぽい時はその分をマイナスする
-        # 足がほとんど曲がっておらず、足がつま先立っていない場合、床に接地と見なす
-        leg_bf = motion.calc_bf(leg_bone_name, fno)
-        knee_bf = motion.calc_bf(knee_bone_name, fno)
-        ankle_bf = motion.calc_bf(ankle_bone_name, fno)
-
-        ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, default_vec)
-        if bf.position.y() < 1 and 50 > (leg_bf.rotation.toDegree() + knee_bf.rotation.toDegree()) and 20 > ankle_x_qq.toDegree():
+        # 床に近く、足がつま先立っていない場合、床に接地と見なして調整
+        ik_x_qq, _, _, ik_yz_qq = MServiceUtils.separate_local_qq(fno, bf.name, bf.rotation, default_vec)
+        if 1 > bf.position.y() and 20 > ik_x_qq.toDegree():
+            groove_bf = motion.calc_bf("グルーブ", fno)
+            groove_bf.position.setY(groove_bf.position.y() - bf.position.y())
             bf.position.setY(0)
+            bf.rotation = ik_yz_qq
 
         motion.regist_bf(bf, leg_ik_bone_name, fno)
         

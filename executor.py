@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument('--upper-motion', type=int, dest='upper_motion', default="0", help='Whether to generate upper motion only')
     parser.add_argument('--hand-motion', type=int, dest='hand_motion', default="0", help='Whether to generate hand motion')
     parser.add_argument('--face-motion', type=int, dest='face_motion', default="0", help='Whether to generate face motion')
-    parser.add_argument('--center-scale', type=float, dest='center_scale', default="50", help='center scale')
+    parser.add_argument('--center-scale', type=float, dest='center_scale', default="4", help='center scale')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='Log level')
     parser.add_argument("--log-mode", type=int, dest='log_mode', default=0, help='Log output mode')
 

@@ -44,8 +44,8 @@ def execute(args):
         logger.info("【初回チェック】\n　ファイル名: {0}, ファイルサイズ: {1}, 横: {2}, 縦: {3}, フレーム数: {4}, fps: {5}", \
                     args.video_file, os.path.getsize(args.video_file), W, H, count, fps, decoration=MLogger.DECORATION_BOX)
 
-        # 縮尺を調整
-        width = int(1280)
+        # 縮尺を調整(Colabは容量の問題でちょっと小さめ)
+        width = int(1280) if args.parent_dir else int(1920)
 
         if len(args.parent_dir) > 0:
             process_img_dir = base_path
