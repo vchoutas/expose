@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import time
+import os
 
 from mmd.utils.MLogger import MLogger
 
@@ -98,4 +99,13 @@ if __name__ == "__main__":
 
     logger.info("MMD自動トレース終了\n　処理対象映像ファイル: {0}\n　処理内容: {1}\n　トレース結果: {2}\n　処理時間: {3}", \
                 args.video_file, args.process, args.img_dir, show_worked_time(elapsed_time), decoration=MLogger.DECORATION_BOX)
-    
+
+    # 終了音を鳴らす
+    if os.name == "nt":
+        # Windows
+        try:
+            import winsound
+            winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+        except Exception:
+            pass
+
