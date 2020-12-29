@@ -517,24 +517,6 @@ class VmdMotion:
         bf = None
         prev_bf = None
 
-        rot_vs = []
-        mov_vs = []
-        prev_bf = self.calc_bf(bone_name, fnos[0], is_key=False, is_read=False, is_reset_interpolation=False)
-
-        for f in fnos[1:]:
-            bf = self.calc_bf(bone_name, f, is_key=False, is_read=False, is_reset_interpolation=False)
-
-            rot_vs.append(bf.rotation.calcTheata(prev_bf.rotation))
-            mov_vs.append(bf.position.distanceToPoint(prev_bf.position))
-
-            prev_bf = bf
-        
-        # 差異がないキーを除去する
-        if (not is_rot or (is_rot and sum(rot_vs) < 0.001)) and (not is_mov or (is_mov and sum(mov_vs) < 0.001)):
-            for f in range(1, fnos[-1] + 1):
-                if f in self.bones[bone_name]:
-                    del self.bones[bone_name][f]
-
         fno = fnos[0] + 1
         start_fno = fnos[0]
         last_fno = fnos[0]
@@ -543,14 +525,10 @@ class VmdMotion:
         my_values = [0]
         mz_values = [0]
         next_bf = None
-        rot_indices = []
-        mx_indices = []
-        my_indices = []
-        mz_indices = []
         is_inflection = False
 
         # 不要キー削除処理
-        while fno <= fnos[-1]:
+        while fno < fnos[-1]:
             is_inflection = False
             inflection_fno = start_fno
 
@@ -624,7 +602,7 @@ class VmdMotion:
                     #     indices.sort()
                     #     logger.debug("indices: %s", indices)
                     #     # 変曲点で区切る
-                    #     inflection = <int>(indices[0])
+                    #     inflection = int(indices[0])
 
                     #     if inflection <= 0:
                     #         fno += 1
@@ -698,10 +676,6 @@ class VmdMotion:
                     mx_values = [0]
                     my_values = [0]
                     mz_values = [0]
-                    rot_np_values = np.ndarray([], dtype=np.float64)
-                    mx_np_values = np.ndarray([], dtype=np.float64)
-                    my_np_values = np.ndarray([], dtype=np.float64)
-                    mz_np_values = np.ndarray([], dtype=np.float64)
 
                     logger.debug("%s, 開始キーフレ変更後: start_fno: %s, fno: %s, last_fno: %s", bone_name, start_fno, fno, last_fno)
 

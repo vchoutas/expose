@@ -58,7 +58,7 @@ class MLogger():
         self.default_level = level
 
         # ロガー
-        self.logger = logging.getLogger("mBabel").getChild(self.module_name)
+        self.logger = logging.getLogger("expose_mmd").getChild(self.module_name)
 
         if not out_path:
             # クラス単位の出力パスがない場合、デフォルトパス
@@ -283,7 +283,7 @@ class MLogger():
         # ファイル出力ありの場合、ログファイル名生成
         if not out_path:
             os.makedirs("log", exist_ok=True)
-            cls.default_out_path = "log/mBabel_{0}.log".format(outout_datetime)
+            cls.default_out_path = "log/expose_mmd_{0}.log".format(outout_datetime)
         else:
             cls.default_out_path = out_path
         

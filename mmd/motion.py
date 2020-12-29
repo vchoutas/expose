@@ -17,13 +17,15 @@ from mmd.utils.MLogger import MLogger
 from mmd.utils.MServiceUtils import sort_by_numeric
 from lighttrack.visualizer.detection_visualizer import draw_bbox
 
+from mmd.utils.MBezierUtils import join_value_2_bezier, R_x1_idxs, R_y1_idxs, R_x2_idxs, R_y2_idxs, MX_x1_idxs, MX_y1_idxs, MX_x2_idxs, MX_y2_idxs
+from mmd.utils.MBezierUtils import MY_x1_idxs, MY_y1_idxs, MY_x2_idxs, MY_y2_idxs, MZ_x1_idxs, MZ_y1_idxs, MZ_x2_idxs, MZ_y2_idxs
 from mmd.mmd.VmdWriter import VmdWriter
-from mmd.module.MMath import MQuaternion, MVector3D, MVector2D, MMatrix4x4, MRect
+from mmd.module.MMath import MQuaternion, MVector3D, MVector2D, MMatrix4x4, MRect, fromEulerAngles
 from mmd.mmd.VmdData import VmdBoneFrame, VmdMorphFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk, OneEuroFilter
 from mmd.mmd.PmxData import PmxModel, Bone, Vertex, Bdef1, Ik, IkLink
 from mmd.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate_local_qq
 
-logger = MLogger(__name__)
+logger = MLogger(__name__, level=1)
 
 def execute(args):
     try:
@@ -65,6 +67,7 @@ def execute(args):
             # foot_ys = []
             leg_degrees = []
             flip_fnos = []
+            target_bone_names = {}
         
             for sidx, smooth_json_path in enumerate(tqdm(smooth_json_pathes, desc=f"No.{oidx:03} ... ")):
                 m = smooth_pattern.match(os.path.basename(smooth_json_path))
@@ -114,7 +117,7 @@ def execute(args):
                             leg_degrees.append(999999999)
                             continue
 
-                        for jname, (bone_name, name_list, parent_list, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
+                        for jname, (bone_name, name_list, parent_list, initial_qq, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
                             if name_list is None:
                                 continue
 
@@ -143,8 +146,7 @@ def execute(args):
                             qq = MQuaternion()
                             for parent_name in reversed(parent_list):
                                 qq *= motion.calc_bf(parent_name, bf.fno).rotation.inverted()
-                            qq = qq * rotation * initial.inverted()
-                            bf.rotation = qq
+                            bf.rotation = initial_qq * qq * rotation * initial.inverted()
 
                             if sidx > 0:
                                 prev_fno, _ = motion.get_bone_prev_next_fno(bf.name, fno=bf.fno, is_key=True)
@@ -163,6 +165,7 @@ def execute(args):
                                 bf.key = True
 
                             motion.regist_bf(bf, bf.name, bf.fno, is_key=bf.key)
+                            target_bone_names[bf.name] = True
                                 
                     if "faces" in frame_joints and args.face_motion == 1:
                         # 表情がある場合出力
@@ -170,6 +173,7 @@ def execute(args):
                         left_eye_euler = calc_left_eye(fno, motion, frame_joints)
                         right_eye_euler = calc_right_eye(fno, motion, frame_joints)
                         blend_eye(fno, motion, left_eye_euler, right_eye_euler)
+                        target_bone_names["両目"] = True
 
                         # 口
                         calc_lip(fno, motion, frame_joints)
@@ -179,21 +183,18 @@ def execute(args):
                     
                     prev_fno = fno
 
+            start_fno = sorted(all_frame_joints.keys())[0]
+            last_fno = sorted(all_frame_joints.keys())[-1]
+            fnos = list(range(start_fno, last_fno + 1))
+
             if args.body_motion == 1:
                 logger.info("【No.{0}】FKボーン角度チェック開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
                 for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
-                    for jname, (bone_name, name_list, parent_list, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
-                        if name_list is None:
+                    for jname, (bone_name, name_list, parent_list, initial_qq, ranges, is_hand, is_head) in VMD_CONNECTIONS.items():
+                        if bone_name not in target_bone_names:
                             continue
-                        
-                        if not args.hand_motion == 1 and is_hand:
-                            # 手トレースは手ON時のみ
-                            continue
-                        
-                        if args.body_motion == 0 and args.face_motion == 1 and not is_head:
-                            continue
-                        
+
                         bf = motion.calc_bf(bone_name, fno)
 
                         if ranges:
@@ -214,18 +215,22 @@ def execute(args):
                         center_bf = VmdBoneFrame(fno)
                         center_bf.set_name("センター")
                         motion.regist_bf(center_bf, center_bf.name, fno)
+                        target_bone_names["センター"] = True
 
                         groove_bf = VmdBoneFrame(fno)
                         groove_bf.set_name("グルーブ")
                         motion.regist_bf(groove_bf, groove_bf.name, fno)
+                        target_bone_names["グルーブ"] = True
 
                         left_leg_ik_bf = VmdBoneFrame(fno)
                         left_leg_ik_bf.set_name("左足ＩＫ")
                         motion.regist_bf(left_leg_ik_bf, left_leg_ik_bf.name, fno)
+                        target_bone_names["左足ＩＫ"] = True
 
                         right_leg_ik_bf = VmdBoneFrame(fno)
                         right_leg_ik_bf.set_name("右足ＩＫ")
                         motion.regist_bf(right_leg_ik_bf, right_leg_ik_bf.name, fno)
+                        target_bone_names["右足ＩＫ"] = True
 
                         right_leg_bf = motion.calc_bf("右足", fno)
                         right_knee_bf = motion.calc_bf("右ひざ", fno)
@@ -235,7 +240,6 @@ def execute(args):
                     else:
                         # 最もデカいのを挿入
                         leg_degrees.append(99999999)
-
 
                 logger.info("【No.{0}】直立姿勢計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 
@@ -330,28 +334,103 @@ def execute(args):
                             # 差がでかい場合、削除
                             del motion.bones[groove_bf.name][fno]
 
-                logger.info("【No.{0}】センタースムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                xfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
-                yfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
-                zfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
-                for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
-                    center_bf = motion.calc_bf("センター", fno)
-                    center_bf.position.setX(xfilter(center_bf.position.x(), fno))
-                    center_bf.position.setZ(zfilter(center_bf.position.z(), fno))
+                # logger.info("【No.{0}】センタースムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                # xfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                # yfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                # zfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                # for fidx, (fno, frame_joints) in enumerate(tqdm(all_frame_joints.items(), desc=f"No.{oidx:03} ... ")):
+                #     center_bf = motion.calc_bf("センター", fno)
+                #     center_bf.position.setX(xfilter(center_bf.position.x(), fno))
+                #     center_bf.position.setZ(zfilter(center_bf.position.z(), fno))
 
-                    groove_bf = motion.calc_bf("グルーブ", fno)
-                    groove_bf.position.setY(yfilter(groove_bf.position.y(), fno))
+                #     groove_bf = motion.calc_bf("グルーブ", fno)
+                #     groove_bf.position.setY(yfilter(groove_bf.position.y(), fno))
 
-                    if fno not in flip_fnos:
-                        motion.regist_bf(center_bf, center_bf.name, fno, is_key=center_bf.key)
-                        motion.regist_bf(groove_bf, groove_bf.name, fno, is_key=groove_bf.key)
+                #     if fno not in flip_fnos:
+                #         motion.regist_bf(center_bf, center_bf.name, fno, is_key=center_bf.key)
+                #         motion.regist_bf(groove_bf, groove_bf.name, fno, is_key=groove_bf.key)
 
                 logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, flip_fnos, "左")
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, motion, model, flip_fnos, "右")
+                
+                if args.remove_key == 1:
+                    logger.info("【No.{0}】不要キー削除開始（進捗が進まなくなったらスキップします）", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
+                    for bone_name in target_bone_names:
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.00001, beta=1, dcutoff=1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.00001, beta=1, dcutoff=1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.00001, beta=1, dcutoff=1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.00001, beta=1, dcutoff=1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.00001, beta=1, dcutoff=1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.00001, beta=1, dcutoff=1)
+
+                        # 全キーフレをひとつずつチェック
+                        for n in range(3):
+                            for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - スムージング({n+1}) ... ")):
+                                bf = motion.calc_bf(bone_name, fno)
+
+                                if model.bones[bone_name].getRotatable():
+                                    # 回転ありボーンの場合
+                                    euler = bf.rotation.toEulerAngles()
+                                    bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                                
+                                if model.bones[bone_name].getTranslatable():
+                                    # 移動ありボーンの場合
+                                    bf.position.setX(mxfilter(bf.position.x(), fno))
+                                    bf.position.setY(myfilter(bf.position.y(), fno))
+                                    bf.position.setZ(mzfilter(bf.position.z(), fno))
+                                
+                                motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
+                        
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=0.1, dcutoff=1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=0.1, dcutoff=1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=0.1, dcutoff=1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=0.1, dcutoff=1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=0.1, dcutoff=1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=0.1, dcutoff=1)
+                        mxvalues = {}
+                        myvalues = {}
+                        mzvalues = {}
+                        rvalues = {}
+                        active_fnos = []
+
+                        # 全キーフレをひとつずつチェック
+                        for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - チェックデータ生成 ... ")):
+                            bf = motion.calc_bf(bone_name, fno)
+                            if bf.key:
+                                active_fnos.append(fno)
+                            
+                            if model.bones[bone_name].getRotatable():
+                                # 回転ありボーンの場合
+                                euler = bf.rotation.toEulerAngles()
+                                filter_qq = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                                rvalues[fno] = filter_qq
+                            
+                            if model.bones[bone_name].getTranslatable():
+                                # 移動ありボーンの場合
+                                mxvalues[fno] = mxfilter(bf.position.x(), fno)
+                                myvalues[fno] = myfilter(bf.position.y(), fno)
+                                mzvalues[fno] = mzfilter(bf.position.z(), fno)
+                        
+                        if (model.bones[bone_name].getRotatable() and len(rvalues) > 0) or (model.bones[bone_name].getTranslatable() and len(mxvalues) > 0):
+                            # 不要キー除去
+                            for _ in tqdm(range(20), desc=f"No.{oidx:03} - {bone_name} - 不要キー削除 ... "):
+                                activate_fnos = remove_unnecessary_values(bone_name, motion, active_fnos, rvalues, mxvalues, myvalues, mzvalues, model.bones[bone_name].getRotatable(), \
+                                                                          model.bones[bone_name].getTranslatable())
+                                
+                                if activate_fnos == active_fnos:
+                                    # 除去結果が変わらない場合、終了
+                                    break
+
+                                logger.debug("remove_unnecessary_values activate_fnos: {0}", bone_name, activate_fnos)
+                                
+                                # 変わる場合、保持し直し
+                                active_fnos = activate_fnos
+
+            logger.info("【No.{0}】モーション生成開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
             motion_path = os.path.join(motion_dir_path, "output_{0}_no{1:03}.vmd".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S'), oidx))
             writer = VmdWriter(model, motion, motion_path)
             writer.write()
@@ -364,6 +443,178 @@ def execute(args):
     except Exception as e:
         logger.critical("モーション生成で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
         return False
+
+# 指定ボーンの不要キーを削除する
+# 変曲点を求める
+# https://teratail.com/questions/162391
+def remove_unnecessary_values(bone_name: str, motion: VmdMotion, active_fnos: list, r_org_values: list, mx_org_values: list, my_org_values: list, mz_org_values: list, \
+                              is_rot: bool, is_mov: bool, offset=0, rot_diff_limit=0.1, mov_diff_limit=0.1):
+    prev_fno = active_fnos[0]
+    fno = active_fnos[0] + 1
+    start_fno = active_fnos[0]
+    last_fno = active_fnos[0]
+    rot_values = [0]
+    mx_values = [0]
+    my_values = [0]
+    mz_values = [0]
+    next_bf = None
+    is_inflection = False
+
+    # 不要キー削除処理
+    while fno < active_fnos[-1]:
+        is_inflection = False
+
+        next_bf = None
+
+        # 変化量を保持
+        if is_rot:
+            rot_values.append(r_org_values[fno].calcTheata(r_org_values[prev_fno]))
+
+        if is_mov:
+            mx_values.append(mx_org_values[fno] - mx_org_values[prev_fno])
+            my_values.append(my_org_values[fno] - my_org_values[prev_fno])
+            mz_values.append(mz_org_values[fno] - mz_org_values[prev_fno])
+
+        if ((is_rot and 2 > len(rot_values)) or not is_rot) and ((is_mov and 2 > len(mx_values)) or not is_mov):
+            # 必要な個数が溜まるまでスルー
+            fno += 1
+            continue
+        
+        if fno in active_fnos:
+            # 単調増加としてキーを結合してみる
+            (joined_rot_bzs, rot_inflection) = join_value_2_bezier(fno, bone_name, rot_values, offset=offset, diff_limit=rot_diff_limit) if is_rot else (True, [])
+            (joined_mx_bzs, mx_inflection) = join_value_2_bezier(fno, bone_name, mx_values, offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
+            (joined_my_bzs, my_inflection) = join_value_2_bezier(fno, bone_name, my_values, offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
+            (joined_mz_bzs, mz_inflection) = join_value_2_bezier(fno, bone_name, mz_values, offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
+
+            if joined_rot_bzs and joined_mx_bzs and joined_my_bzs and joined_mz_bzs:
+                next_bf = motion.calc_bf(bone_name, fno, is_key=False, is_read=False, is_reset_interpolation=False)
+
+                # 結合できた場合、補間曲線をnextに設定
+                if is_rot and len(joined_rot_bzs) > 0:
+                    logger.debug("☆{0}: f: {1}({2}), キー:回転補間曲線成功: 1: {3}, 2: {4}", bone_name, fno, start_fno, joined_rot_bzs[1].to_log(), joined_rot_bzs[2].to_log())
+                    motion.reset_interpolation_parts(bone_name, next_bf, joined_rot_bzs, R_x1_idxs, R_y1_idxs, R_x2_idxs, R_y2_idxs)
+                
+                if is_mov and len(joined_mx_bzs) > 0 and len(joined_my_bzs) > 0 and len(joined_mz_bzs) > 0:
+                    logger.debug("☆{0}: f: {1}({2}), キー:移動X補間曲線成功: 1: {3}, 2: {4}", bone_name, fno, start_fno, joined_mx_bzs[1].to_log(), joined_mx_bzs[2].to_log())
+                    logger.debug("☆{0}: f: {1}({2}), キー:移動Y補間曲線成功: 1: {3}, 2: {4}", bone_name, fno, start_fno, joined_my_bzs[1].to_log(), joined_my_bzs[2].to_log())
+                    logger.debug("☆{0}: f: {1}({2}), キー:移動Z補間曲線成功: 1: {3}, 2: {4}", bone_name, fno, start_fno, joined_mz_bzs[1].to_log(), joined_mz_bzs[2].to_log())
+                    motion.reset_interpolation_parts(bone_name, next_bf, joined_mx_bzs, MX_x1_idxs, MX_y1_idxs, MX_x2_idxs, MX_y2_idxs)
+                    motion.reset_interpolation_parts(bone_name, next_bf, joined_my_bzs, MY_x1_idxs, MY_y1_idxs, MY_x2_idxs, MY_y2_idxs)
+                    motion.reset_interpolation_parts(bone_name, next_bf, joined_mz_bzs, MZ_x1_idxs, MZ_y1_idxs, MZ_x2_idxs, MZ_y2_idxs)
+                
+                last_fno = fno
+
+                # 次も結合テストするため、分離はしない
+                is_inflection = False
+            else:
+                # 結合できなかった場合、変曲点チェックに移る
+                logger.debug("★{0}: f: {1}({2}), キー:補間曲線失敗: rot_inflection: {3}, mx_inflection: {4}, my_inflection: {5}, mz_inflection: {6}", \
+                                bone_name, fno, start_fno, rot_inflection, mx_inflection, my_inflection, mz_inflection)
+                
+                # 前回の分離点で分離する                    
+                is_inflection = True
+
+                # # 変曲点があった場合、そこで区切る
+                # indices = np.array([])
+                # indices = np.append(indices, rot_inflection)
+                # indices = np.append(indices, mx_inflection)
+                # indices = np.append(indices, my_inflection)
+                # indices = np.append(indices, mz_inflection)
+
+                # if indices.size > 0:
+                #     # 昇順に並べ替える
+                #     indices.sort()
+                #     logger.debug("indices: {0}", indices)
+                #     # 変曲点で区切る
+                #     inflection = int(indices[0])
+
+                #     if inflection <= 0:
+                #         fno += 1
+                #         continue
+
+                #     inflection_fno = start_fno + inflection
+                #     logger.debug("☆{0}: 変曲点: {1}, start_f: {2}, f: {3}, indices: {4}", bone_name, inflection_fno, start_fno, fno, indices)
+
+                #     # 結合したベジェ曲線
+                #     (joined_rot_bzs, rot_inflection) = join_value_2_bezier(inflection_fno, bone_name, rot_values[:(inflection + 1)], \
+                #                                                                         offset=offset, diff_limit=rot_diff_limit) if is_rot else (True, [])
+                #     (joined_mx_bzs, mx_inflection) = join_value_2_bezier(inflection_fno, bone_name, mx_values[:(inflection + 1)], \
+                #                                                                         offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
+                #     (joined_my_bzs, my_inflection) = join_value_2_bezier(inflection_fno, bone_name, my_values[:(inflection + 1)], \
+                #                                                                         offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
+                #     (joined_mz_bzs, mz_inflection) = join_value_2_bezier(inflection_fno, bone_name, mz_values[:(inflection + 1)], \
+                #                                                                         offset=offset, diff_limit=mov_diff_limit) if is_mov else (True, [])
+
+                #     if joined_rot_bzs and joined_mx_bzs and joined_my_bzs and joined_mz_bzs:
+                #         next_bf = motion.calc_bf(bone_name, inflection_fno, is_key=False, is_read=False, is_reset_interpolation=False)
+
+                #         # 結合できた場合、補間曲線をnextに設定
+                #         if is_rot:
+                #             logger.debug("☆{0}: f: {1}({2}), 変曲点:回転補間曲線成功: 1: {3}, 2: {4}", bone_name, inflection_fno, start_fno, joined_rot_bzs[1].to_log(), joined_rot_bzs[2].to_log())
+                #             motion.reset_interpolation_parts(bone_name, next_bf, joined_rot_bzs, R_x1_idxs, R_y1_idxs, R_x2_idxs, R_y2_idxs)
+                        
+                #         if is_mov:
+                #             logger.debug("☆{0}: f: {1}({2}), 変曲点:移動X補間曲線成功: 1: {3}, 2: {4}", bone_name, inflection_fno, start_fno, joined_mx_bzs[1].to_log(), joined_mx_bzs[2].to_log())
+                #             logger.debug("☆{0}: f: {1}({2}), 変曲点:移動Y補間曲線成功: 1: {3}, 2: {4}", bone_name, inflection_fno, start_fno, joined_my_bzs[1].to_log(), joined_my_bzs[2].to_log())
+                #             logger.debug("☆{0}: f: {1}({2}), 変曲点:移動Z補間曲線成功: 1: {3}, 2: {4}", bone_name, inflection_fno, start_fno, joined_mz_bzs[1].to_log(), joined_mz_bzs[2].to_log())
+                #             motion.reset_interpolation_parts(bone_name, next_bf, joined_mx_bzs, MX_x1_idxs, MX_y1_idxs, MX_x2_idxs, MX_y2_idxs)
+                #             motion.reset_interpolation_parts(bone_name, next_bf, joined_my_bzs, MY_x1_idxs, MY_y1_idxs, MY_x2_idxs, MY_y2_idxs)
+                #             motion.reset_interpolation_parts(bone_name, next_bf, joined_mz_bzs, MZ_x1_idxs, MZ_y1_idxs, MZ_x2_idxs, MZ_y2_idxs)
+                        
+                #         # 最終結合キーを置き換える
+                #         last_fno = inflection_fno
+                #     else:
+                #         # 結合できなかった場合、前回最終結合キーで分離する
+                #         logger.debug("★{0}: f: {1}({2}), 変曲点:補間曲線失敗: rot_inflection: {3}, mx_inflection: {4}, my_inflection: {5}, mz_inflection: {6}", \
+                #                     bone_name, inflection_fno, start_fno, rot_inflection, mx_inflection, my_inflection, mz_inflection)
+                # else:
+                #     # 変曲点がない場合（曲線が補間曲線に合わない場合）、前回最終結合キーで分離する
+                #     logger.debug("変曲点が見つからなかった場合")
+
+        # 変曲点で登録
+        if next_bf:
+            if bone_name in motion.bones and last_fno in motion.bones[bone_name]:
+                motion.bones[bone_name][last_fno].key = True
+                motion.bones[bone_name][last_fno].interpolation = next_bf.interpolation
+                logger.debug("◇登録 {0}: f: {1}, next_bf({2}) rot:{3}", bone_name, last_fno, next_bf.fno, next_bf.rotation.toEulerAngles4MMD().to_log())
+            else:
+                motion.regist_bf(next_bf, bone_name, last_fno, copy_interpolation=True)
+                logger.debug("☆登録 {0}: f: {1}, next_bf({2}) rot:{3}", bone_name, last_fno, next_bf.fno, next_bf.rotation.toEulerAngles4MMD().to_log())
+        
+        for f in range(start_fno + 1, last_fno):
+            # 結合できた場合、区間内を削除
+            if f in motion.bones[bone_name]:
+                logger.debug("☆{0}: f: {1}, キーフレ削除: df: {2}", bone_name, next_bf.fno, f)
+                del motion.bones[bone_name][f]
+
+        if is_inflection:
+            logger.debug("{0}, 開始キーフレ変更前: start_fno: {1}, fno: {2}, last_fno: {3}", bone_name, start_fno, fno, last_fno)
+
+            # 開始キーフレは、変曲点までずらす
+            fno = last_fno if start_fno != last_fno else last_fno + 1
+            start_fno = fno
+            last_fno = fno
+
+            # 配列初期化
+            rot_values = [0]
+            mx_values = [0]
+            my_values = [0]
+            mz_values = [0]
+
+            logger.debug("{0}, 開始キーフレ変更後: start_fno: {1}, fno: {2}, last_fno: {3}", bone_name, start_fno, fno, last_fno)
+
+        # 必ず進める
+        fno += 1
+
+        # 範囲指定がない場合、全範囲
+        active_fnos = motion.get_bone_fnos(bone_name, is_key=True)
+
+        logger.debug("**☆有効キー({0}-{1}) {2}: {3}", bone_name, start_fno, fno, active_fnos)
+    
+    logger.debug("len: {0}, last: {1}", len(rot_values), active_fnos[-1])
+
+    return sorted(list(motion.bones[bone_name].keys()))
 
 def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     # 画像サイズ
@@ -588,7 +839,7 @@ def calc_bone_direction_qq2(bf: VmdBoneFrame, motion: VmdMotion, model: PmxModel
     return qq
 
 def get_bone_vec3(model: PmxModel, joint_name: str):
-    bone_name, _, _, _, _, _ = VMD_CONNECTIONS[joint_name]
+    bone_name, _, _, _, _, _, _ = VMD_CONNECTIONS[joint_name]
     if bone_name in model.bones:
         return model.bones[bone_name].position
     
@@ -627,7 +878,7 @@ def read_bone_csv(bone_csv_path: str):
         for ridx, row in enumerate(reader):
             if row[0] == "Bone":
                 bone = Bone(row[1], row[2], MVector3D(float(row[5]), float(row[6]), float(row[7])), row[13], int(row[3]), \
-                            int(row[8]) | int(row[9]) | int(row[10]) | int(row[11]) | int(row[12]))
+                            int(row[8]) * 0x0002| int(row[9]) * 0x0004 | int(row[10]) * 0x0020 | int(row[11]) * 0x0008 | int(row[12]) * 0x0010)
                 bone.index = ridx - 1
 
                 if len(row[37]) > 0:
@@ -1146,75 +1397,75 @@ MORPH_CONNECTIONS = {
 
 
 VMD_CONNECTIONS = {
-    'spine1': ("上半身", ['pelvis', 'spine1', 'left_shoulder', 'right_shoulder', 'pelvis', 'spine1'], [], None, False, False),
-    'spine2': ("上半身2", ['spine1', 'spine2', 'left_shoulder', 'right_shoulder', 'spine1', 'spine2'], ["上半身"], None, False, False),
-    'spine3': ("首根元", None, None, None, False, False),
-    'neck': ("首", ['neck', 'nose', 'left_eye', 'right_eye', 'neck', 'nose'], ["上半身", "上半身2"], None, False, True),
-    'head': ("頭", ['nose', 'head', 'left_eye', 'right_eye', 'nose', 'head'], ["上半身", "上半身2", "首"], None, False, True),
-    'pelvis': ("下半身", None, None, None, False, False),
-    'nose': ("鼻", None, None, None, False, False),
-    'right_eye': ("右目", None, None, None, False, False),
-    'left_eye': ("左目", None, None, None, False, False),
-    'right_ear': ("右耳", None, None, None, False, False),
-    'left_ear': ("左耳", None, None, None, False, False),
-    'right_shoulder': ("右肩", ['spine3', 'right_shoulder', 'spine1', 'spine3', 'right_shoulder', 'left_shoulder'], ["上半身", "上半身2"], None, False, False),
-    'left_shoulder': ("左肩", ['spine3', 'left_shoulder', 'spine1', 'spine3', 'left_shoulder', 'right_shoulder'], ["上半身", "上半身2"], None, False, False),
-    'right_arm': ("右腕", ['right_shoulder', 'right_elbow', 'spine3', 'right_shoulder', 'right_shoulder', 'right_elbow'], ["上半身", "上半身2", "右肩"], None, False, False),
-    'left_arm': ("左腕", ['left_shoulder', 'left_elbow', 'spine3', 'left_shoulder', 'left_shoulder', 'left_elbow'], ["上半身", "上半身2", "左肩"], None, False, False),
-    'right_elbow': ("右ひじ", ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], None, False, False),
-    'left_elbow': ("左ひじ", ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], None, False, False),
-    'right_wrist': ("右手首", ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], None, True, False),
-    'left_wrist': ("左手首", ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], None, True, False),
-    'pelvis': ("下半身", ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], None, False, False),
-    'pelvis2': ("尾てい骨", None, None, None, False, False),
-    'right_hip': ("右足", ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], None, False, False),
-    'left_hip': ("左足", ['left_hip', 'left_knee', 'pelvis2', 'left_hip', 'left_hip', 'left_knee'], ["下半身"], None, False, False),
-    'right_knee': ("右ひざ", ['right_knee', 'right_ankle', 'pelvis2', 'right_hip', 'right_knee', 'right_ankle'], ["下半身", "右足"], None, False, False),
-    'left_knee': ("左ひざ", ['left_knee', 'left_ankle', 'pelvis2', 'left_hip', 'left_knee', 'left_ankle'], ["下半身", "左足"], None, False, False),
-    'right_ankle': ("右足首", ['right_ankle', 'right_big_toe', 'right_big_toe', 'right_small_toe', 'right_ankle', 'right_big_toe'], ["下半身", "右足", "右ひざ"], None, False, False),
-    'left_ankle': ("左足首", ['left_ankle', 'left_big_toe', 'left_big_toe', 'left_small_toe', 'left_ankle', 'left_big_toe'], ["下半身", "左足", "左ひざ"], None, False, False),
-    'right_big_toe': ("右足親指", None, None, None, False, False),
-    'right_small_toe': ("右足小指", None, None, None, False, False),
-    'left_big_toe': ("左足親指", None, None, None, False, False),
-    'left_small_toe': ("左足小指", None, None, None, False, False),
-    'right_thumb1': ("右親指０", ['right_thumb1', 'right_thumb2', 'right_thumb1', 'right_pinky1', 'right_thumb1', 'right_thumb2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], None, True, False),
-    'left_thumb1': ("左親指０", ['left_thumb1', 'left_thumb2', 'left_thumb1', 'left_pinky1', 'left_thumb1', 'left_thumb2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], None, True, False),
-    'right_thumb2': ("右親指１", ['right_thumb2', 'right_thumb3', 'right_thumb1', 'right_pinky1', 'right_thumb2', 'right_thumb3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０"], None, True, False),
-    'left_thumb2': ("左親指１", ['left_thumb2', 'left_thumb3', 'left_thumb1', 'left_pinky1', 'left_thumb2', 'left_thumb3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０"], None, True, False),
-    'right_thumb3': ("右親指２", ['right_thumb3', 'right_thumb', 'right_thumb1', 'right_pinky1', 'right_thumb3', 'right_thumb'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０", "右親指１"], None, True, False),
-    'left_thumb3': ("左親指２", ['left_thumb3', 'left_thumb', 'left_thumb1', 'left_pinky1', 'left_thumb3', 'left_thumb'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０", "左親指１"], None, True, False),
-    'right_thumb': ("右親差指先", None, None, None, True, False),
-    'left_thumb': ("左親差指先", None, None, None, True, False),
-    'right_index1': ("右人指１", ['right_index1', 'right_index2', 'right_index1', 'right_pinky1', 'right_index1', 'right_index2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], None, True, False),
-    'left_index1': ("左人指１", ['left_index1', 'left_index2', 'left_index1', 'left_pinky1', 'left_index1', 'left_index2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], None, True, False),
-    'right_index2': ("右人指２", ['right_index2', 'right_index3', 'right_index1', 'right_pinky1', 'right_index2', 'right_index3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１"], None, True, False),
-    'left_index2': ("左人指２", ['left_index2', 'left_index3', 'left_index1', 'left_pinky1', 'left_index2', 'left_index3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１"], None, True, False),
-    'right_index3': ("右人指３", ['right_index3', 'right_index', 'right_index1', 'right_pinky1', 'right_index3', 'right_index'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１", "右人指２"], None, True, False),
-    'left_index3': ("左人指３", ['left_index3', 'left_index', 'left_index1', 'left_pinky1', 'left_index3', 'left_index'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１", "左人指２"], None, True, False),
-    'right_index': ("右人差指先", None, None, None, True, False),
-    'left_index': ("左人差指先", None, None, None, True, False),
-    'right_middle1': ("右中指１", ['right_middle1', 'right_middle2', 'right_index1', 'right_pinky1', 'right_middle1', 'right_middle2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], None, True, False),
-    'left_middle1': ("左中指１", ['left_middle1', 'left_middle2', 'left_index1', 'left_pinky1', 'right_middle1', 'left_middle2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], None, True, False),
-    'right_middle2': ("右中指２", ['right_middle2', 'right_middle3', 'right_index1', 'right_pinky1', 'right_middle2', 'right_middle3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１"], None, True, False),
-    'left_middle2': ("左中指２", ['left_middle2', 'left_middle3', 'left_index1', 'left_pinky1', 'left_middle2', 'left_middle3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１"], None, True, False),
-    'right_middle3': ("右中指３", ['right_middle3', 'right_middle', 'right_index1', 'right_pinky1', 'right_middle3', 'right_middle'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１", "右中指２"], None, True, False),
-    'left_middle3': ("左中指３", ['left_middle3', 'left_middle', 'left_index1', 'left_pinky1', 'left_middle3', 'left_middle'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１", "左中指２"], None, True, False),
-    'right_middle': ("右中指先", None, None, None, True, False),
-    'left_middle': ("左中指先", None, None, None, True, False),
-    'right_ring1': ("右薬指１", ['right_ring1', 'right_ring2', 'right_index1', 'right_pinky1', 'right_ring1', 'right_ring2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], None, True, False),
-    'left_ring1': ("左薬指１", ['left_ring1', 'left_ring2', 'left_index1', 'left_pinky1', 'left_ring1', 'left_ring2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], None, True, False),
-    'right_ring2': ("右薬指２", ['right_ring2', 'right_ring3', 'right_index1', 'right_pinky1', 'right_ring2', 'right_ring3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１"], None, True, False),
-    'left_ring2': ("左薬指２", ['left_ring2', 'left_ring3', 'left_index1', 'left_pinky1', 'left_ring2', 'left_ring3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１"], None, True, False),
-    'right_ring3': ("右薬指３", ['right_ring3', 'right_ring', 'right_index1', 'right_pinky1', 'right_ring3', 'right_ring'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１", "右薬指２"], None, True, False),
-    'left_ring3': ("左薬指３", ['left_ring3', 'left_ring', 'left_index1', 'left_pinky1', 'left_ring3', 'left_ring'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１", "左薬指２"], None, True, False),
-    'right_ring': ("右薬指先", None, None, None, True, False),
-    'left_ring': ("左薬指先", None, None, None, True, False),
-    'right_pinky1': ("右小指１", ['right_pinky1', 'right_pinky2', 'right_index1', 'right_pinky1', 'right_pinky1', 'right_pinky2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], None, True, False),
-    'left_pinky1': ("左小指１", ['left_pinky1', 'left_pinky2', 'left_index1', 'left_pinky1', 'left_pinky1', 'left_pinky2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], None, True, False),
-    'right_pinky2': ("右小指２", ['right_pinky2', 'right_pinky3', 'right_index1', 'right_pinky1', 'right_pinky2', 'right_pinky3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１"], None, True, False),
-    'left_pinky2': ("左小指２", ['left_pinky2', 'left_pinky3', 'left_index1', 'left_pinky1', 'left_pinky2', 'left_pinky3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１"], None, True, False),
-    'right_pinky3': ("右小指３", ['right_pinky3', 'right_pinky', 'right_index1', 'right_pinky1', 'right_pinky3', 'right_pinky'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１", "右小指２"], None, True, False),
-    'left_pinky3': ("左小指３", ['left_pinky3', 'left_pinky', 'left_index1', 'left_pinky1', 'left_pinky3', 'left_pinky'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１", "左小指２"], None, True, False),
-    'right_pinky': ("右小指先", None, None, None, True, False),
-    'left_pinky': ("左小指先", None, None, None, True, False),
+    'spine1': ("上半身", ['pelvis', 'spine1', 'left_shoulder', 'right_shoulder', 'pelvis', 'spine1'], [], MQuaternion.fromEulerAngles(-20, 0, 0), None, False, False),
+    'spine2': ("上半身2", ['spine1', 'spine2', 'left_shoulder', 'right_shoulder', 'spine1', 'spine2'], ["上半身"], MQuaternion(), None, False, False),
+    'spine3': ("首根元", None, None, MQuaternion(), None, False, False),
+    'neck': ("首", ['neck', 'nose', 'left_eye', 'right_eye', 'neck', 'nose'], ["上半身", "上半身2"], MQuaternion(), None, False, True),
+    'head': ("頭", ['nose', 'head', 'left_eye', 'right_eye', 'nose', 'head'], ["上半身", "上半身2", "首"], MQuaternion(), None, False, True),
+    'pelvis': ("下半身", None, None, None, MQuaternion.fromEulerAngles(-20, 0, 0), False, False),
+    'nose': ("鼻", None, None, MQuaternion(), None, False, False),
+    'right_eye': ("右目", None, None, MQuaternion(), None, False, False),
+    'left_eye': ("左目", None, None, MQuaternion(), None, False, False),
+    'right_ear': ("右耳", None, None, MQuaternion(), None, False, False),
+    'left_ear': ("左耳", None, None, MQuaternion(), None, False, False),
+    'right_shoulder': ("右肩", ['spine3', 'right_shoulder', 'spine1', 'spine3', 'right_shoulder', 'left_shoulder'], ["上半身", "上半身2"], MQuaternion(), None, False, False),
+    'left_shoulder': ("左肩", ['spine3', 'left_shoulder', 'spine1', 'spine3', 'left_shoulder', 'right_shoulder'], ["上半身", "上半身2"], MQuaternion(), None, False, False),
+    'right_arm': ("右腕", ['right_shoulder', 'right_elbow', 'spine3', 'right_shoulder', 'right_shoulder', 'right_elbow'], ["上半身", "上半身2", "右肩"], MQuaternion(), None, False, False),
+    'left_arm': ("左腕", ['left_shoulder', 'left_elbow', 'spine3', 'left_shoulder', 'left_shoulder', 'left_elbow'], ["上半身", "上半身2", "左肩"], MQuaternion(), None, False, False),
+    'right_elbow': ("右ひじ", ['right_elbow', 'right_wrist', 'spine3', 'right_shoulder', 'right_elbow', 'right_wrist'], ["上半身", "上半身2", "右肩", "右腕"], MQuaternion(), None, False, False),
+    'left_elbow': ("左ひじ", ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], MQuaternion(), None, False, False),
+    'right_wrist': ("右手首", ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], MQuaternion(), None, True, False),
+    'left_wrist': ("左手首", ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], MQuaternion(), None, True, False),
+    'pelvis': ("下半身", ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], MQuaternion(), None, False, False),
+    'pelvis2': ("尾てい骨", None, None, MQuaternion(), None, False, False),
+    'right_hip': ("右足", ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], MQuaternion(), None, False, False),
+    'left_hip': ("左足", ['left_hip', 'left_knee', 'pelvis2', 'left_hip', 'left_hip', 'left_knee'], ["下半身"], MQuaternion(), None, False, False),
+    'right_knee': ("右ひざ", ['right_knee', 'right_ankle', 'pelvis2', 'right_hip', 'right_knee', 'right_ankle'], ["下半身", "右足"], MQuaternion(), None, False, False),
+    'left_knee': ("左ひざ", ['left_knee', 'left_ankle', 'pelvis2', 'left_hip', 'left_knee', 'left_ankle'], ["下半身", "左足"], MQuaternion(), None, False, False),
+    'right_ankle': ("右足首", ['right_ankle', 'right_big_toe', 'right_big_toe', 'right_small_toe', 'right_ankle', 'right_big_toe'], ["下半身", "右足", "右ひざ"], MQuaternion(), None, False, False),
+    'left_ankle': ("左足首", ['left_ankle', 'left_big_toe', 'left_big_toe', 'left_small_toe', 'left_ankle', 'left_big_toe'], ["下半身", "左足", "左ひざ"], MQuaternion(), None, False, False),
+    'right_big_toe': ("右足親指", None, None, MQuaternion(), None, False, False),
+    'right_small_toe': ("右足小指", None, None, MQuaternion(), None, False, False),
+    'left_big_toe': ("左足親指", None, None, MQuaternion(), None, False, False),
+    'left_small_toe': ("左足小指", None, None, MQuaternion(), None, False, False),
+    'right_thumb1': ("右親指０", ['right_thumb1', 'right_thumb2', 'right_thumb1', 'right_pinky1', 'right_thumb1', 'right_thumb2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], MQuaternion(), None, True, False),
+    'left_thumb1': ("左親指０", ['left_thumb1', 'left_thumb2', 'left_thumb1', 'left_pinky1', 'left_thumb1', 'left_thumb2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], MQuaternion(), None, True, False),
+    'right_thumb2': ("右親指１", ['right_thumb2', 'right_thumb3', 'right_thumb1', 'right_pinky1', 'right_thumb2', 'right_thumb3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０"], MQuaternion(), None, True, False),
+    'left_thumb2': ("左親指１", ['left_thumb2', 'left_thumb3', 'left_thumb1', 'left_pinky1', 'left_thumb2', 'left_thumb3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０"], MQuaternion(), None, True, False),
+    'right_thumb3': ("右親指２", ['right_thumb3', 'right_thumb', 'right_thumb1', 'right_pinky1', 'right_thumb3', 'right_thumb'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右親指０", "右親指１"], MQuaternion(), None, True, False),
+    'left_thumb3': ("左親指２", ['left_thumb3', 'left_thumb', 'left_thumb1', 'left_pinky1', 'left_thumb3', 'left_thumb'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左親指０", "左親指１"], MQuaternion(), None, True, False),
+    'right_thumb': ("右親差指先", None, None, MQuaternion(), None, True, False),
+    'left_thumb': ("左親差指先", None, None, MQuaternion(), None, True, False),
+    'right_index1': ("右人指１", ['right_index1', 'right_index2', 'right_index1', 'right_pinky1', 'right_index1', 'right_index2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], MQuaternion(), None, True, False),
+    'left_index1': ("左人指１", ['left_index1', 'left_index2', 'left_index1', 'left_pinky1', 'left_index1', 'left_index2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], MQuaternion(), None, True, False),
+    'right_index2': ("右人指２", ['right_index2', 'right_index3', 'right_index1', 'right_pinky1', 'right_index2', 'right_index3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１"], MQuaternion(), None, True, False),
+    'left_index2': ("左人指２", ['left_index2', 'left_index3', 'left_index1', 'left_pinky1', 'left_index2', 'left_index3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１"], MQuaternion(), None, True, False),
+    'right_index3': ("右人指３", ['right_index3', 'right_index', 'right_index1', 'right_pinky1', 'right_index3', 'right_index'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右人指１", "右人指２"], MQuaternion(), None, True, False),
+    'left_index3': ("左人指３", ['left_index3', 'left_index', 'left_index1', 'left_pinky1', 'left_index3', 'left_index'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左人指１", "左人指２"], MQuaternion(), None, True, False),
+    'right_index': ("右人差指先", None, None, MQuaternion(), None, True, False),
+    'left_index': ("左人差指先", None, None, MQuaternion(), None, True, False),
+    'right_middle1': ("右中指１", ['right_middle1', 'right_middle2', 'right_index1', 'right_pinky1', 'right_middle1', 'right_middle2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], MQuaternion(), None, True, False),
+    'left_middle1': ("左中指１", ['left_middle1', 'left_middle2', 'left_index1', 'left_pinky1', 'right_middle1', 'left_middle2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], MQuaternion(), None, True, False),
+    'right_middle2': ("右中指２", ['right_middle2', 'right_middle3', 'right_index1', 'right_pinky1', 'right_middle2', 'right_middle3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１"], MQuaternion(), None, True, False),
+    'left_middle2': ("左中指２", ['left_middle2', 'left_middle3', 'left_index1', 'left_pinky1', 'left_middle2', 'left_middle3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１"], MQuaternion(), None, True, False),
+    'right_middle3': ("右中指３", ['right_middle3', 'right_middle', 'right_index1', 'right_pinky1', 'right_middle3', 'right_middle'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右中指１", "右中指２"], MQuaternion(), None, True, False),
+    'left_middle3': ("左中指３", ['left_middle3', 'left_middle', 'left_index1', 'left_pinky1', 'left_middle3', 'left_middle'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左中指１", "左中指２"], MQuaternion(), None, True, False),
+    'right_middle': ("右中指先", None, None, MQuaternion(), None, True, False),
+    'left_middle': ("左中指先", None, None, MQuaternion(), None, True, False),
+    'right_ring1': ("右薬指１", ['right_ring1', 'right_ring2', 'right_index1', 'right_pinky1', 'right_ring1', 'right_ring2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], MQuaternion(), None, True, False),
+    'left_ring1': ("左薬指１", ['left_ring1', 'left_ring2', 'left_index1', 'left_pinky1', 'left_ring1', 'left_ring2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], MQuaternion(), None, True, False),
+    'right_ring2': ("右薬指２", ['right_ring2', 'right_ring3', 'right_index1', 'right_pinky1', 'right_ring2', 'right_ring3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１"], MQuaternion(), None, True, False),
+    'left_ring2': ("左薬指２", ['left_ring2', 'left_ring3', 'left_index1', 'left_pinky1', 'left_ring2', 'left_ring3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１"], MQuaternion(), None, True, False),
+    'right_ring3': ("右薬指３", ['right_ring3', 'right_ring', 'right_index1', 'right_pinky1', 'right_ring3', 'right_ring'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右薬指１", "右薬指２"], MQuaternion(), None, True, False),
+    'left_ring3': ("左薬指３", ['left_ring3', 'left_ring', 'left_index1', 'left_pinky1', 'left_ring3', 'left_ring'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左薬指１", "左薬指２"], MQuaternion(), None, True, False),
+    'right_ring': ("右薬指先", None, None, MQuaternion(), None, True, False),
+    'left_ring': ("左薬指先", None, None, MQuaternion(), None, True, False),
+    'right_pinky1': ("右小指１", ['right_pinky1', 'right_pinky2', 'right_index1', 'right_pinky1', 'right_pinky1', 'right_pinky2'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ", "右手首"], MQuaternion(), None, True, False),
+    'left_pinky1': ("左小指１", ['left_pinky1', 'left_pinky2', 'left_index1', 'left_pinky1', 'left_pinky1', 'left_pinky2'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ", "左手首"], MQuaternion(), None, True, False),
+    'right_pinky2': ("右小指２", ['right_pinky2', 'right_pinky3', 'right_index1', 'right_pinky1', 'right_pinky2', 'right_pinky3'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１"], MQuaternion(), None, True, False),
+    'left_pinky2': ("左小指２", ['left_pinky2', 'left_pinky3', 'left_index1', 'left_pinky1', 'left_pinky2', 'left_pinky3'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１"], MQuaternion(), None, True, False),
+    'right_pinky3': ("右小指３", ['right_pinky3', 'right_pinky', 'right_index1', 'right_pinky1', 'right_pinky3', 'right_pinky'], ["上半身", "上半身3", "右肩", "右腕", "右ひじ", "右手首", "右小指１", "右小指２"], MQuaternion(), None, True, False),
+    'left_pinky3': ("左小指３", ['left_pinky3', 'left_pinky', 'left_index1', 'left_pinky1', 'left_pinky3', 'left_pinky'], ["上半身", "上半身3", "左肩", "左腕", "左ひじ", "左手首", "左小指１", "左小指２"], MQuaternion(), None, True, False),
+    'right_pinky': ("右小指先", None, None, MQuaternion(), None, True, False),
+    'left_pinky': ("左小指先", None, None, MQuaternion(), None, True, False),
 }

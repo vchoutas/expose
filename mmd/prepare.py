@@ -122,6 +122,9 @@ def execute(args):
 
             logger.info("補間生成開始", decoration=MLogger.DECORATION_BOX)
 
+            k = 0
+            now_frame = None
+
             # 最後の１つ手前（補間ができる状態）までループ
             for k in tqdm(range(round(count * (30 / fps)) - 1)):
                 # 30fps用にディレクトリ作成
