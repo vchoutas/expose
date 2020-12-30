@@ -8,7 +8,7 @@ import _pickle as cPickle
 from mmd.utils import MBezierUtils # noqa
 from mmd.utils.MLogger import MLogger
 
-from mmd.module.MMath import MRect, MVector2D, MVector3D, MVector4D, MQuaternion, MMatrix4x4 # noqa
+from mmd.module.MMath import MRect, MVector2D, MVector3D, MVector4D, MQuaternion, MMatrix4x4, get_effective_value # noqa
 
 logger = MLogger(__name__, level=1)
 
@@ -998,6 +998,225 @@ class VmdMotion:
         # キーの終点は、C
         bf.interpolation[x2_idxs[0]] = bf.interpolation[x2_idxs[1]] = bf.interpolation[x2_idxs[2]] = bf.interpolation[x2_idxs[3]] = int(bzs[2].x())
         bf.interpolation[y2_idxs[0]] = bf.interpolation[y2_idxs[1]] = bf.interpolation[y2_idxs[2]] = bf.interpolation[y2_idxs[3]] = int(bzs[2].y())
+
+    # モーフモーション：フレーム番号リスト
+    def get_morph_fnos(self, *morph_names, **kwargs):
+        if not self.morphs:
+            return []
+        
+        # is_key: 登録対象のキーを探す
+        # is_read: データ読み込み時のキーを探す
+        is_key = True if "is_key" in kwargs and kwargs["is_key"] else False
+        is_read = True if "is_read" in kwargs and kwargs["is_read"] else False
+        start_fno = kwargs["start_fno"] if "start_fno" in kwargs and kwargs["start_fno"] else 0
+        end_fno = kwargs["end_fno"] if "end_fno" in kwargs and kwargs["end_fno"] else 9999999999
+        
+        # 条件に合致するフレーム番号を探す
+        keys = []
+        for morph_name in morph_names:
+            if morph_name in self.morphs:
+                keys.extend([x for x in self.morphs[morph_name].keys() if self.morphs[morph_name][x].fno >= start_fno and self.morphs[morph_name][x].fno <= end_fno and \
+                            (not is_key or (is_key and self.morphs[morph_name][x].key)) and (not is_read or (is_read and self.morphs[morph_name][x].read))])
+        
+        # 重複を除いた昇順フレーム番号リストを返す
+        return sorted(list(set(keys)))
+
+    # モーフ登録
+    def regist_mf(self, mf: VmdMorphFrame, morph_name: str, fno: int):
+        if math.isnan(mf.ratio) or math.isinf(mf.ratio):
+            logger.debug("** regist_mf: (%s)%s", mf.fno, mf.ratio)
+
+        regist_mf = VmdMorphFrame(mf.fno)
+        regist_mf.set_name(mf.name)
+        regist_mf.ratio = get_effective_value(mf.ratio)
+
+        if morph_name not in self.morphs:
+            self.morphs[morph_name] = {}
+
+        if math.isnan(regist_mf.ratio) or math.isinf(regist_mf.ratio):
+            logger.debug("*** c_regist_mf: (%s)%s", regist_mf.fno, regist_mf.ratio)
+
+        # キーを登録
+        regist_mf.key = True
+        self.morphs[morph_name][fno] = regist_mf
+
+    # 指定フレーム番号のモーフ
+    def calc_mf(self, morph_name: str, fno: int, is_key=False, is_read=False):
+        fill_mf = VmdMorphFrame(fno)
+
+        if morph_name not in self.morphs:
+            fill_mf.set_name(morph_name)
+            self.morphs[morph_name] = {fno: fill_mf}
+            return fill_mf
+        
+        # 条件に合致するフレーム番号を探す
+        # is_key: 登録対象のキーを探す
+        # is_read: データ読み込み時のキーを探す
+        if fno in self.morphs[morph_name] and (not is_key or (is_key and self.morphs[morph_name][fno].key)) and (not is_read or (is_read and self.morphs[morph_name][fno].read)):
+            # 合致するキーが見つかった場合、それを返す
+            logger.debug("** find: fill: (%s)%s", fill_mf.fno, self.morphs[morph_name][fno].ratio)
+            return self.morphs[morph_name][fno]
+        else:
+            # 合致するキーが見つからなかった場合
+            if is_key or is_read:
+                # 既存キーのみ探している場合はNone
+                return None
+
+        # 番号より前のフレーム番号
+        before_fnos = [x for x in sorted(self.morphs[morph_name].keys()) if (x < fno)]
+        # 番号より後のフレーム番号
+        after_fnos = [x for x in sorted(self.morphs[morph_name].keys()) if (x > fno)]
+
+        if len(after_fnos) == 0 and len(before_fnos) == 0:
+            fill_mf.set_name(morph_name)
+            return fill_mf
+
+        if len(after_fnos) == 0:
+            # 番号より前があって、後のがない場合、前のをコピーして返す
+            fill_mf = self.morphs[morph_name][before_fnos[-1]].copy()
+            fill_mf.fno = fno
+            fill_mf.key = False
+            fill_mf.read = False
+            logger.debug("** not after: fill: (%s)%s", fill_mf.fno, fill_mf.ratio)
+            return fill_mf
+        
+        if len(before_fnos) == 0:
+            # 番号より後があって、前がない場合、後のをコピーして返す
+            fill_mf = self.morphs[morph_name][after_fnos[0]].copy()
+            fill_mf.fno = fno
+            fill_mf.key = False
+            fill_mf.read = False
+            logger.debug("** not before: fill: (%s)%s", fill_mf.fno, fill_mf.ratio)
+            return fill_mf
+
+        prev_mf = self.morphs[morph_name][before_fnos[-1]]
+        next_mf = self.morphs[morph_name][after_fnos[0]]
+        if math.isnan(prev_mf.ratio) or math.isinf(prev_mf.ratio):
+            logger.debug("** prev_mf: (%s)%s", prev_mf.fno, prev_mf.ratio)
+        if math.isnan(next_mf.ratio) or math.isinf(next_mf.ratio):
+            logger.debug("** next_mf: (%s)%s", next_mf.fno, next_mf.ratio)
+
+        # 名前をコピー
+        fill_mf.name = prev_mf.name
+        fill_mf.bname = prev_mf.bname
+
+        # 線形で埋める
+        # rx, ry, rt = MBezierUtils.evaluate(MBezierUtils.LINEAR_MMD_INTERPOLATION[1].x(), MBezierUtils.LINEAR_MMD_INTERPOLATION[1].y(), \
+        #                                     MBezierUtils.LINEAR_MMD_INTERPOLATION[2].x(), MBezierUtils.LINEAR_MMD_INTERPOLATION[2].y(), \
+        #                                     prev_mf.fno, fill_mf.fno, next_mf.fno)
+        # fill_mf.ratio = prev_mf.ratio + ((next_mf.ratio - prev_mf.ratio) * ry)
+        fill_mf.ratio = prev_mf.ratio + ((next_mf.ratio - prev_mf.ratio) * ((fill_mf.fno - prev_mf.fno) / (next_mf.fno - prev_mf.fno)))
+        logger.debug("** fill: (%s)%s, head: (%s)%s, tail: (%s)%s", fill_mf.fno, fill_mf.ratio, prev_mf.fno, prev_mf.ratio, next_mf.fno, next_mf.ratio)
+        if math.isnan(fill_mf.ratio) or math.isinf(fill_mf.ratio):
+            logger.debug("** fill: (%s)%s, head_mf: %s, %s tail_mf: %s, %s", fill_mf.fno, fill_mf.ratio, prev_mf.fno, prev_mf.ratio, next_mf.fno, next_mf.ratio)
+
+        return fill_mf
+
+    def smooth_filter_mf(self, data_set_no: int, morph_name: str, loop=1, \
+                         config={"freq": 30, "mincutoff": 0.3, "beta": 0.01, "dcutoff": 0.25}, start_fno=-1, end_fno=-1, is_show_log=True):
+        prev_sep_fno = 0
+
+        for n in range(loop):
+            rxfilter = OneEuroFilter(**config)
+
+            fnos = self.get_morph_fnos(morph_name)
+            prev_sep_fno = 0
+
+            # キーフレを取得する
+            if start_fno < 0 and end_fno < 0:
+                # 範囲指定がない場合、全範囲
+                fnos = self.get_morph_fnos(morph_name)
+            else:
+                # 範囲指定がある場合はその範囲内だけ
+                fnos = self.get_morph_fnos(morph_name, start_fno=start_fno, end_fno=end_fno)
+
+            # 全区間をフィルタにかける
+            for fno in fnos:
+                now_mf = self.calc_mf(morph_name, fno, is_key=False, is_read=False)
+                now_mf.ratio = rxfilter(now_mf.ratio, fno)
+
+                if is_show_log and data_set_no > 0 and fno // 2000 > prev_sep_fno and fnos[-1] > 0:
+                    logger.info("-- %sフレーム目:終了(%s％)【No.%s - フィルタリング - %s(%s)】", fno, round((fno / fnos[-1]) * 100, 3), data_set_no, morph_name, (n + 1))
+                    prev_sep_fno = fno // 2000
+
+    # 無効なキーを物理削除する
+    def remove_unkey_mf(self, data_set_no: int, morph_name: str):
+        for fno in self.get_morph_fnos(morph_name):
+            mf = self.calc_mf(morph_name, fno, is_key=False, is_read=False)
+
+            if fno in self.morphs[morph_name] and not mf.key:
+                del self.morphs[morph_name][fno]
+
+    # 指定モーフの不要キーを削除する
+    # 変曲点を求める
+    # https://teratail.com/questions/162391
+    def remove_unnecessary_mf(self, data_set_no: int, morph_name: str, threshold=0.05, diff_limit=0.01, r_start_fno=-1, r_end_fno=-1, is_show_log=True, is_force=False):
+        # キーフレを取得する
+        if r_start_fno < 0 and r_end_fno < 0:
+            # 範囲指定がない場合、全範囲
+            fnos = self.get_morph_fnos(morph_name)
+        else:
+            # 範囲指定がある場合はその範囲内だけ
+            fnos = self.get_morph_fnos(morph_name, start_fno=r_start_fno, end_fno=r_end_fno)
+        logger.debug("reratioe_unnecessary_mf fnos: %s, %s", morph_name, fnos)
+        
+        if len(fnos) <= 1:
+            return
+        
+        reduce_fnos = self.reduce_morph_frame(morph_name, fnos, fnos[0], fnos[-1], threshold=threshold)
+        reduce_fnos.append(fnos[-1])
+
+        for f in fnos:
+            if f not in reduce_fnos and f in self.morphs[morph_name]:
+                # キーフレが残す対象でない場合、削除
+                del self.morphs[morph_name][f]
+        
+    # キーフレームを間引く
+    # オリジナル：https://github.com/errno-mmd/smoothvmd/blob/master/reducevmd.cc
+    def reduce_morph_frame(self, morph_name: str, fnos: list, head: int, tail: int, threshold: float):
+        # ratioのエラー最大値
+        max_err = float(0.0)
+        # ratio：エラー最大値のindex
+        max_idx = 0
+
+        # 開始のモーフ
+        head_mf = self.calc_mf(morph_name, head, is_key=False, is_read=False)
+        # 終了のモーフ
+        tail_mf = self.calc_mf(morph_name, tail, is_key=False, is_read=False)
+        logger.debug("head_mf: %s, %s tail_mf: %s, %s", head_mf.fno, head_mf.ratio, tail_mf.fno, tail_mf.ratio)
+        if math.isnan(head_mf.ratio) or math.isinf(head_mf.ratio):
+            logger.debug("head_mf: %s, %s tail_mf: %s, %s", head_mf.fno, head_mf.ratio, tail_mf.fno, tail_mf.ratio)
+
+        for i in range(head + 1, tail, 1):
+            # rx, ry, rt = MBezierUtils.evaluate(MBezierUtils.LINEAR_MMD_INTERPOLATION[1].x(), MBezierUtils.LINEAR_MMD_INTERPOLATION[1].y(), \
+            #                                     MBezierUtils.LINEAR_MMD_INTERPOLATION[2].x(), MBezierUtils.LINEAR_MMD_INTERPOLATION[2].y(), \
+            #                                     head_mf.fno, i, tail_mf.fno)
+            # ip_ratio = head_mf.ratio + ((tail_mf.ratio - head_mf.ratio) * ry)
+            ip_ratio = head_mf.ratio + ((tail_mf.ratio - head_mf.ratio) * ((i - head_mf.fno) / (tail_mf.fno - head_mf.fno)))
+            # ip_ratio = head_mf.ratio + (tail_mf.ratio - head_mf.ratio) * (i - head) / total
+            now_mf = self.calc_mf(morph_name, i, is_key=False, is_read=False)
+            logger.debug("morph_name: %s, i: %s ip_ratio: %s, now: %s, head: (%s)%s, tail: (%s)%s", morph_name, i, ip_ratio, now_mf.ratio, head_mf.fno, head_mf.ratio, tail_mf.fno, tail_mf.ratio)
+            pos_err = abs(ip_ratio - now_mf.ratio)
+
+            if pos_err > max_err:
+                max_idx = i
+                max_err = pos_err
+
+        logger.debug("max_err: %s max_idx: %s", max_err, max_idx)
+
+        v1 = []
+        if max_err > threshold:
+            v1 = self.reduce_morph_frame(morph_name, fnos, head, max_idx, threshold)
+            v2 = self.reduce_morph_frame(morph_name, fnos, max_idx, tail, threshold)
+            logger.debug("threshold v1: %s", v1)
+            logger.debug("threshold v2: %s", v2)
+
+            v1.extend(v2)
+        else:
+            v1.append(head_mf.fno)
+            logger.debug("not threshold v1: %s", head_mf.fno)
+
+        return v1
 
     # 有効なキーフレが入っているか
     def is_active_bones(self, bone_name: str):

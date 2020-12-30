@@ -129,7 +129,7 @@ def calc_value_from_catmullrom(bone_name: str, fnos: list, values: list):
 
 # 指定したすべての値を通るカトマル曲線からベジェ曲線を計算し、MMD補間曲線範囲内に収められた場合、そのベジェ曲線を返す
 def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_limit=0.01):
-    if len(values) <= 2 or abs(np.max(values) - np.min(values)) < 0.0001:
+    if len(values) <= 2 or abs(np.max(values) - np.min(values)) < 1e-8:
         # 次数が1か変化がほぼない場合、線形補間
         logger.debug("次数1: values: {0}", values)
         return (LINEAR_MMD_INTERPOLATION, [])
@@ -216,8 +216,24 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
         full_ys = intersect_by_x(full_curve, bezier_x)
         logger.test("f: {0}, {1}, full_ys: {2}", fno, bone_name, full_ys)
 
-        # 次数を減らしたベジェ曲線との交点を取得する
-        reduced_ys = intersect_by_x(joined_curve, bezier_x)
+        # 差が一定未満である場合、ベジェ曲線をMMD補間曲線に合わせる
+        nodes = joined_curve.nodes
+
+        # 次数を減らしたベジェ曲線をMMD用補間曲線に変換
+        joined_bz = scale_bezier(MVector2D(nodes[0, 0], nodes[1, 0]), MVector2D(nodes[0, 1], nodes[1, 1]), \
+                                 MVector2D(nodes[0, 2], nodes[1, 2]), MVector2D(nodes[0, 3], nodes[1, 3]))
+        
+        # 強制的に合わせる
+        fit_bezier_mmd(joined_bz)
+
+        logger.debug("f: {0}, {1}, values: {2}, nodes: {3}, joined_bz: {4}, {5}", fno, bone_name, values, joined_curve.nodes, joined_bz[1], joined_bz[2])
+
+        # MMD用補間曲線で各xに対応するyを求める
+        reduced_ys = []
+        for xv in xs[1:-1]:
+            x, y, t = evaluate(joined_bz[1].x(), joined_bz[1].y(), joined_bz[2].x(), joined_bz[2].y(), xs[0], xv, xs[-1])
+            reduced_ys.append(values[0] + (values[-1] - values[0]) * y)
+
         logger.test("f: {0}, {1}, reduced_ys: {2}", fno, bone_name, reduced_ys)
 
         # 交点の差を取得する(前後は必ず一致)
@@ -226,39 +242,11 @@ def join_value_2_bezier(fno: int, bone_name: str, values: list, offset=0, diff_l
         # 差が大きい箇所をピックアップする
         diff_large = np.where(np.abs(diff_ys) > (diff_limit * (offset + 1)), 1, 0).astype(np.float)
         
-        # 差が一定未満である場合、ベジェ曲線をMMD補間曲線に合わせる
-        nodes = joined_curve.nodes
-
-        # MMD用補間曲線に変換
-        joined_bz = scale_bezier(MVector2D(nodes[0, 0], nodes[1, 0]), MVector2D(nodes[0, 1], nodes[1, 1]), \
-                                 MVector2D(nodes[0, 2], nodes[1, 2]), MVector2D(nodes[0, 3], nodes[1, 3]))
-        logger.debug("f: {0}, {1}, values: {2}, nodes: {3}, full_ys: {4}, reduced_ys: {5}, diff_ys: {6}, diff_limit: {7}, diff_large: {8}, joined_bz: {9}, {10}, fit: {11}", \
-                     fno, bone_name, values, joined_curve.nodes, full_ys, reduced_ys, diff_ys, diff_limit, np.count_nonzero(diff_large) > 0, joined_bz[1], joined_bz[2], \
-                     is_fit_bezier_mmd(joined_bz, offset))
-
         if np.count_nonzero(diff_large) > 0:
             # 差が大きい箇所がある場合、分割不可
             return (None, np.where(diff_large)[0].tolist())
 
-        if not is_fit_bezier_mmd(joined_bz, offset):
-            # 補間曲線がMMD補間曲線内に収まらない場合、NG
-
-            # 差分の大きなところを返す
-            diff_large = np.where(np.abs(diff_ys) > (diff_limit * 0.5 * (offset + 1)), 1, 0).astype(np.float)            
-            if np.count_nonzero(diff_large) > 0:
-                return (None, np.where(diff_large)[0].tolist())
-
-            # 差分の大きなところを返す
-            diff_large = np.where(np.abs(diff_ys) > 0, 1, 0).astype(np.float)
-            if np.count_nonzero(diff_large) > 0:
-                return (None, np.where(diff_large)[0].tolist())
-
-            return (None, [])
-        
-        # オフセット込みの場合、MMD用補間曲線枠内に収める
-        fit_bezier_mmd(joined_bz)
-        
-        # すべてクリアした場合、補間曲線採用
+        # クリアした場合、補間曲線採用
         return (joined_bz, [])
     except Exception as e:
         # エラーレベルは落として表に出さない
