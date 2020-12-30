@@ -45,7 +45,7 @@ class LowPassFilter:
         return self.__y
 
     # IK用処理スキップ
-    def skip(self, value: float):
+    def skip(self, value: float, timestamp=-1, alpha=-1):
         self.__y = value
         self.__s = value
 
@@ -85,6 +85,9 @@ class OneEuroFilter:
         edx = self.__dx(dx, timestamp, alpha=self.__alpha(self.__dcutoff))
         # ---- use it to update the cutoff frequency
         cutoff = self.__mincutoff + self.__beta * math.fabs(edx)
+        # まったく同じ値の場合、スキップ
+        if prev_x == x:
+            return self.__x.skip(x, timestamp, alpha=self.__alpha(cutoff))
         # ---- filter the given value
         return self.__x(x, timestamp, alpha=self.__alpha(cutoff))
 

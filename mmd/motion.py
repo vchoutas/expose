@@ -45,6 +45,7 @@ def execute(args):
         
         # モデルをCSVから読み込む
         model = read_bone_csv(args.bone_config)
+        process_datetime = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
 
         # 全人物分の順番別フォルダ
         ordered_person_dir_pathes = sorted(glob.glob(os.path.join(args.img_dir, "smooth", "*")), key=sort_by_numeric)
@@ -147,7 +148,7 @@ def execute(args):
                             qq = MQuaternion()
                             for parent_name in reversed(parent_list):
                                 qq *= motion.calc_bf(parent_name, bf.fno).rotation.inverted()
-                            bf.rotation = initial_qq * qq * rotation * initial.inverted()
+                            bf.rotation = qq * initial_qq * rotation * initial.inverted()
 
                             if sidx > 0:
                                 prev_fno, _ = motion.get_bone_prev_next_fno(bf.name, fno=bf.fno, is_key=True)
@@ -242,7 +243,17 @@ def execute(args):
                         right_knee_bf = motion.calc_bf("右ひざ", fno)
                         left_leg_bf = motion.calc_bf("左足", fno)
                         left_knee_bf = motion.calc_bf("左ひざ", fno)
-                        leg_degrees.append(right_leg_bf.rotation.toDegree() + right_knee_bf.rotation.toDegree() + left_leg_bf.rotation.toDegree() + left_knee_bf.rotation.toDegree())
+                        
+                        total_degree = 0
+                        right_leg_degree = right_leg_bf.rotation.toDegree()
+                        total_degree += right_leg_degree if right_leg_degree < 180 else 360 - right_leg_degree
+                        right_knee_degree = right_knee_bf.rotation.toDegree()
+                        total_degree += right_knee_degree if right_knee_degree < 180 else 360 - right_knee_degree
+                        left_leg_degree = left_leg_bf.rotation.toDegree()
+                        total_degree += left_leg_degree if left_leg_degree < 180 else 360 - left_leg_degree
+                        left_knee_degree = left_knee_bf.rotation.toDegree()
+                        total_degree += left_knee_degree if left_knee_degree < 180 else 360 - left_knee_degree
+                        leg_degrees.append(total_degree)
                     else:
                         # 最もデカいのを挿入
                         leg_degrees.append(99999999)
@@ -257,8 +268,11 @@ def execute(args):
                 upright_right_leg_length = right_leg_lengths[upright_fidx]
                 upright_left_leg_length = left_leg_lengths[upright_fidx]
 
+                # モデルの下半身の長さ
+                model_pelvis_y = model.bones["下半身"].position.y()
+
                 # 直立キーフレの骨盤は地に足がついているとみなす
-                upright_pelvis_vec = get_pelvis_vec(all_frame_joints, upright_fno, args)
+                upright_pelvis_vec, upright_foot_vec = get_pelvis_vec(all_frame_joints, upright_fno, args)
 
                 logger.info("【No.{0}】直立キーフレ: {1}", f"{oidx:03}", upright_fno)
 
@@ -273,19 +287,20 @@ def execute(args):
                         # フリップはセンター計算もおかしくなるのでスキップ
                         continue
 
-                    pelvis_vec = get_pelvis_vec(all_frame_joints, fno, args)
+                    pelvis_vec, foot_vec = get_pelvis_vec(all_frame_joints, fno, args)
 
                     if start_z == 9999999999:
                         # 最初の人物の深度を0にする
                         start_z = pelvis_vec.z()
                     
-                    pelvis_y = pelvis_vec.y() - upright_pelvis_vec.y()
-
+                    pelvis_vec_y = pelvis_vec.y() - upright_pelvis_vec.y()
+                    pelvis_vec_z = pelvis_vec.z() - start_z
+                    
                     # Yはグルーブ
                     groove_bf = VmdBoneFrame()
                     groove_bf.fno = fno
-                    groove_bf.set_name("グルーブ")                    
-                    groove_bf.position.setY(pelvis_y)
+                    groove_bf.set_name("グルーブ")
+                    groove_bf.position.setY(pelvis_vec_y)
                     motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                     center_bf = VmdBoneFrame()
@@ -294,120 +309,173 @@ def execute(args):
 
                     # XZはセンター
                     center_bf.position.setX(pelvis_vec.x())
-                    center_bf.position.setZ(pelvis_vec.z() - start_z)
+                    center_bf.position.setZ(pelvis_vec_z)
                     # center_bf.position.setY(pelvis_vec.y())
                     # center_bf.position.setZ(pelvis_vec.z())
                     motion.regist_bf(center_bf, center_bf.name, fno)
 
-                    # つま先からのグルーブ調整
-                    min_leg_ys = []
-                    for direction, toe_links, now_leg_length, upright_leg_length in [("右", right_toe_links, right_leg_lengths[fidx], upright_right_leg_length), \
-                                                                                     ("左", left_toe_links, left_leg_lengths[fidx], upright_left_leg_length)]:
-                        toe_ik_3ds_dic = calc_global_pos(model, toe_links, motion, fno)
-                        toe_y = toe_ik_3ds_dic[toe_links.last_name()].y()
+                    if fidx > 0:
+                        # 画像サイズからブレ許容量
+                        offset = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]]) * 0.01
+                        prev_fno = fnos[fidx - 1]
 
-                        # ankle_bf = motion.calc_bf(f"{direction}足首", fno)
+                        # 2F目以降は、前Fからの移動量を計算する
+                        # 右足首
+                        right_ankle_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_ankle"]["x"] - all_frame_joints[prev_fno]["proj_joints"]["right_ankle"]["x"])
+                        right_ankle_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_ankle"]["y"] - all_frame_joints[prev_fno]["proj_joints"]["right_ankle"]["y"])
+                        # 左足首
+                        left_ankle_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_ankle"]["x"] - all_frame_joints[prev_fno]["proj_joints"]["left_ankle"]["x"])
+                        left_ankle_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_ankle"]["y"] - all_frame_joints[prev_fno]["proj_joints"]["left_ankle"]["y"])
+                        # 右足親指
+                        right_big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_big_toe"]["x"] - all_frame_joints[prev_fno]["proj_joints"]["right_big_toe"]["x"])
+                        right_big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_big_toe"]["y"] - all_frame_joints[prev_fno]["proj_joints"]["right_big_toe"]["y"])
+                        # 左足親指
+                        left_big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_big_toe"]["x"] - all_frame_joints[prev_fno]["proj_joints"]["left_big_toe"]["x"])
+                        left_big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_big_toe"]["y"] - all_frame_joints[prev_fno]["proj_joints"]["left_big_toe"]["y"])
 
-                        # # 大体床に接地しているっぽい時はその分をマイナスする
-                        # # 足がつま先立っていない場合、床に接地と見なす
-                        # ankle_x_qq, _, _, _ = MServiceUtils.separate_local_qq(fno, ankle_bf.name, ankle_bf.rotation, MVector3D(1, 0, 0))
-                        # if ankle_x_qq.toDegree() < 30:
-                        min_leg_ys.append(toe_y)
-                
-                    # 大体床に接地していると見なしてマイナス(地面にめり込んでたら上げる)
-                    if len(min_leg_ys) > 0:
-                        pelvis_y -= min(min_leg_ys)
+                        diff_vec = MVector3D()
+                        if right_big_toe_x_diff < offset[0] and right_big_toe_y_diff < offset[1]:
+                            # 右つま先固定
+                            now_toe_ik_3ds_dic = calc_global_pos(model, right_toe_links, motion, fno)
+                            now_big_toe_vec = now_toe_ik_3ds_dic["右つま先"]
+                            prev_toe_ik_3ds_dic = calc_global_pos(model, right_toe_links, motion, prev_fno)
+                            prev_big_toe_vec = prev_toe_ik_3ds_dic["右つま先"]
+                            diff_vec = prev_big_toe_vec - now_big_toe_vec
 
-                    groove_bf = VmdBoneFrame()
-                    groove_bf.fno = fno
-                    groove_bf.set_name("グルーブ")
-                    
-                    if args.upper_motion == 1:
-                        # 上半身モーションの場合、グルーブを0に強制変換
-                        groove_bf.position.setY(0)
-                    else:
-                        # 調整後のグルーブ登録
-                        groove_bf.position.setY(pelvis_y)
+                            center_bf.position.setX(pelvis_vec.x() + diff_vec.x())
+                            center_bf.position.setZ(pelvis_vec_z + diff_vec.z())
+                            motion.regist_bf(center_bf, center_bf.name, fno)
+                        
+                        if left_big_toe_x_diff < offset[0] and left_big_toe_y_diff < offset[1]:
+                            # 左つま先固定
+                            now_toe_ik_3ds_dic = calc_global_pos(model, left_toe_links, motion, fno)
+                            now_big_toe_vec = now_toe_ik_3ds_dic["左つま先"]
+                            prev_toe_ik_3ds_dic = calc_global_pos(model, left_toe_links, motion, prev_fno)
+                            prev_big_toe_vec = prev_toe_ik_3ds_dic["左つま先"]
+                            diff_vec = prev_big_toe_vec - now_big_toe_vec                           
 
-                    motion.regist_bf(groove_bf, groove_bf.name, fno)
+                            center_bf.position.setX(pelvis_vec.x() + diff_vec.x())
+                            center_bf.position.setZ(pelvis_vec_z + diff_vec.z())
+                            motion.regist_bf(center_bf, center_bf.name, fno)
+
+                        if right_ankle_x_diff < offset[0] and right_ankle_y_diff < offset[1]:
+                            # 右足首固定
+                            now_toe_ik_3ds_dic = calc_global_pos(model, right_toe_links, motion, fno)
+                            now_ankle_vec = now_toe_ik_3ds_dic["右足首"]
+                            prev_toe_ik_3ds_dic = calc_global_pos(model, right_toe_links, motion, prev_fno)
+                            prev_ankle_vec = prev_toe_ik_3ds_dic["右足首"]
+                            diff_vec = prev_ankle_vec - now_ankle_vec
+
+                            center_bf.position.setX(pelvis_vec.x() + diff_vec.x())
+                            center_bf.position.setZ(pelvis_vec_z + diff_vec.z())
+                            motion.regist_bf(center_bf, center_bf.name, fno)
+
+                        if left_ankle_x_diff < offset[0] and left_ankle_y_diff < offset[1]:
+                            # 左足首固定
+                            now_toe_ik_3ds_dic = calc_global_pos(model, left_toe_links, motion, fno)
+                            now_ankle_vec = now_toe_ik_3ds_dic["左足首"]
+                            prev_toe_ik_3ds_dic = calc_global_pos(model, left_toe_links, motion, prev_fno)
+                            prev_ankle_vec = prev_toe_ik_3ds_dic["左足首"]
+                            diff_vec = prev_ankle_vec - now_ankle_vec
+                        
+                            center_bf.position.setX(pelvis_vec.x() + diff_vec.x())
+                            center_bf.position.setZ(pelvis_vec_z + diff_vec.z())
+                            motion.regist_bf(center_bf, center_bf.name, fno)
+
+                        # 差が大きい場合、移動量を小さくする
+                        prev_center_bf = motion.calc_bf(center_bf.name, prev_fno)
+                        fno_diff = fno - prev_fno
+                        if 0.5 * fno_diff < abs(prev_center_bf.position.x() - center_bf.position.x()) or 0.6 * fno_diff < abs(prev_center_bf.position.z() - center_bf.position.z()):
+                            if fno in motion.bones[center_bf.name]:
+                                del motion.bones[center_bf.name][fno]
+
+                    # つま先の埋まりをあげる
+                    now_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_links, motion, fno)
+                    now_right_big_toe_vec = now_right_toe_ik_3ds_dic["右つま先"]
+                    now_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_links, motion, fno)
+                    now_left_big_toe_vec = now_left_toe_ik_3ds_dic["左つま先"]
+
+                    if 0 > min(now_right_big_toe_vec.y(), now_left_big_toe_vec.y()):
+                        groove_bf.position.setY(pelvis_vec_y - min(now_right_big_toe_vec.y(), now_left_big_toe_vec.y()))
+                        motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                     if fidx > 0:
-                        prev_fno, _ = motion.get_bone_prev_next_fno(groove_bf.name, fno=groove_bf.fno, is_key=True)
-                        prev_bf = motion.calc_bf(groove_bf.name, prev_fno)
-                        fno_diff = groove_bf.fno - prev_fno
+                        fno_diff = fno - prev_fno
+                        prev_groove_bf = motion.calc_bf(groove_bf.name, prev_fno)
+                        if 0.5 * fno_diff < abs(prev_groove_bf.position.y() - groove_bf.position.y()):
+                            if fno in motion.bones[groove_bf.name]:
+                                del motion.bones[groove_bf.name][fno]
 
-                        if abs(pelvis_y - prev_bf.position.y()) > 0.25 * fno_diff:
-                            # 差がでかい場合、削除
+                    if args.upper_motion == 1:
+                        # 上半身モーションの場合、グルーブは入れない
+                        if fno in motion.bones[groove_bf.name]:
                             del motion.bones[groove_bf.name][fno]
 
-                logger.info("【No.{0}】スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                if args.smooth_key == 1:
+                    logger.info("【No.{0}】スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                for bone_name in target_bone_names.keys():
-                    if "足ＩＫ" in bone_name:
-                        continue
+                    for bone_name in target_bone_names.keys():
+                        if "足ＩＫ" in bone_name:
+                            continue
 
-                    mxfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                    myfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                    mzfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                    rxfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
-                    ryfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
-                    rzfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
 
-                    for n in range(1):
-                        for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
-                            bf = motion.calc_bf(bone_name, fno)
+                        for n in range(1):
+                            for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
+                                bf = motion.calc_bf(bone_name, fno)
 
-                            if model.bones[bone_name].getRotatable():
-                                # 回転ありボーンの場合
-                                euler = bf.rotation.toEulerAngles()
-                                bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
-                            
-                            if model.bones[bone_name].getTranslatable():
-                                # 移動ありボーンの場合
-                                bf.position.setX(mxfilter(bf.position.x(), fno))
-                                bf.position.setY(myfilter(bf.position.y(), fno))
-                                bf.position.setZ(mzfilter(bf.position.z(), fno))
-                            
-                            if fno not in flip_fnos:
-                                motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
-
-                logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                convert_leg_fk2ik(oidx, motion, model, flip_fnos, "左")
+                                if model.bones[bone_name].getRotatable():
+                                    # 回転ありボーンの場合
+                                    euler = bf.rotation.toEulerAngles()
+                                    bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                                
+                                if model.bones[bone_name].getTranslatable():
+                                    # 移動ありボーンの場合
+                                    bf.position.setX(mxfilter(bf.position.x(), fno))
+                                    bf.position.setY(myfilter(bf.position.y(), fno))
+                                    bf.position.setZ(mzfilter(bf.position.z(), fno))
+                                
+                                if fno not in flip_fnos:
+                                    motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                convert_leg_fk2ik(oidx, motion, model, flip_fnos, "右")
+                convert_leg_fk2ik(oidx, all_frame_joints, motion, model, flip_fnos, "右")
 
-                for bone_name in ["左足ＩＫ", "右足ＩＫ"]:
-                    mxfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                    myfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                    mzfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                    rxfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                    ryfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                    rzfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                logger.info("【No.{0}】左足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                convert_leg_fk2ik(oidx, all_frame_joints, motion, model, flip_fnos, "左")
 
-                    for n in range(1):
-                        for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
-                            bf = motion.calc_bf(bone_name, fno)
+                if args.smooth_key == 1:
+                    for bone_name in ["左足ＩＫ", "右足ＩＫ"]:
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
 
-                            if model.bones[bone_name].getRotatable():
-                                # 回転ありボーンの場合
-                                euler = bf.rotation.toEulerAngles()
-                                bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
-                            
-                            if model.bones[bone_name].getTranslatable():
-                                # 移動ありボーンの場合
-                                bf.position.setX(mxfilter(bf.position.x(), fno))
-                                bf.position.setY(myfilter(bf.position.y(), fno))
-                                bf.position.setZ(mzfilter(bf.position.z(), fno))
-                            
-                            if fno not in flip_fnos:
-                                motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
+                        for n in range(1):
+                            for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
+                                bf = motion.calc_bf(bone_name, fno)
 
-                if args.face_motion == 1:
-                    logger.info("【No.{0}】モーフスムージング", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                    for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
-                        motion.smooth_filter_mf(0, morph_name, config={"freq": 30, "mincutoff": 0.001, "beta": 1, "dcutoff": 1})
-                
+                                if model.bones[bone_name].getRotatable():
+                                    # 回転ありボーンの場合
+                                    euler = bf.rotation.toEulerAngles()
+                                    bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                                
+                                if model.bones[bone_name].getTranslatable():
+                                    # 移動ありボーンの場合
+                                    bf.position.setX(mxfilter(bf.position.x(), fno))
+                                    bf.position.setY(myfilter(bf.position.y(), fno))
+                                    bf.position.setZ(mzfilter(bf.position.z(), fno))
+                                
+                                if fno not in flip_fnos:
+                                    motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
+
                 if args.remove_key == 1:
                     logger.info("【No.{0}】不要ボーンキーフレ削除開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
@@ -448,53 +516,19 @@ def execute(args):
                                                        model.bones[bone_name].getRotatable(), model.bones[bone_name].getTranslatable(), \
                                                        rot_diff_limit=diff_limits["rot"], mov_diff_limit=diff_limits["mov"])
 
-                        # # 検出用フィルタ(2) ---------------
-                        # mxfilter = OneEuroFilter(freq=30, mincutoff=0.000000001, beta=1, dcutoff=1)
-                        # myfilter = OneEuroFilter(freq=30, mincutoff=0.000000001, beta=1, dcutoff=1)
-                        # mzfilter = OneEuroFilter(freq=30, mincutoff=0.000000001, beta=1, dcutoff=1)
-                        # rxfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                        # ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=1, dcutoff=1)
-                        # rzfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                        # mxvalues = {}
-                        # myvalues = {}
-                        # mzvalues = {}
-                        # rvalues = {}
-                        # active_fnos = []
-
-                        # for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Check Data(2) ... ")):
-                        #     bf = motion.calc_bf(bone_name, fno)
-                        #     if bf.key:
-                        #         active_fnos.append(fno)
-                            
-                        #     if model.bones[bone_name].getRotatable():
-                        #         # 回転ありボーンの場合
-                        #         euler = bf.rotation.toEulerAngles()
-                        #         filter_qq = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
-                        #         rvalues[fno] = filter_qq
-                            
-                        #     if model.bones[bone_name].getTranslatable():
-                        #         # 移動ありボーンの場合
-                        #         mxvalues[fno] = mxfilter(bf.position.x(), fno)
-                        #         myvalues[fno] = myfilter(bf.position.y(), fno)
-                        #         mzvalues[fno] = mzfilter(bf.position.z(), fno)
-                                                                               
-                        # if (model.bones[bone_name].getRotatable() and len(rvalues) > 0) or (model.bones[bone_name].getTranslatable() and len(mxvalues) > 0):
-                        #     for cidx in range(1):
-                        #         activate_fnos = remove_unnecessary_values2(cidx, oidx, bone_name, motion, active_fnos, rvalues, mxvalues, myvalues, mzvalues, \
-                        #                                                    model.bones[bone_name].getRotatable(), model.bones[bone_name].getTranslatable())
-                                
-                        #         if activate_fnos == active_fnos:
-                        #             break
-
-                        #         active_fnos = activate_fnos
-
-                    if args.face_motion == 1:
-                        logger.info("【No.{0}】不要モーフキーフレ削除処理", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                        for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
-                            motion.remove_unnecessary_mf(0, morph_name, threshold=0.05)
+            if args.face_motion == 1:
+                if args.smooth_key == 1:
+                    logger.info("【No.{0}】モーフスムージング", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                    for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
+                        motion.smooth_filter_mf(0, morph_name, config={"freq": 30, "mincutoff": 0.001, "beta": 1, "dcutoff": 1})
+        
+                if args.remove_key == 1:
+                    logger.info("【No.{0}】不要モーフキーフレ削除処理", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                    for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
+                        motion.remove_unnecessary_mf(0, morph_name, threshold=0.05)
 
             logger.info("【No.{0}】モーション生成開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-            motion_path = os.path.join(motion_dir_path, "output_{0}_no{1:03}.vmd".format(datetime.datetime.now().strftime('%Y%m%d_%H%M%S'), oidx))
+            motion_path = os.path.join(motion_dir_path, "output_{0}_no{1:03}.vmd".format(process_datetime, oidx))
             writer = VmdWriter(model, motion, motion_path)
             writer.write()
 
@@ -757,50 +791,66 @@ def get_pelvis_vec(all_frame_joints: dict, fno: int, args):
     # 画像サイズ
     image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
 
-    #bbox
-    bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"]])
-    bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"]])
-
-    # 骨盤のカメラの中心からの相対位置
-    pelvis_vec = (get_vec3(all_frame_joints[fno]["joints"], "pelvis") + get_vec3(all_frame_joints[fno]["joints"], "spine1")) / 2
-    # pelvis_pos = np.array([(center_vec.x() / 2) + 0.5, (center_vec.y() / -2) + 0.5])
-    # bbox左上を原点とした相対位置
-    pelvis_pos = np.array([(pelvis_vec.x() / 2) + 0.5, (pelvis_vec.y() / -2) + 0.5])
-
-    # 骨盤の画面内グローバル位置
-    pelvis_global_pos = (np.array([all_frame_joints[fno]["proj_joints"]["pelvis"]["x"], all_frame_joints[fno]["proj_joints"]["pelvis"]["y"]]) + \
-                         np.array([all_frame_joints[fno]["proj_joints"]["spine1"]["x"], all_frame_joints[fno]["proj_joints"]["spine1"]["y"]])) / 2
-    pelvis_global_pos[0] -= image_size[0] / 2
-
     # カメラ中央
     camera_center_pos = np.array([all_frame_joints[fno]["others"]["center"]["x"], all_frame_joints[fno]["others"]["center"]["y"]])
     # カメラ倍率
     camera_scale = all_frame_joints[fno]["camera"]["scale"]
     # センサー幅（画角？）
     sensor_width = all_frame_joints[fno]["others"]["sensor_width"]
+    # フォーカスのpx単位
+    focal_length_in_px = all_frame_joints[fno]["others"]["focal_length_in_px"]
     # camera_center_pos -= image_size / 2
     # Zはカメラ深度
     depth = all_frame_joints[fno]["depth"]["depth"]
 
-    # 1ミクセルは8cm(80mm)
-    focal_length_in_px = all_frame_joints[fno]["others"]["focal_length_in_px"]
+    # # pxからmmへのスケール変換
+    # mm_scale = image_size[0] * sensor_width
+
+    # #bbox
+    # bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"]])
+    # bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"]])
+
+    # # 骨盤のカメラの中心からの相対位置
+    # pelvis_vec = (get_vec3(all_frame_joints[fno]["joints"], "pelvis") + get_vec3(all_frame_joints[fno]["joints"], "spine1")) / 2
+    # # pelvis_pos = np.array([(center_vec.x() / 2) + 0.5, (center_vec.y() / -2) + 0.5])
+    # # bbox左上を原点とした相対位置
+    # pelvis_pos = np.array([(pelvis_vec.x() / 2) + 0.5, (pelvis_vec.y() / -2) + 0.5])
+
+    # 骨盤の画面内グローバル位置(骨盤と脊椎の間）)
+    pelvis_global_pos = np.array([np.average([all_frame_joints[fno]["proj_joints"]["pelvis"]["x"], all_frame_joints[fno]["proj_joints"]["spine1"]["x"]]), \
+                                  np.average([all_frame_joints[fno]["proj_joints"]["pelvis"]["y"], all_frame_joints[fno]["proj_joints"]["spine1"]["y"]])])
+    pelvis_global_pos[0] -= image_size[0] / 2
+    pelvis_global_pos[1] = -pelvis_global_pos[1]
+
+    # 足の画面内グローバル位置(X: 骨盤と脊椎の間、Y: つま先・踵の大きい方（地面に近い方）)
+    foot_global_pos = np.array([np.average([all_frame_joints[fno]["proj_joints"]["pelvis"]["x"], all_frame_joints[fno]["proj_joints"]["spine1"]["x"]]), \
+                                  np.max([all_frame_joints[fno]["proj_joints"]["right_big_toe"]["y"], all_frame_joints[fno]["proj_joints"]["right_heel"]["y"], \
+                                          all_frame_joints[fno]["proj_joints"]["left_big_toe"]["y"], all_frame_joints[fno]["proj_joints"]["left_heel"]["y"]])])
+    foot_global_pos[0] -= image_size[0] / 2
+    foot_global_pos[1] = -foot_global_pos[1]
 
     # モデル座標系
     model_view = create_model_view(camera_center_pos, camera_scale, image_size, depth, focal_length_in_px)
     # プロジェクション座標系
-    projection_view = create_projection_view(image_size, sensor_width)
+    projection_view = create_projection_view(image_size, sensor_width, focal_length_in_px)
 
     # viewport
-    viewport_rect = MRect(0, 0, args.center_scale * 10, args.center_scale * 10)
-
-    pelvis_project_vec = MVector3D(pelvis_global_pos[0], pelvis_global_pos[1], 1)
+    viewport_rect = MRect(0, 0, args.center_scale * 7, args.center_scale * 7 * (image_size[1] / image_size[0]))
 
     # 逆プロジェクション座標位置
+    pelvis_project_vec = MVector3D(pelvis_global_pos[0], pelvis_global_pos[1], 1)
     pelvis_global_vec = pelvis_project_vec.unproject(model_view, projection_view, viewport_rect)
+    # pelvis_global_vec.setX(pelvis_global_vec.x() - (image_size[0] / 2))
+    # pelvis_global_vec /= mmd_scale_vec
 
-    pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), depth * args.center_scale)
+    foot_project_vec = MVector3D(foot_global_pos[0], foot_global_pos[1], 1)
+    foot_global_vec = foot_project_vec.unproject(model_view, projection_view, viewport_rect)
+    # foot_global_vec.setX(foot_global_vec.x() - (image_size[0] / 2))
+    # foot_global_vec /= mmd_scale_vec
 
-    return pelvis_mmd_vec
+    pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), depth * 2.5)
+
+    return pelvis_mmd_vec, foot_global_vec
 
 
 def get_eye_position(model_view: MMatrix4x4):
@@ -817,25 +867,39 @@ def create_model_view(camera_center_pos: list, camera_scale: float, image_size: 
     camera_eye = MVector3D(image_size[0] / 2, image_size[1] / 2, focal_length_in_px)
     camera_pos = MVector3D(camera_center_pos[0], camera_center_pos[1], depth)
 
-    model_view.lookAt(camera_eye, camera_pos, MVector3D(0, 1, 0))
+    camera_qq = MQuaternion.rotationTo(camera_eye.normalized(), camera_pos.normalized())
+
+    # カメラの注視点（グローバル座標）
+    mat_pos = MMatrix4x4()
+    mat_pos.setToIdentity()
+    mat_pos.translate(camera_pos)
+    mat_pos.scale(camera_scale)
+    camera_center = mat_pos * MVector3D()
+
+    # カメラ座標系の行列
+    # eye: カメラの原点（グローバル座標）
+    # center: カメラの注視点（グローバル座標）
+    # up: カメラの上方向ベクトル
+    model_view.lookAt(camera_eye, camera_center, MVector3D(0, 1, 0))
 
     return model_view
 
 # プロジェクション座標系作成
-def create_projection_view(image_size: list, sensor_width: float):
+def create_projection_view(image_size: list, sensor_width: float, focal_length_in_px: float):
     mat = MMatrix4x4()
     mat.setToIdentity()
-    mat.perspective(sensor_width, image_size[0] / image_size[1], 0, 50000)
+    mat.perspective(sensor_width, image_size[0] / image_size[1], 0, focal_length_in_px)
 
     return mat
 
 # 足ＩＫ変換処理実行
-def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):
+def convert_leg_fk2ik(oidx: int, all_frame_joints: dict, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):
     leg_ik_bone_name = "{0}足ＩＫ".format(direction)
     toe_ik_bone_name = "{0}つま先ＩＫ".format(direction)
     leg_bone_name = "{0}足".format(direction)
     knee_bone_name = "{0}ひざ".format(direction)
     ankle_bone_name = "{0}足首".format(direction)
+    direction_en = "left" if direction == "左" else "right"
 
     # 足FK末端までのリンク
     fk_links = model.create_link_2_top_one(ankle_bone_name, is_defined=False)
@@ -852,11 +916,11 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, flip_fnos: 
 
     ik_parent_name = ik_links.get(leg_ik_bone_name, offset=-1).name
     default_vec = MVector3D(1, 0, 0) if "左" == direction else MVector3D(-1, 0, 0)
-
+    
     # 足IKの移植
     # logger.info("【No.{0}】{1}足IK移植", f"{oidx:03}", direction)
     fno = 0
-    for fno in tqdm(fnos, desc=f"No.{oidx:03} ... "):
+    for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} ... ")):
         if fno in flip_fnos:
             # フリップはセンター計算もおかしくなるのでスキップ
             continue
@@ -903,6 +967,51 @@ def convert_leg_fk2ik(oidx: int, motion: VmdMotion, model: PmxModel, flip_fnos: 
         if toe_y < 0:
             bf.position.setY(bf.position.y() + -toe_y)
             motion.regist_bf(bf, bf.name, fno)
+        
+        if fidx > 0:
+            # 画像サイズからブレ許容量
+            offset = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]]) * 0.005
+            prev_fno = fnos[fidx - 1]
+
+            # 2F目以降は、前Fからの移動量を計算する
+            # 足首
+            ankle_x_diff = abs(all_frame_joints[fno]["proj_joints"][f"{direction_en}_ankle"]["x"] - all_frame_joints[prev_fno]["proj_joints"][f"{direction_en}_ankle"]["x"])
+            ankle_y_diff = abs(all_frame_joints[fno]["proj_joints"][f"{direction_en}_ankle"]["y"] - all_frame_joints[prev_fno]["proj_joints"][f"{direction_en}_ankle"]["y"])
+            # 右足親指
+            big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"][f"{direction_en}_big_toe"]["x"] - all_frame_joints[prev_fno]["proj_joints"][f"{direction_en}_big_toe"]["x"])
+            big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"][f"{direction_en}_big_toe"]["y"] - all_frame_joints[prev_fno]["proj_joints"][f"{direction_en}_big_toe"]["y"])
+
+            if big_toe_x_diff < offset[0] and big_toe_y_diff < offset[1]:
+                # つま先固定
+                now_toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
+                now_big_toe_vec = now_toe_ik_3ds_dic[toe_ik_links.last_name()]
+                prev_toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, prev_fno)
+                prev_big_toe_vec = prev_toe_ik_3ds_dic[toe_ik_links.last_name()]
+                diff_vec = prev_big_toe_vec - now_big_toe_vec
+
+                bf.position.setX(bf.position.x() + diff_vec.x())
+                bf.position.setZ(bf.position.z() + diff_vec.z())
+                motion.regist_bf(bf, bf.name, fno)
+
+                center_bf = motion.calc_bf("センター", fno)
+                center_bf.position.setZ(center_bf.position.z() + diff_vec.z())
+                motion.regist_bf(center_bf, center_bf.name, fno)
+
+            if ankle_x_diff < offset[0] and ankle_y_diff < offset[1]:
+                # 足首固定
+                now_toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
+                now_ankle_vec = now_toe_ik_3ds_dic[leg_ik_bone_name]
+                prev_toe_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, prev_fno)
+                prev_ankle_vec = prev_toe_ik_3ds_dic[leg_ik_bone_name]
+                diff_vec = prev_ankle_vec - now_ankle_vec
+
+                bf.position.setX(bf.position.x() + diff_vec.x())
+                bf.position.setZ(bf.position.z() + diff_vec.z())
+                motion.regist_bf(bf, bf.name, fno)            
+
+                center_bf = motion.calc_bf("センター", fno)
+                center_bf.position.setZ(center_bf.position.z() + diff_vec.z())
+                motion.regist_bf(center_bf, center_bf.name, fno)
 
 
 def calc_direction_qq(bf: VmdBoneFrame, motion: VmdMotion, joints: dict, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):
@@ -1555,7 +1664,7 @@ VMD_CONNECTIONS = {
     'left_elbow': ("左ひじ", ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], MQuaternion(), None, {"rot": 0.001, "mov": 0}, False, False),
     'right_wrist': ("右手首", ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], MQuaternion(), None, {"rot": 0.002, "mov": 0}, False, False),
     'left_wrist': ("左手首", ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], MQuaternion(), None, {"rot": 0.002, "mov": 0}, False, False),
-    'pelvis': ("下半身", ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], MQuaternion(), None, {"rot": 0.001, "mov": 0}, False, False),
+    'pelvis': ("下半身", ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], MQuaternion.fromEulerAngles(-20, 0, 0), None, {"rot": 0.001, "mov": 0}, False, False),
     'pelvis2': ("尾てい骨", None, None, MQuaternion(), None, None, False, False),
     'right_hip': ("右足", ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], MQuaternion(), None, {"rot": 0.001, "mov": 0}, False, False),
     'left_hip': ("左足", ['left_hip', 'left_knee', 'pelvis2', 'left_hip', 'left_hip', 'left_knee'], ["下半身"], MQuaternion(), None, {"rot": 0.001, "mov": 0}, False, False),
