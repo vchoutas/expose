@@ -10,6 +10,7 @@ work_dir/
 checkpoints/
 data/models/
 data/network_weights
+data/
 *.npy
 *.pkl
 *.dat

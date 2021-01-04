@@ -89,11 +89,19 @@ def execute(args):
                             all_joints[(ename, 'ex')][fno] = eye["x"]
                             all_joints[(ename, 'ey')][fno] = eye["y"]
 
-                    if "depth" in frame_joints:
-                        if ("depth", 'd') not in all_joints:
-                            all_joints[("depth", 'd')] = {}
+                    if "root" in frame_joints:
+                        if ("root", 'rx') not in all_joints:
+                            all_joints[("root", 'rx')] = {}
 
-                        all_joints[("depth", 'd')][fno] = frame_joints["depth"]["depth"]
+                        if ("root", 'ry') not in all_joints:
+                            all_joints[("root", 'ry')] = {}
+
+                        if ("root", 'rz') not in all_joints:
+                            all_joints[("root", 'rz')] = {}
+
+                        all_joints[("root", 'rx')][fno] = frame_joints["root"]["x"]
+                        all_joints[("root", 'ry')][fno] = frame_joints["root"]["y"]
+                        all_joints[("root", 'rz')][fno] = frame_joints["root"]["z"]
 
             # スムージング
             for (jname, axis), joints in tqdm(all_joints.items(), desc=f"Filter No.{oidx:03} ... "):
@@ -137,8 +145,11 @@ def execute(args):
                             frame_joints["faces"][ename]["x"] = all_joints[(ename, 'fx')][fno]
                             frame_joints["faces"][ename]["y"] = all_joints[(ename, 'fy')][fno]
 
-                    if "depth" in frame_joints:
-                        frame_joints["depth"]["depth"] = all_joints[("depth", 'd')][fno]
+                    # センターグローバル座標を保存
+                    if "root" in frame_joints:
+                        frame_joints["root"]["x"] = all_joints[("root", 'rx')][fno]
+                        frame_joints["root"]["y"] = all_joints[("root", 'ry')][fno]
+                        frame_joints["root"]["z"] = all_joints[("root", 'rz')][fno]
 
                     smooth_json_path = os.path.join(smoothed_person_dir_path, f"smooth_{fno:012}.json")
                     

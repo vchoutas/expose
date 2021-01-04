@@ -77,13 +77,18 @@ if __name__ == "__main__":
         import mmd.order
         result = mmd.order.execute(args)
 
+    if result and "root" in args.process:
+        # 人物深度推定
+        import mmd.root
+        result = mmd.root.execute(args)
+
     if result and "face" in args.process:
         # 人物表情推定
         import mmd.face
         result = mmd.face.execute(args)
 
     if result and "smooth" in args.process:
-        # 人物表情推定
+        # 人物スムージング
         import mmd.smooth
         result = mmd.smooth.execute(args)
 
