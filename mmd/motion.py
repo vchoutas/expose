@@ -160,7 +160,7 @@ def execute(args):
                         left_eye_euler = calc_left_eye(fno, motion, frame_joints)
                         right_eye_euler = calc_right_eye(fno, motion, frame_joints)
                         blend_eye(fno, motion, left_eye_euler, right_eye_euler)
-                        target_bone_names["両目"] = VMD_CONNECTIONS["nose"][5]
+                        # target_bone_names["両目"] = VMD_CONNECTIONS["nose"][5]
 
                         # 口
                         calc_lip(fno, motion, frame_joints)
@@ -324,14 +324,14 @@ def execute(args):
                         if "足ＩＫ" in bone_name:
                             continue
 
-                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                        myfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
-                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
-                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
 
-                        for n in range(1):
+                        for n in range(2):
                             for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
                                 bf = motion.calc_bf(bone_name, fno)
 
@@ -363,79 +363,16 @@ def execute(args):
                     # 画面内の関節位置から位置調整
                     check_proj_joints(model, motion, all_frame_joints, right_heel_links, left_heel_links, fidx, fno, prev_fno, True, right_toe_ik_links, left_toe_ik_links)
 
-                # logger.info("【No.{0}】センターチェック開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-
-                # for fidx, fno in enumerate(tqdm(fnos[1:-1], desc=f"No.{oidx:03} ... ")):
-                #     # 差が大きい場合、無視する
-                #     prev_fno, next_fno = motion.get_bone_prev_next_fno("センター", fno=fno, is_key=True)
-
-                #     now_center_bf = motion.calc_bf("センター", fno)
-                #     prev_center_bf = motion.calc_bf(now_center_bf.name, prev_fno)
-                #     next_center_bf = motion.calc_bf(now_center_bf.name, next_fno)
-
-                #     # 前後の差
-                #     prev_next_center_diff = next_center_bf.position - prev_center_bf.position
-                #     # 自分と後の差
-                #     now_next_center_diff = next_center_bf.position - now_center_bf.position
-                #     # 差異
-                #     center_diff = np.abs(prev_next_center_diff.data() - now_next_center_diff.data())
-
-                #     # 前後と自分の内積の差が一定以上の場合、円滑化
-                #     if abs(prev_next_center_diff.x()) < abs(now_next_center_diff.x()) and center_diff[0] > 1:
-                #         now_center_bf.position.setX(prev_center_bf.position.x() + ((prev_next_center_diff.x()) * ((fno - prev_fno) / (next_fno - prev_fno))))
-                #     if abs(prev_next_center_diff.z()) < abs(now_next_center_diff.z()) and center_diff[2] > 1:
-                #         now_center_bf.position.setZ(prev_center_bf.position.z() + ((prev_next_center_diff.z()) * ((fno - prev_fno) / (next_fno - prev_fno))))
-                    
-                #     motion.regist_bf(now_center_bf, now_center_bf.name, fno, is_key=now_center_bf.key)
-
-                #     # --------
-                #     now_groove_bf = motion.calc_bf("グルーブ", fno)
-                #     prev_groove_bf = motion.calc_bf(now_groove_bf.name, prev_fno)
-                #     next_groove_bf = motion.calc_bf(now_groove_bf.name, next_fno)
-
-                #     # 前後の差
-                #     prev_next_groove_diff = next_groove_bf.position - prev_groove_bf.position
-                #     # 自分と後の差
-                #     now_next_groove_diff = next_groove_bf.position - now_groove_bf.position
-                #     # 差異
-                #     groove_diff = np.abs(prev_next_groove_diff.data() - now_next_groove_diff.data())
-
-                #     if abs(prev_next_groove_diff.y()) < abs(now_next_groove_diff.y()) and groove_diff[1] > 1:
-                #         now_groove_bf.position.setX(prev_groove_bf.position.y() + ((prev_next_groove_diff.y()) * ((fno - prev_fno) / (next_fno - prev_fno))))
-                #     motion.regist_bf(now_groove_bf, now_groove_bf.name, fno, is_key=now_groove_bf.key)
-
-                #     # --------------
-                #     for leg_ik_name in ["右足ＩＫ", "左足ＩＫ"]:
-                #         now_leg_ik_bf = motion.calc_bf(leg_ik_name, fno)
-                #         prev_leg_ik_bf = motion.calc_bf(now_leg_ik_bf.name, prev_fno)
-                #         next_leg_ik_bf = motion.calc_bf(now_leg_ik_bf.name, next_fno)
-
-                #         # 前後の差
-                #         prev_next_leg_ik_diff = next_leg_ik_bf.position - prev_leg_ik_bf.position
-                #         # 自分と後の差
-                #         now_next_leg_ik_diff = next_leg_ik_bf.position - now_leg_ik_bf.position
-                #         # 差異
-                #         leg_ik_diff = np.abs(prev_next_leg_ik_diff.data() - now_next_leg_ik_diff.data())
-
-                #         # 前後と自分の内積の差が一定以上の場合、円滑化
-                #         if abs(prev_next_leg_ik_diff.x()) < abs(now_next_leg_ik_diff.x()) and leg_ik_diff[0] > 2:
-                #             now_leg_ik_bf.position.setX(prev_leg_ik_bf.position.x() + ((prev_next_leg_ik_diff.x()) * ((fno - prev_fno) / (next_fno - prev_fno))))
-                #         if abs(prev_next_leg_ik_diff.y()) < abs(now_next_leg_ik_diff.y()) and leg_ik_diff[1] > 2:
-                #             now_leg_ik_bf.position.setY(prev_leg_ik_bf.position.y() + ((prev_next_leg_ik_diff.y()) * ((fno - prev_fno) / (next_fno - prev_fno))))
-                #         if abs(prev_next_leg_ik_diff.z()) < abs(now_next_leg_ik_diff.z()) and leg_ik_diff[2] > 2:
-                #             now_leg_ik_bf.position.setZ(prev_leg_ik_bf.position.z() + ((prev_next_leg_ik_diff.z()) * ((fno - prev_fno) / (next_fno - prev_fno))))
-                #         motion.regist_bf(now_leg_ik_bf, now_leg_ik_bf.name, fno, is_key=now_leg_ik_bf.key)
-
                 if args.smooth_key == 1:
                     logger.info("【No.{0}】足ＩＫスムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
                     for bone_name in ["左足ＩＫ", "右足ＩＫ"]:
-                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                        myfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.000001, beta=1, dcutoff=1)
-                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
-                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
-                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.0001, beta=1, dcutoff=1)
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
 
                         for n in range(1):
                             for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
@@ -460,12 +397,12 @@ def execute(args):
 
                     for bone_name, diff_limits in target_bone_names.items():
                         # 検出用フィルタ(1) ---------------
-                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.000000001, beta=1, dcutoff=1)
-                        myfilter = OneEuroFilter(freq=30, mincutoff=0.000000001, beta=1, dcutoff=1)
-                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.000000001, beta=1, dcutoff=1)
-                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
-                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.0000001, beta=1, dcutoff=1)
+                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
                         mxvalues = {}
                         myvalues = {}
                         mzvalues = {}
@@ -537,13 +474,13 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
 
         # かかとからつま先の向きが大体水平なら接地
         diff_y = 0
-        if 0.1 > abs(left_foot_vec.y()) and 0.1 > abs(right_foot_vec.y()):
+        if 0.2 > abs(left_foot_vec.y()) and 0.2 > abs(right_foot_vec.y()):
             # 両足水平の場合
             diff_y = min(now_left_toe_vec.y(), now_left_heel_vec.y(), now_right_toe_vec.y(), now_right_heel_vec.y())
-        elif 0.1 > abs(left_foot_vec.y()):
+        elif 0.2 > abs(left_foot_vec.y()):
             # 左足水平の場合
             diff_y = min(now_left_toe_vec.y(), now_left_heel_vec.y())
-        elif 0.1 > abs(right_foot_vec.y()):
+        elif 0.2 > abs(right_foot_vec.y()):
             # 右足水平の場合
             diff_y = min(now_right_toe_vec.y(), now_right_heel_vec.y())
 
@@ -571,7 +508,7 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
         past_avg_left_small_toe_x = []
         past_avg_left_small_toe_y = []
 
-        for f in range(fno - 1, max(0, fno - 6), -1):
+        for f in range(fno - 1, max(0, fno - 11), -1):
             if f in all_frame_joints:
                 past_avg_right_heel_x.append(all_frame_joints[f]["proj_joints"]["right_heel"]["x"])
                 past_avg_right_heel_y.append(all_frame_joints[f]["proj_joints"]["right_heel"]["y"])
@@ -633,16 +570,15 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
             now_right_leg_ik_bf.position += diff_right_leg_vec
             motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
-            if abs(diff_right_leg_vec.z()) > 1.5:
-                # センター調整
-                now_center_bf = motion.calc_bf("センター", fno)
-                now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_leg_vec.z())
-                motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+            # センター調整
+            now_center_bf = motion.calc_bf("センター", fno)
+            now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_leg_vec.z())
+            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-                # 左足ＩＫ調整
-                now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
-                now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_leg_vec.z())
-                motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
+            # 左足ＩＫ調整
+            now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+            now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_leg_vec.z())
+            motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
             is_fix_right = True
 
@@ -661,16 +597,15 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
             now_right_leg_ik_bf.position += diff_right_toe_vec
             motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
-            if abs(diff_right_toe_vec.z()) > 1.5:
-                # センター調整
-                now_center_bf = motion.calc_bf("センター", fno)
-                now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_toe_vec.z())
-                motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+            # センター調整
+            now_center_bf = motion.calc_bf("センター", fno)
+            now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_toe_vec.z())
+            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-                # 左足ＩＫ調整
-                now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
-                now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_toe_vec.z())
-                motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
+            # 左足ＩＫ調整
+            now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+            now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_toe_vec.z())
+            motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
             is_fix_right = True
 
@@ -686,17 +621,16 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
             now_left_leg_ik_bf.position += diff_left_leg_vec
             motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
-            if abs(diff_left_leg_vec.z()) > 1.5:
-                # センター調整
-                now_center_bf = motion.calc_bf("センター", fno)
-                now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_leg_vec.z())
-                motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+            # センター調整
+            now_center_bf = motion.calc_bf("センター", fno)
+            now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_leg_vec.z())
+            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-                if not is_fix_right:
-                    # 右足ＩＫ調整
-                    now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-                    now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_leg_vec.z())
-                    motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
+            if not is_fix_right:
+                # 右足ＩＫ調整
+                now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+                now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_leg_vec.z())
+                motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
         elif (left_big_toe_x_diff < image_offset[0] and left_big_toe_y_diff < image_offset[1]) or \
                 (left_small_toe_x_diff < image_offset[0] and left_small_toe_y_diff < image_offset[1]):
@@ -713,17 +647,16 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
             now_left_leg_ik_bf.position += diff_left_toe_vec
             motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
-            if abs(diff_left_toe_vec.z()) > 1.5:
-                # センター調整
-                now_center_bf = motion.calc_bf("センター", fno)
-                now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_toe_vec.z())
-                motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+            # センター調整
+            now_center_bf = motion.calc_bf("センター", fno)
+            now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_toe_vec.z())
+            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-                if not is_fix_right:
-                    # 右足ＩＫ調整
-                    now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-                    now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_toe_vec.z())
-                    motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
+            if not is_fix_right:
+                # 右足ＩＫ調整
+                now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+                now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_toe_vec.z())
+                motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
 def remove_unnecessary_values1(oidx: int, bone_name: str, motion: VmdMotion, active_fnos: list, r_org_values: list, mx_org_values: list, my_org_values: list, mz_org_values: list, \
                                is_rot: bool, is_mov: bool, offset=0, rot_diff_limit=0.0005, mov_diff_limit=0.3, sub=False):
@@ -972,22 +905,8 @@ def remove_unnecessary_values2(cidx: int, oidx: int, bone_name: str, motion: Vmd
 
     return activate_fnos
 
+
 def calc_pelvis_vec(all_frame_joints: dict, fno: int, args):
-    # 画像サイズ
-    image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
-
-    # ROOT位置
-    root_pos = np.array([all_frame_joints[fno]["root"]["x"], all_frame_joints[fno]["root"]["y"], all_frame_joints[fno]["root"]["z"]])
-    # Xは画面中央を0とする
-    root_pos[0] -= image_size[0] / 2
-
-    # 1ミクセルは8cm
-    root_mm_pos = root_pos / image_size[0] * args.center_scale * np.array([15, 1, 8])
-
-    return MVector3D(root_mm_pos[0], root_mm_pos[1], root_mm_pos[2])
-
-
-def calc_pelvis_vec2(all_frame_joints: dict, motion: VmdMotion, upper_local_x_axis: MVector3D, fno: int, args):
     # 画像サイズ
     image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
 
@@ -1002,6 +921,7 @@ def calc_pelvis_vec2(all_frame_joints: dict, motion: VmdMotion, upper_local_x_ax
     # camera_center_pos -= image_size / 2
     # Zはカメラ深度
     depth = all_frame_joints[fno]["depth"]["depth"]
+    pelvis_z = depth * args.center_scale
 
     # # pxからmmへのスケール変換
     # mm_scale = image_size[0] * sensor_width
@@ -1043,12 +963,10 @@ def calc_pelvis_vec2(all_frame_joints: dict, motion: VmdMotion, upper_local_x_ax
     # pelvis_global_vec.setX(pelvis_global_vec.x() - (image_size[0] / 2))
     # pelvis_global_vec /= mmd_scale_vec
 
-    foot_project_vec = MVector3D(foot_global_pos[0], foot_global_pos[1], 1)
-    foot_global_vec = foot_project_vec.unproject(model_view, projection_view, viewport_rect)
+    # foot_project_vec = MVector3D(foot_global_pos[0], foot_global_pos[1], 1)
+    # foot_global_vec = foot_project_vec.unproject(model_view, projection_view, viewport_rect)
     # foot_global_vec.setX(foot_global_vec.x() - (image_size[0] / 2))
     # foot_global_vec /= mmd_scale_vec
-
-    pelvis_z = bbox_size[1] * camera_scale * depth
     
     # camera_scale * 
     # upper_bf = motion.calc_bf("上半身", fno)
@@ -1061,7 +979,7 @@ def calc_pelvis_vec2(all_frame_joints: dict, motion: VmdMotion, upper_local_x_ax
     pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), pelvis_z)
     logger.debug("calc_pelvis_vec fno: {0}, pelvis_z: {1}, camera_scale: {2}, depth: {3}, bbox_size: {4}, {5}", fno, pelvis_z, camera_scale, depth, bbox_size[0], bbox_size[1])
 
-    return pelvis_mmd_vec, foot_global_vec
+    return pelvis_mmd_vec
 
 
 def get_eye_position(model_view: MMatrix4x4):
@@ -1077,8 +995,6 @@ def create_model_view(camera_center_pos: list, camera_scale: float, image_size: 
 
     camera_eye = MVector3D(image_size[0] / 2, -(image_size[1] / 2), focal_length_in_px)
     camera_pos = MVector3D(camera_center_pos[0], -camera_center_pos[1], depth)
-
-    camera_qq = MQuaternion.rotationTo(camera_eye.normalized(), camera_pos.normalized())
 
     # カメラの注視点（グローバル座標）
     mat_pos = MMatrix4x4()
@@ -1167,7 +1083,7 @@ def convert_leg_fk2ik(oidx: int, all_frame_joints: dict, motion: VmdMotion, mode
         foot_vec = (toe_vec - heel_vec).normalized()
 
         # かかとからつま先の向きが大体水平なら接地
-        if 0.1 > abs(foot_vec.y()):
+        if 0.2 > abs(foot_vec.y()):
             diff_y = max(0, min(toe_vec.y(), heel_vec.y()))
             bf.position.setY(max(0, bf.position.y() - diff_y))
         motion.regist_bf(bf, leg_ik_bone_name, fno)

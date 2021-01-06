@@ -18,6 +18,7 @@ import torch.backends.cudnn as cudnn
 
 from mmd.utils.MLogger import MLogger
 from mmd.utils.MServiceUtils import sort_by_numeric
+from mmd.tracking import xywh_to_x1y1x2y2_from_dict, enlarge_bbox, x1y1x2y2_to_xywh
 
 from root.model import get_pose_net
 from root.utils.pose_utils import process_bbox
@@ -80,15 +81,16 @@ def execute(args):
                         
                         width = int(frame_joints['image']['width'])
                         height = int(frame_joints['image']['height'])
-                        bbox_x = int(frame_joints["bbox"]["x"])
-                        bbox_y = int(frame_joints["bbox"]["y"])
-                        bbox_w = int(frame_joints["bbox"]["width"])
-                        bbox_h = int(frame_joints["bbox"]["height"])
 
                         original_img = cv2.imread(frame_image_path)
 
+                        bx = float(frame_joints["bbox"]["x"])
+                        by = float(frame_joints["bbox"]["y"])
+                        bw = float(frame_joints["bbox"]["width"])
+                        bh = float(frame_joints["bbox"]["height"])
+
                         # ROOT_NETで深度推定
-                        bbox = process_bbox((bbox_x, bbox_y, bbox_w, bbox_h), width, height, argv)
+                        bbox = process_bbox([bx, by, bw, bh], width, height, argv)
                         img, img2bb_trans = generate_patch_image(original_img, bbox, False, 0.0, argv)
                         img = transform(img).to('cuda')[None,:,:,:]
                         k_value = np.array([math.sqrt(argv.bbox_real[0] * argv.bbox_real[1] * focal[0] * focal[1] / (bbox[2] * bbox[3]))]).astype(np.float32)
@@ -99,10 +101,12 @@ def execute(args):
 
                         img = img[0].to('cpu').numpy()
                         root_3d = root_3d[0].to('cpu').numpy()
-                        root_3d[0] = root_3d[0] / argv.output_shape[1] * bbox[2] + bbox[0]
+                        root_3d[0] = root_3d[0] / argv.output_shape[0] * bbox[2] + bbox[0]
                         root_3d[1] = root_3d[1] / argv.output_shape[1] * bbox[3] + bbox[1]
 
-                        frame_joints["root"] = {"x": float(root_3d[0]), "y": float(root_3d[1]), "z": float(root_3d[2])}
+                        frame_joints["root"] = {"x": float(root_3d[0]), "y": float(root_3d[1]), "z": float(root_3d[2]), \
+                                                "input": {"x": argv.input_shape[0], "y": argv.input_shape[1]}, "output": {"x": argv.output_shape[0], "y": argv.output_shape[1]}, \
+                                                "focal": {"x": focal[0], "y": focal[1]}}
 
                         with open(frame_json_path, 'w') as f:
                             json.dump(frame_joints, f, indent=4)
@@ -136,6 +140,7 @@ def get_parser():
     parser.add_argument('--gpu_ids', type=str, default='0')
     parser.add_argument('--num_gpus', type=int, default=1)
     parser.add_argument('--continue_train', type=bool, default=False)
+    parser.add_argument('--enlarge_scale', default=0.15)
 
     return parser
 
