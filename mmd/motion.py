@@ -317,37 +317,37 @@ def execute(args):
                         if fno in motion.bones["グルーブ"]:
                             del motion.bones["グルーブ"][fno]
 
-                if args.smooth_key == 1:
-                    logger.info("【No.{0}】スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                # if args.smooth_key == 1:
+                #     logger.info("【No.{0}】スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                    for bone_name in target_bone_names.keys():
-                        if "足ＩＫ" in bone_name:
-                            continue
+                #     for bone_name in target_bone_names.keys():
+                #         if "足ＩＫ" in bone_name:
+                #             continue
 
-                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                #         mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.5, dcutoff=0.1)
+                #         myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.5, dcutoff=0.1)
+                #         mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.5, dcutoff=0.1)
+                #         rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.5, dcutoff=0.1)
+                #         ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.5, dcutoff=0.1)
+                #         rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.5, dcutoff=0.1)
 
-                        for n in range(2):
-                            for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
-                                bf = motion.calc_bf(bone_name, fno)
+                #         for n in range(2):
+                #             for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
+                #                 bf = motion.calc_bf(bone_name, fno)
 
-                                if model.bones[bone_name].getRotatable():
-                                    # 回転ありボーンの場合
-                                    euler = bf.rotation.toEulerAngles()
-                                    bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                #                 if model.bones[bone_name].getRotatable():
+                #                     # 回転ありボーンの場合
+                #                     euler = bf.rotation.toEulerAngles()
+                #                     bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
                                 
-                                if model.bones[bone_name].getTranslatable():
-                                    # 移動ありボーンの場合
-                                    bf.position.setX(mxfilter(bf.position.x(), fno))
-                                    bf.position.setY(myfilter(bf.position.y(), fno))
-                                    bf.position.setZ(mzfilter(bf.position.z(), fno))
+                #                 if model.bones[bone_name].getTranslatable():
+                #                     # 移動ありボーンの場合
+                #                     bf.position.setX(mxfilter(bf.position.x(), fno))
+                #                     bf.position.setY(myfilter(bf.position.y(), fno))
+                #                     bf.position.setZ(mzfilter(bf.position.z(), fno))
                                 
-                                if fno not in flip_fnos and bf.key:
-                                    motion.regist_bf(bf, bone_name, fno)
+                #                 if fno not in flip_fnos and bf.key:
+                #                     motion.regist_bf(bf, bone_name, fno)
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
                 convert_leg_fk2ik(oidx, all_frame_joints, motion, model, flip_fnos, "右")
@@ -363,85 +363,84 @@ def execute(args):
                     # 画面内の関節位置から位置調整
                     check_proj_joints(model, motion, all_frame_joints, right_heel_links, left_heel_links, fidx, fno, prev_fno, True, right_toe_ik_links, left_toe_ik_links)
 
-                if args.smooth_key == 1:
-                    logger.info("【No.{0}】足ＩＫスムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                # if args.smooth_key == 1:
+                #     logger.info("【No.{0}】足ＩＫスムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                    for bone_name in ["左足ＩＫ", "右足ＩＫ"]:
-                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                #     for bone_name in ["左足ＩＫ", "右足ＩＫ"]:
+                #         mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
 
-                        for n in range(1):
-                            for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
-                                bf = motion.calc_bf(bone_name, fno)
+                #         for n in range(1):
+                #             for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Smoothing ({n+1}) ... ")):
+                #                 bf = motion.calc_bf(bone_name, fno)
 
-                                if model.bones[bone_name].getRotatable():
-                                    # 回転ありボーンの場合
-                                    euler = bf.rotation.toEulerAngles()
-                                    bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                #                 if model.bones[bone_name].getRotatable():
+                #                     # 回転ありボーンの場合
+                #                     euler = bf.rotation.toEulerAngles()
+                #                     bf.rotation = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
                                 
-                                if model.bones[bone_name].getTranslatable():
-                                    # 移動ありボーンの場合
-                                    bf.position.setX(mxfilter(bf.position.x(), fno))
-                                    bf.position.setY(myfilter(bf.position.y(), fno))
-                                    bf.position.setZ(mzfilter(bf.position.z(), fno))
+                #                 if model.bones[bone_name].getTranslatable():
+                #                     # 移動ありボーンの場合
+                #                     bf.position.setX(mxfilter(bf.position.x(), fno))
+                #                     bf.position.setY(myfilter(bf.position.y(), fno))
+                #                     bf.position.setZ(mzfilter(bf.position.z(), fno))
                                 
-                                if fno not in flip_fnos:
-                                    motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
+                #                 if fno not in flip_fnos:
+                #                     motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
 
-                if args.remove_key == 1:
-                    logger.info("【No.{0}】不要ボーンキーフレ削除開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                # if args.remove_key == 1:
+                #     logger.info("【No.{0}】不要ボーンキーフレ削除開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                    for bone_name, diff_limits in target_bone_names.items():
-                        # 検出用フィルタ(1) ---------------
-                        mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
-                        mxvalues = {}
-                        myvalues = {}
-                        mzvalues = {}
-                        rvalues = {}
-                        active_fnos = []
+                #     for bone_name, diff_limits in target_bone_names.items():
+                #         # 検出用フィルタ(1) ---------------
+                #         mxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         myfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         mzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         rxfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         ryfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         rzfilter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.05, dcutoff=0.1)
+                #         mxvalues = {}
+                #         myvalues = {}
+                #         mzvalues = {}
+                #         rvalues = {}
+                #         active_fnos = []
 
-                        for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Check Data(1) ... ")):
-                            bf = motion.calc_bf(bone_name, fno)
-                            if bf.key:
-                                active_fnos.append(fno)
+                #         for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} - {bone_name} - Check Data(1) ... ")):
+                #             bf = motion.calc_bf(bone_name, fno)
+                #             if bf.key:
+                #                 active_fnos.append(fno)
                             
-                            if model.bones[bone_name].getRotatable():
-                                # 回転ありボーンの場合
-                                euler = bf.rotation.toEulerAngles()
-                                filter_qq = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
-                                rvalues[fno] = filter_qq
+                #             if model.bones[bone_name].getRotatable():
+                #                 # 回転ありボーンの場合
+                #                 euler = bf.rotation.toEulerAngles()
+                #                 filter_qq = MQuaternion.fromEulerAngles(rxfilter(euler.x(), fno), ryfilter(euler.y(), fno), rzfilter(euler.z(), fno))
+                #                 rvalues[fno] = filter_qq
                             
-                            if model.bones[bone_name].getTranslatable():
-                                # 移動ありボーンの場合
-                                mxvalues[fno] = mxfilter(bf.position.x(), fno)
-                                myvalues[fno] = myfilter(bf.position.y(), fno)
-                                mzvalues[fno] = mzfilter(bf.position.z(), fno)
+                #             if model.bones[bone_name].getTranslatable():
+                #                 # 移動ありボーンの場合
+                #                 mxvalues[fno] = mxfilter(bf.position.x(), fno)
+                #                 myvalues[fno] = myfilter(bf.position.y(), fno)
+                #                 mzvalues[fno] = mzfilter(bf.position.z(), fno)
                         
-                        if (model.bones[bone_name].getRotatable() and len(rvalues) > 0) or (model.bones[bone_name].getTranslatable() and len(mxvalues) > 0):
-                            # 不要キー除去
-                            remove_unnecessary_values1(oidx, bone_name, motion, active_fnos, rvalues, mxvalues, myvalues, mzvalues, \
-                                                       model.bones[bone_name].getRotatable(), model.bones[bone_name].getTranslatable(), \
-                                                       rot_diff_limit=diff_limits["rot"], mov_diff_limit=diff_limits["mov"], sub=diff_limits["sub"])
+                #         if (model.bones[bone_name].getRotatable() and len(rvalues) > 0) or (model.bones[bone_name].getTranslatable() and len(mxvalues) > 0):
+                #             # 不要キー除去
+                #             remove_unnecessary_values1(oidx, bone_name, motion, active_fnos, rvalues, mxvalues, myvalues, mzvalues, \
+                #                                        model.bones[bone_name].getRotatable(), model.bones[bone_name].getTranslatable(), \
+                #                                        rot_diff_limit=diff_limits["rot"], mov_diff_limit=diff_limits["mov"], sub=diff_limits["sub"])
 
             if args.face_motion == 1:
-                if args.smooth_key == 1:
-                    logger.info("【No.{0}】モーフスムージング", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                    for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
-                        motion.smooth_filter_mf(0, morph_name, config={"freq": 30, "mincutoff": 0.001, "beta": 1, "dcutoff": 1})
+                # モーフはキーフレ上限があるので、削除処理を入れておく
+                logger.info("【No.{0}】モーフスムージング", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
+                    motion.smooth_filter_mf(0, morph_name, config={"freq": 30, "mincutoff": 0.1, "beta": 1, "dcutoff": 1})
         
-                if args.remove_key == 1:
-                    logger.info("【No.{0}】不要モーフキーフレ削除処理", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-                    for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
-                        motion.remove_unnecessary_mf(0, morph_name, threshold=0.05)
+                logger.info("【No.{0}】不要モーフキーフレ削除処理", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                for morph_name in tqdm(motion.morphs.keys(), desc=f"No.{oidx:03} ... "):
+                    motion.remove_unnecessary_mf(0, morph_name, threshold=0.05)
 
             logger.info("【No.{0}】モーション生成開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
             motion_path = os.path.join(motion_dir_path, "output_{0}_no{1:03}.vmd".format(process_datetime, oidx))
@@ -714,7 +713,6 @@ def remove_unnecessary_values1(oidx: int, bone_name: str, motion: VmdMotion, act
     logger.debug("☆{0}: start: {1}, end: {2}, infections: {3}", bone_name, fnos[0], fnos[-1], infections)
 
     start_fno = fnos[0]
-    last_fno = fnos[-1]
     fno = fnos[0]
 
     for iidx, inf_fno in enumerate(tqdm(infections, desc=f"No.{oidx:03} - {bone_name} - Remove Key(1) ... ")):

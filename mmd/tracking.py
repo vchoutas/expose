@@ -66,7 +66,7 @@ def execute(args):
         args.min_box_size = 0.
         args.draw_threshold = 0.2
 
-        args.enlarge_scale = 0.1 # how much to enlarge the bbox before pose estimation
+        args.enlarge_scale = 0.2 # how much to enlarge the bbox before pose estimation
 
         process_bbox_path = os.path.join(args.img_dir, "bbox.mp4")
         process_img_pathes = sorted(glob.glob(os.path.join(args.img_dir, "frames", "**", "frame_*.png")), key=sort_by_numeric)
@@ -297,7 +297,7 @@ def get_track_id_SGCN(args, bbox_cur_frame, keypoints_cur_frame, prev_bbox_frame
     min_matching_score = sys.maxsize
     # if track_id is still not assigned, the person is really missing or track is really lost
     track_id = -1
-    pose_matching_threshold = 0.5
+    pose_matching_threshold = 0.4
 
     # bboxベースの類似追跡ID
     similar_bbox_idxs = get_similar_bbox_track_id(bbox_cur_frame, prev_bbox_frames)
@@ -347,7 +347,7 @@ def get_pose_matching_score(keypoints_A, keypoints_B, bbox_A, bbox_B, img_width,
 
 # bbox単位で似ている場所にある前回フレームのbboxを抽出
 def get_similar_bbox_track_id(bbox_cur_frame, prev_bbox_frames):
-    thresh = 0.5
+    thresh = 0.4
     similar_bbox_idxs = []
 
     for bbox_index, bbox_det_dict in enumerate(prev_bbox_frames):
