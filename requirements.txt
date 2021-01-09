@@ -3,7 +3,7 @@ loguru>=0.5.1
 matplotlib>=3.3.1
 numpy>=1.19.1
 open3d>=0.10.0.0
-opencv-python>=3.4.3
+opencv-python
 Pillow>=7.2.0
 pyrender>=0.1.43
 smplx>=0.1.21
@@ -19,4 +19,5 @@ imutils
 tensorflow-gpu==1.15
 cython
 scikit-image
-setproctitle
+# setproctitle
+numba

@@ -5,7 +5,7 @@ from collections import OrderedDict as dict
 import os
 import os.path as osp
 import glob
-import setproctitle
+#import setproctitle
 import abc
 
 from .net_utils import sum_gradients, aggregate_batch, get_optimizer, get_tower_summary_dict

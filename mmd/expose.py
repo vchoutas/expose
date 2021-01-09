@@ -17,11 +17,10 @@ from collections import OrderedDict, defaultdict
 import cv2
 import argparse
 import time
-import open3d as o3d
 from tqdm import tqdm
 from threadpoolctl import threadpool_limits
 import PIL.Image as pil_img
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import json
 
 import torch
@@ -41,7 +40,7 @@ from expose.data.transforms import build_transforms
 from expose.models.smplx_net import SMPLXNet
 from expose.config import cfg
 from expose.config.cmd_parser import set_face_contour
-from expose.utils.plot_utils import HDRenderer
+# from expose.utils.plot_utils import HDRenderer
 
 from expose.data.targets import Keypoints2D
 from expose.data.targets.keypoints import body_model_to_dset, ALL_CONNECTIONS, KEYPOINT_NAMES, BODY_CONNECTIONS
@@ -60,9 +59,6 @@ if os.name == 'posix':
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (rlimit[1], rlimit[1]))
     os.environ['PYOPENGL_PLATFORM'] = 'egl'
-
-Vec3d = o3d.utility.Vector3dVector
-Vec3i = o3d.utility.Vector3iVector
 
 logger = MLogger(__name__, level=MLogger.DEBUG)
 

@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--parent-dir', type=str, dest='parent_dir', default='', help='Process parent dir path')
     parser.add_argument('--process', type=str, dest='process', default='', help='Process to be executed')
     parser.add_argument('--img-dir', type=str, dest='img_dir', default='', help='Prepared image directory')
+    parser.add_argument('--audio-file', type=str, dest='audio_file', default='', help='Audio file path')
     parser.add_argument('--tracking-config', type=str, dest='tracking_config', default="config/tracking-config.yaml", help='Learning model for person tracking')
     parser.add_argument('--tracking-model', type=str, dest='tracking_model', default="lighttrack/weights/mobile-deconv/snapshot_296.ckpt", help='Learning model for person tracking')
     parser.add_argument('--face-model', type=str, dest='face_model', default="data/shape_predictor_68_face_landmarks.dat", help='Learning model for person face')
@@ -101,6 +102,11 @@ if __name__ == "__main__":
         # モーション生成
         import demo.face2
         result = demo.face2.execute(args)
+
+    if result and "lip" in args.process:
+        # リップモーション生成
+        import mmd.lip
+        result = mmd.lip.execute(args)
 
     elapsed_time = time.time() - start
 

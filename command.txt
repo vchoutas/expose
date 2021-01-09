@@ -1,6 +1,5 @@
-conda create -n expose pip python=3.7
+conda create -n expose2 pip python=3.7
 
-conda install pytorch torchvision cudatoolkit=10.2 -c pytorch
 conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.2 -c pytorch
 
 pip install -r requirements.txt
@@ -42,11 +41,6 @@ pip install "C:\MMD\frankmocap_mmd\scripts\setproctitle-1.2.1-cp37-cp37m-win_amd
 pip install scikit-image
 
 ---------
-for monoloco
-
-
-
----------
 
 右端のtvfilter
 
@@ -85,4 +79,17 @@ kumaris今日 02:36
 less今日 02:37
 最初に、適当なそういう曲線を作る式を使ってLUTを生成して、あとは辞書処理
 
+
+---------------------
+
+Lip
+
+https://software-data-mining.com/python%E3%81%A8%E9%9F%B3%E5%A3%B0%E8%AA%8D%E8%AD%98%E3%83%95%E3%83%AA%E3%83%BC%E3%82%BD%E3%83%95%E3%83%88%E3%82%A6%E3%82%A7%E3%82%A2julius%E3%81%AE%E9%80%A3%E6%90%BA%E3%81%AB%E3%82%88%E3%82%8B/
+
+pip install spleeter
+
+https://qiita.com/h7kayama/items/d1cea00a5eb6dd85dfb5
+pip uninstall h5py
+
+pip install h5py
 
