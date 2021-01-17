@@ -339,7 +339,7 @@ hand_model:
   model_folder: data/models
   num_betas: 10
   num_expression_coeffs: 10
-  return_hand_vertices_only: false
+  return_hand_vertices_only: true
   shape_mean_path: data/shape_mean.npy
   type: mano
   use_compressed: true
@@ -359,7 +359,7 @@ head_model:
   model_folder: data/models
   num_betas: 100
   num_expression_coeffs: 50
-  return_head_vertices_only: false
+  return_head_vertices_only: true
   shape_mean_path: data/shape_mean.npy
   type: flame
   use_compressed: true

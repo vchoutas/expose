@@ -1,8 +1,32 @@
-conda create -n expose2 pip python=3.7
+conda create -n expose pip python=3.7
+
+conda activate expose
 
 conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.2 -c pytorch
 
 pip install -r requirements.txt
+
+cd lighttrack\lib
+
+python setup_windows.py build_ext --inplace
+※スキップされたらcファイルを削除
+
+python setup_cuda.py build_ext --inplace
+
+cd ..\graph\torchlight
+
+python setup.py install
+
+
+----------
+
+python executor.py --video-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740.mp4 --process prepare,expose,tracking --body-motion 1 --hand-motion 1 --face-motion 1 --upper-motion 0 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0
+
+
+python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740_mp4_20210114_091153 --process expose,tracking --body-motion 1 --hand-motion 1 --face-motion 1 --upper-motion 0 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0 
+
+----------
+
 
 https://expose.is.tue.mpg.de/
 https://smpl-x.is.tue.mpg.de/
@@ -79,17 +103,4 @@ kumaris今日 02:36
 less今日 02:37
 最初に、適当なそういう曲線を作る式を使ってLUTを生成して、あとは辞書処理
 
-
----------------------
-
-Lip
-
-https://software-data-mining.com/python%E3%81%A8%E9%9F%B3%E5%A3%B0%E8%AA%8D%E8%AD%98%E3%83%95%E3%83%AA%E3%83%BC%E3%82%BD%E3%83%95%E3%83%88%E3%82%A6%E3%82%A7%E3%82%A2julius%E3%81%AE%E9%80%A3%E6%90%BA%E3%81%AB%E3%82%88%E3%82%8B/
-
-pip install spleeter
-
-https://qiita.com/h7kayama/items/d1cea00a5eb6dd85dfb5
-pip uninstall h5py
-
-pip install h5py
 

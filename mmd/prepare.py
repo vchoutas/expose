@@ -117,51 +117,67 @@ def execute(args):
                     cv2.imwrite(resize_img_path.format(n), out_frame)
 
             # 補間 --------------------------
-            # フレーム補間用比率
-            fps_interpolation = fps / 30
 
             logger.info("補間生成開始", decoration=MLogger.DECORATION_BOX)
 
-            k = 0
-            now_frame = None
+            # 元のフレームを30fpsで計算し直した場合の1Fごとの該当フレーム数
+            interpolations = np.arange(0, count + 1, fps / 30)
 
-            # 最後の１つ手前（補間ができる状態）までループ
-            for k in tqdm(range(round(count * (30 / fps)) - 1)):
+            for kidx, k in enumerate(tqdm(interpolations)):
                 # 30fps用にディレクトリ作成
-                os.makedirs(os.path.join(process_img_dir, "frames", f"{k:012}"), exist_ok=True)
+                os.makedirs(os.path.join(process_img_dir, "frames", f"{kidx:012}"), exist_ok=True)
 
-                # 補間した出力CNT
-                inter_cnt = k * fps_interpolation
-                # INDEXと比率（整数部と小数部）
-                inter_cnt_rate, inter_cnt_idx = math.modf(inter_cnt)
-                # logger.debug("フレーム補間: {0} -> {1}, idx: {2}, rate: {3}" % ( cnt, inter_cnt, inter_cnt_idx, inter_cnt_rate ))
+                # コピー対象の画像パス
+                target_path = resize_img_path.format(round(k))
 
-                # 前のフレーム
-                past_frame = cv2.imread(resize_img_path.format(int(inter_cnt_idx)))
-                # 今回のフレーム
-                now_frame = cv2.imread(resize_img_path.format(int(inter_cnt_idx + 1)))
+                if not os.path.exists(target_path):
+                    # 最終フレームとかで対象パスがない場合、ひとつ手前
+                    target_path = resize_img_path.format(round(k) - 1)
 
-                # 混ぜ合わせる比率
-                past_rate = inter_cnt_rate
-                now_rate = 1 - inter_cnt_rate
+                # 該当フレーム番号の画像をコピー
+                shutil.copy(target_path, process_img_path.format(kidx))
 
-                # フレーム補間をして出力する
-                target_output_frame = cv2.addWeighted(past_frame, past_rate, now_frame, now_rate, 0)
+            # # フレーム補間用比率
+            # fps_interpolation = fps / 30
 
-                # PNG出力
-                cv2.imwrite(process_img_path.format(k), target_output_frame)
+            # k = 0
+            # now_frame = None
 
-                # if k % 100 == 0:
-                #     logger.info(f"-- 補間生成中 {k}")
+            # # 最後の１つ手前（補間ができる状態）までループ
+            # for k in tqdm(range(round(count * (30 / fps)) - 1)):
 
-            # 最後にnowを出力
-            last_k = k + 1
-            cv2.imwrite(process_img_path.format(last_k), now_frame)
+            #     # 補間した出力CNT
+            #     inter_cnt = k * fps_interpolation
+            #     # INDEXと比率（整数部と小数部）
+            #     inter_cnt_rate, inter_cnt_idx = math.modf(inter_cnt)
+            #     # logger.debug("フレーム補間: {0} -> {1}, idx: {2}, rate: {3}" % ( cnt, inter_cnt, inter_cnt_idx, inter_cnt_rate ))
+
+            #     # 前のフレーム
+            #     past_frame = cv2.imread(resize_img_path.format(int(inter_cnt_idx)))
+            #     # 今回のフレーム
+            #     now_frame = cv2.imread(resize_img_path.format(int(inter_cnt_idx + 1)))
+
+            #     # 混ぜ合わせる比率
+            #     past_rate = inter_cnt_rate
+            #     now_rate = 1 - inter_cnt_rate
+
+            #     # フレーム補間をして出力する
+            #     target_output_frame = cv2.addWeighted(past_frame, past_rate, now_frame, now_rate, 0)
+
+            #     # PNG出力
+            #     cv2.imwrite(process_img_path.format(k), target_output_frame)
+
+            #     # if k % 100 == 0:
+            #     #     logger.info(f"-- 補間生成中 {k}")
+
+            # # 最後にnowを出力
+            # last_k = k + 1
+            # cv2.imwrite(process_img_path.format(last_k), now_frame)
 
             # 終わったら開放
             cap.release()
 
-            logger.info("【再チェック】\n　準備フォルダ: {0}, 横: {1}, 縦: {2}, フレーム数: {3}, fps: {4}", process_img_dir, width, height, last_k, 30)
+            logger.info("【再チェック】\n　準備フォルダ: {0}, 横: {1}, 縦: {2}, フレーム数: {3}, fps: {4}", process_img_dir, width, height, round(interpolations[-1]), 30)
         except Exception as e:
             logger.error("再エンコード失敗", e)
             return False, None

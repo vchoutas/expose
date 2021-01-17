@@ -16,8 +16,10 @@ numpy-quaternion
 bezier
 dlib
 imutils
+gast==0.2.2
 tensorflow-gpu==1.15
 cython
 scikit-image
-# setproctitle
+# for quaternion
 numba
+# setproctitle
