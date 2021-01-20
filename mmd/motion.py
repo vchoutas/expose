@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from numpy.lib.function_base import flip
 from mmd.module.MParams import BoneLinks
 import os
 import argparse
@@ -114,8 +115,6 @@ def execute(args):
                         
                         if is_flip:
                             flip_fnos.append(fno)
-                            # 最もデカいのを挿入
-                            leg_degrees.append(999999999)
                             continue
 
                         for jname, (bone_name, name_list, parent_list, initial_qq, ranges, diff_limits, is_hand, is_head) in VMD_CONNECTIONS.items():
@@ -149,7 +148,7 @@ def execute(args):
                                 qq *= motion.calc_bf(parent_name, bf.fno).rotation.inverted()
                             bf.rotation = qq * initial_qq * rotation * initial.inverted()
 
-                            motion.regist_bf(bf, bf.name, bf.fno)
+                            motion.regist_bf(bf, bf.name, bf.fno, is_key=(not is_flip))
                             target_bone_names[bf.name] = diff_limits
                                 
                     if "faces" in frame_joints and args.face_motion == 1:
@@ -177,70 +176,106 @@ def execute(args):
                 if args.smooth_key == 1:
                     logger.info("【No.{0}】スムージング開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
-                    with tqdm(total=(((len(list(target_bone_names.keys())) - 4) * len(fnos) * 2) + (2 * len(fnos) * 3) + (2 * len(fnos) * 2))) as pchar:
+                    with tqdm(total=(((len(list(target_bone_names.keys())) - 3) * len(fnos) * 3) + (3 * len(fnos)))) as pchar:
                         for bone_name in target_bone_names.keys():
                             xvalues = []
                             yvalues = []
                             zvalues = []
 
                             for fidx, fno in enumerate(fnos):
+                                pchar.update(1)
+                                prev_fno, next_fno = motion.get_bone_prev_next_fno(bone_name, fno=fno, is_key=True)
+
+                                prev_bf = motion.calc_bf(bone_name, prev_fno)
+                                next_bf = motion.calc_bf(bone_name, next_fno)
+
                                 if fno in flip_fnos or fno not in all_frame_joints:
-                                    # キーフレがないフレームの場合、前のをコピー
+                                    # キーフレがないフレームの場合、前後の線形補間
                                     if fidx == 0:
                                         xvalues.append(0)
                                         yvalues.append(0)
                                         zvalues.append(0)
                                     else:
-                                        xvalues.append(xvalues[-1])
-                                        yvalues.append(yvalues[-1])
-                                        zvalues.append(zvalues[-1])
+                                        now_rot = MQuaternion.slerp(prev_bf.rotation, next_bf.rotation, ((fno - prev_fno) / (next_fno - prev_fno)))
+                                        now_euler = now_rot.toEulerAngles()
+                                        xvalues.append(now_euler.x())
+                                        yvalues.append(now_euler.y())
+                                        zvalues.append(now_euler.z())
                                     continue
 
                                 now_bf = motion.calc_bf(bone_name, fno)
+
+                                # 前のキーフレから大きく変化しすぎてる場合、前後の線形補間をコピーしてスルー
+                                if fidx > 0:
+                                    dot = MQuaternion.dotProduct(now_bf.rotation, prev_bf.rotation)
+                                    if dot < 1 - ((now_bf.fno - prev_bf.fno) * (0.2 if bone_name in ["上半身", "下半身"] else 0.1)):
+                                        now_rot = MQuaternion.slerp(prev_bf.rotation, next_bf.rotation, ((fno - prev_fno) / (next_fno - prev_fno)))
+                                        now_euler = now_rot.toEulerAngles()
+                                        xvalues.append(now_euler.x())
+                                        yvalues.append(now_euler.y())
+                                        zvalues.append(now_euler.z())
+
+                                        # フリップに相当している場合、キーフレ削除
+                                        if fno in motion.bones[bone_name]:
+                                            del motion.bones[bone_name][fno]
+
+                                        if bone_name in ["上半身", "下半身"]:
+                                            # 体幹の場合、フリップに追加
+                                            flip_fnos.append(fno)
+
+                                        continue
+
                                 euler = now_bf.rotation.toEulerAngles()
                                 xvalues.append(euler.x())
                                 yvalues.append(euler.y())
                                 zvalues.append(euler.z())
 
-                                motion.regist_bf(now_bf, now_bf.name, now_bf.fno, is_key=now_bf.key)
-
-                                pchar.update(1)
-                            
                             smooth_xs = []                            
                             smooth_ys = []
                             smooth_zs = []
 
-                            if bone_name in ["右ひじ", "左ひじ"]:
-                                # 反応を良くする
-                                rxfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
-                                ryfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
-                                rzfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
-                                for fidx, fno in enumerate(fnos):
-                                    smooth_xs.append(rxfilter(xvalues[fidx], fno))
-                                    smooth_ys.append(ryfilter(yvalues[fidx], fno))
-                                    smooth_zs.append(rzfilter(zvalues[fidx], fno))
-                                    pchar.update(1)
+
+                            if bone_name in ["上半身2"]:
+                                # 強制的に平滑化
+                                smooth_xs = smooth_values(9, xvalues)
+                                smooth_ys = smooth_values(9, yvalues)
+                                smooth_zs = smooth_values(9, zvalues)
+
                             elif bone_name in ["上半身", "下半身"]:
                                 smooth_xs = smooth_values(9, xvalues)
                                 smooth_zs = smooth_values(9, zvalues)
 
                                 # 体幹Yは回転を殺さないようフィルタスムージング
-                                ryfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
+                                ryfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
                                 smooth_ys = []
                                 for fidx, fno in enumerate(fnos):
                                     smooth_ys.append(ryfilter(yvalues[fidx], fno))
                                     pchar.update(1)
-                            else:
+
+                            elif bone_name in ["左手首", "右手首"]:
                                 # 他は強制的に平滑化
-                                smooth_xs = smooth_values(9, xvalues)
-                                smooth_ys = smooth_values(9, yvalues)
-                                smooth_zs = smooth_values(9, zvalues)
+                                smooth_xs = smooth_values(17, xvalues)
+                                smooth_ys = smooth_values(17, yvalues)
+                                smooth_zs = smooth_values(17, zvalues)
+
+                            else:
+                                rxfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                                ryfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                                rzfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                                for fidx, fno in enumerate(fnos):
+                                    smooth_xs.append(rxfilter(xvalues[fidx], fno))
+                                    smooth_ys.append(ryfilter(yvalues[fidx], fno))
+                                    smooth_zs.append(rzfilter(zvalues[fidx], fno))
+                                    pchar.update(1)
 
                             for fidx, fno in enumerate(fnos):
                                 # 平滑化したのを登録
-                                now_bf = motion.calc_bf(bone_name, fno)
-                                now_bf.rotation = MQuaternion.fromEulerAngles(smooth_xs[fidx], smooth_ys[fidx], smooth_zs[fidx])
-                                motion.regist_bf(now_bf, now_bf.name, now_bf.fno, is_key=now_bf.key)
+                                if fno in flip_fnos and fno in motion.bones[bone_name] and bone_name in ["上半身", "下半身"]:
+                                    del motion.bones[bone_name][fno]
+                                else:
+                                    now_bf = motion.calc_bf(bone_name, fno)
+                                    now_bf.rotation = MQuaternion.fromEulerAngles(smooth_xs[fidx], smooth_ys[fidx], smooth_zs[fidx])
+                                    motion.regist_bf(now_bf, now_bf.name, now_bf.fno, is_key=now_bf.key)
                                 pchar.update(1)
 
                 logger.info("【No.{0}】移動ボーン初期化開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
@@ -318,7 +353,7 @@ def execute(args):
                 pelvis_zs = []
                 for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} ... ")):
                     if fno in flip_fnos or fno not in all_frame_joints:
-                        # キーフレがないフレームの場合、Yだけ前のをコピー
+                        # キーフレがないフレームの場合、前のをコピー
                         if fidx == 0:
                             pelvis_xs.append(0)
                             pelvis_ys.append(0)
@@ -334,8 +369,6 @@ def execute(args):
                     if start_z == 9999999999:
                         # 最初の人物の深度を0にする
                         start_z = pelvis_vec.z()
-                    
-                    pelvis_y = pelvis_vec.y() - upright_pelvis_vec.y()
                     
                     # Yは先に接地を検討する ----------
                     now_left_heel_3ds_dic = calc_global_pos(model, left_heel_links, motion, fno)
@@ -360,16 +393,15 @@ def execute(args):
                         # 右足水平の場合
                         diff_y = min(now_right_toe_vec.y(), now_right_heel_vec.y())
 
-                    pelvis_y -= diff_y                    
-                    pelvis_ys.append(pelvis_y)
-
                     pelvis_xs.append(pelvis_vec.x())
+                    pelvis_ys.append(pelvis_vec.y() - upright_pelvis_vec.y() - diff_y)
                     pelvis_zs.append(pelvis_vec.z() - start_z)
 
                 logger.info("【No.{0}】センター登録開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
                 smooth_pelvis_xs = smooth_values(9, pelvis_xs)
-                smooth_pelvis_zs = smooth_values(9, pelvis_zs)
+                smooth_pelvis_ys = smooth_values(11, pelvis_ys)
+                smooth_pelvis_zs = smooth_values(11, pelvis_zs)
 
                 for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} ... ")):
                     center_bf = VmdBoneFrame()
@@ -381,18 +413,12 @@ def execute(args):
                     center_bf.position.setZ(smooth_pelvis_zs[fidx])
                     motion.regist_bf(center_bf, center_bf.name, fno)
 
-                if args.upper_motion == 0:
-                    # グルーブも一定区間平滑化処理をかける
-                    smooth_pelvis_ys = smooth_values(11, pelvis_ys)
-
-                    logger.info("【No.{0}】グルーブ計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
-
-                    for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:03} ... ")):
-                        # Yはグルーブ
+                    # Yはグルーブ
+                    if args.upper_motion == 0:
                         groove_bf = VmdBoneFrame()
                         groove_bf.fno = fno
                         groove_bf.set_name("グルーブ")
-                        groove_bf.position.setY(smooth_pelvis_ys[fidx])
+                        groove_bf.position.setY(max(-7, smooth_pelvis_ys[fidx]))
                         motion.regist_bf(groove_bf, groove_bf.name, fno)
 
                 logger.info("【No.{0}】右足IK計算開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
@@ -414,15 +440,16 @@ def execute(args):
 
                     with tqdm(total=(2 * len(fnos))) as pchar:
                         for bone_name in ["左足ＩＫ", "右足ＩＫ"]:
-                            mxfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.000000001, dcutoff=1)
-                            myfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.000000001, dcutoff=1)
-                            mzfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.000000001, dcutoff=1)
-                            rxfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
-                            ryfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
-                            rzfilter = OneEuroFilter(freq=30, mincutoff=0.5, beta=0.00000000001, dcutoff=1)
+                            mxfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                            myfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                            mzfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                            rxfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                            ryfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
+                            rzfilter = OneEuroFilter(freq=30, mincutoff=1, beta=0.000000000000001, dcutoff=1)
 
                             for fidx, fno in enumerate(fnos):
                                 bf = motion.calc_bf(bone_name, fno)
+                                pchar.update(1)
 
                                 if fno in flip_fnos or fno not in all_frame_joints:
                                     continue
@@ -439,8 +466,6 @@ def execute(args):
                                     bf.position.setZ(mzfilter(bf.position.z(), fno))
                                 
                                 motion.regist_bf(bf, bone_name, fno, is_key=bf.key)
-
-                                pchar.update(1)
 
             if args.face_motion == 1:
                 # モーフはキーフレ上限があるので、削除処理を入れておく
@@ -560,10 +585,6 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
         is_fix_right = False
 
         if right_heel_x_diff < image_offset[0] and right_heel_y_diff < image_offset[1]:
-            # 右足首固定
-            now_right_heel_3ds_dic = calc_global_pos(model, right_heel_links, motion, fno)
-            now_right_heel_vec = now_right_heel_3ds_dic["右かかと"]
-
             # 右足ＩＫ固定
             now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
             prev_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", prev_fno)
@@ -585,10 +606,6 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
 
         elif (right_big_toe_x_diff < image_offset[0] and right_big_toe_y_diff < image_offset[1]) or \
                 (right_small_toe_x_diff < image_offset[0] and right_small_toe_y_diff < image_offset[1]):
-            # 右つま先首固定
-            now_right_toe_3ds_dic = calc_global_pos(model, right_heel_links, motion, fno)
-            now_right_toe_vec = now_right_toe_3ds_dic["右つま先"]
-
             # 右つま先ＩＫ固定
             now_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_ik_links, motion, fno)
             prev_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_ik_links, motion, prev_fno)
@@ -611,10 +628,6 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
             is_fix_right = True
 
         if left_heel_x_diff < image_offset[0] and left_heel_y_diff < image_offset[1]:
-            # 左足首固定
-            now_left_heel_3ds_dic = calc_global_pos(model, left_heel_links, motion, fno)
-            now_left_heel_vec = now_left_heel_3ds_dic["左かかと"]
-
             # 左足ＩＫ固定
             now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
             prev_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", prev_fno)
@@ -635,10 +648,6 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
 
         elif (left_big_toe_x_diff < image_offset[0] and left_big_toe_y_diff < image_offset[1]) or \
                 (left_small_toe_x_diff < image_offset[0] and left_small_toe_y_diff < image_offset[1]):
-            # 左つま先首固定
-            now_left_toe_3ds_dic = calc_global_pos(model, left_heel_links, motion, fno)
-            now_left_toe_vec = now_left_toe_3ds_dic["左つま先"]
-
             # 左つま先ＩＫ固定
             now_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_ik_links, motion, fno)
             prev_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_ik_links, motion, prev_fno)

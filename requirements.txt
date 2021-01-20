@@ -20,6 +20,7 @@ gast==0.2.2
 tensorflow-gpu==1.15
 cython
 scikit-image
-# for quaternion
+# for bezier
 numba
+scipy
 # setproctitle

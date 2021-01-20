@@ -40,8 +40,6 @@ def execute(args):
             frame_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "frame_*.json")), key=sort_by_numeric)
 
             all_joints = {}
-            all_roots = {"x": {}, "y": {}, "z": {}, "depth": {}}
-            prev_fno = -1
 
             for frame_json_path in tqdm(frame_json_pathes, desc=f"Read No.{oidx:03} ... "):
                 m = frame_pattern.match(os.path.basename(frame_json_path))
@@ -68,10 +66,6 @@ def execute(args):
                         all_joints[(jname, 'y')][fno] = joint["y"]
                         all_joints[(jname, 'z')][fno] = joint["z"]
                     
-                    for f in range(prev_fno + 1, fno + 1):
-                        # fnoの抜けがあった場合、後ろの値で埋める
-                        all_roots['depth'][f] = frame_joints["depth"]["depth"]
-
                     if "faces" in frame_joints:
                         # 表情グローバル座標を保持
                         for fname, face in frame_joints["faces"].items():
@@ -95,42 +89,14 @@ def execute(args):
                             all_joints[(ename, 'ex')][fno] = eye["x"]
                             all_joints[(ename, 'ey')][fno] = eye["y"]
 
-                    if "root" in frame_joints:
-                        for f in range(prev_fno + 1, fno + 1):
-                            # fnoの抜けがあった場合、後ろの値で埋める
-                            all_roots['x'][f] = frame_joints["root"]["x"]
-                            all_roots['y'][f] = frame_joints["root"]["y"]
-                            all_roots['z'][f] = frame_joints["root"]["z"]
-
-                    prev_fno = fno
-
             # スムージング
             for (jname, axis), joints in tqdm(all_joints.items(), desc=f"Filter No.{oidx:03} ... "):
-                filter = OneEuroFilter(freq=30, mincutoff=0.1, beta=0.005, dcutoff=0.1)
+                filter = OneEuroFilter(freq=30, mincutoff=1, beta=0.00000000001, dcutoff=1)
                 for fno, joint in joints.items():
                     all_joints[(jname, axis)][fno] = filter(joint, fno)
 
-            # センター
-            avg_roots = {'x': [], 'y': [], 'z': []}
-            for axis, joints in tqdm(all_roots.items(), desc=f"Center No.{oidx:03} ... "):
-                data = np.array(list(all_roots[axis].values()))
-                delimiter = 11
-                # 前後のフレームで平均を取る
-                if len(data) > delimiter:
-                    move_avg = np.convolve(data, np.ones(delimiter)/delimiter, 'valid')
-                    # 移動平均でデータ数が減るため、前と後ろに同じ値を繰り返しで補填する
-                    fore_n = int((delimiter - 1)/2)
-                    back_n = delimiter - 1 - fore_n
-                    avg_roots[axis] = np.hstack((np.tile([move_avg[0]], fore_n), move_avg, np.tile([move_avg[-1]], back_n)))
-                else:
-                    avg = np.mean(data)
-                    avg_roots[axis] = np.tile([avg], len(data))
-
             # 出力先ソート済みフォルダ
             smoothed_person_dir_path = os.path.join(args.img_dir, "smooth", f"{oidx:03}")
-
-            # 先頭キーフレ
-            start_fno = sorted(list(all_roots['depth'].keys()))[0]
 
             os.makedirs(smoothed_person_dir_path, exist_ok=True)
 
@@ -151,10 +117,6 @@ def execute(args):
                         frame_joints["joints"][jname]["y"] = all_joints[(jname, 'y')][fno]
                         frame_joints["joints"][jname]["z"] = all_joints[(jname, 'z')][fno]
 
-                    if len(avg_roots['depth']) > fno - start_fno:
-                        # 移動平均をスムージングしたものとして出力
-                        frame_joints["depth"]["depth"] = avg_roots['depth'][fno - start_fno]
-
                     # 表情グローバル座標を保存
                     if "faces" in frame_joints:
                         for fname, face in frame_joints["faces"].items():
@@ -166,14 +128,6 @@ def execute(args):
                         for ename, eye in frame_joints["faces"].items():
                             frame_joints["faces"][ename]["x"] = all_joints[(ename, 'fx')][fno]
                             frame_joints["faces"][ename]["y"] = all_joints[(ename, 'fy')][fno]
-
-                    # センターグローバル座標を保存
-                    if "root" in frame_joints:
-                        if len(avg_roots['x']) > fno - start_fno:
-                            # 移動平均をスムージングしたものとして出力
-                            frame_joints["root"]["x"] = avg_roots['x'][fno - start_fno]
-                            frame_joints["root"]["y"] = avg_roots['y'][fno - start_fno]
-                            frame_joints["root"]["z"] = avg_roots['z'][fno - start_fno]
 
                     smooth_json_path = os.path.join(smoothed_person_dir_path, f"smooth_{fno:012}.json")
                     
