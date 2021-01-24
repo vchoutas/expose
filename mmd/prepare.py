@@ -134,8 +134,13 @@ def execute(args):
                     # 最終フレームとかで対象パスがない場合、ひとつ手前
                     target_path = resize_img_path.format(round(k) - 1)
 
+                process_path = process_img_path.format(kidx)
+                if not os.path.exists(target_path):
+                    # 最終フレームとかで対象パスがない場合、ひとつ手前
+                    target_path = process_img_path.format(kidx - 1)
+
                 # 該当フレーム番号の画像をコピー
-                shutil.copy(target_path, process_img_path.format(kidx))
+                shutil.copy(target_path, process_path)
 
             # # フレーム補間用比率
             # fps_interpolation = fps / 30
