@@ -113,10 +113,21 @@ def draw_bbox(img, bbox, score, classes, track_id = -1, img_id = -1):
                     thickness = 2,
                     lineType = cv2.LINE_AA)
     else:
+        # 上にも記載
         cv2.putText(img,
                     #'{:s} {:.2f}'.format("ID:"+str(track_id), score),
-                    '{:s}'.format("ID:"+str(track_id)),
+                    '{:s}'.format("INDEX:"+str(track_id)),
                     (int(bbox[0]), int(bbox[1]-5)),
+                    font,
+                    fontScale=0.8,
+                    color=color,
+                    thickness = 2,
+                    lineType = cv2.LINE_AA)
+        # 下にも記載
+        cv2.putText(img,
+                    #'{:s} {:.2f}'.format("ID:"+str(track_id), score),
+                    '{:s}'.format("INDEX:"+str(track_id)),
+                    (int(bbox[0]+ bbox[2]), int(bbox[1] + bbox[3]) + 5),
                     font,
                     fontScale=0.8,
                     color=color,
