@@ -23,5 +23,3 @@ scikit-image
 # for bezier
 numba
 scipy
-# setproctitle
-threadpoolctl
