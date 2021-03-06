@@ -20,10 +20,9 @@ python setup.py install
 
 ----------
 
-python executor.py --video-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740.mp4 --process prepare,expose,tracking --body-motion 1 --hand-motion 1 --face-motion 1 --upper-motion 0 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0
+python executor.py --video-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740.mp4 --process prepare,expose,tracking --verbose 20 --log-mode 0
 
-
-python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740_mp4_20210114_091153 --process expose,tracking --body-motion 1 --hand-motion 1 --face-motion 1 --upper-motion 0 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0 
+python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740_mp4_20210223_111446 --process expose,tracking --verbose 20 --log-mode 0
 
 ----------
 

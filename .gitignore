@@ -16,3 +16,4 @@ data/
 *.dat
 
 lighttrack/logs/test_logs.txt
+test.bat
