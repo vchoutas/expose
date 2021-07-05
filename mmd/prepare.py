@@ -110,8 +110,8 @@ def execute(args):
                         logger.error(e)
 
                     # opencv用に変換
-                    # out_frame = img_as_ubyte(img)
-                    out_frame = np.array(img, dtype=np.uint8)
+                    out_frame = img_as_ubyte(img)
+                    # out_frame = np.array(img, dtype=np.uint8)
 
                     # PNG出力
                     cv2.imwrite(resize_img_path.format(n), out_frame)
