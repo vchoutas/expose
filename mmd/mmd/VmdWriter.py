@@ -4,17 +4,22 @@ import struct
 from mmd.mmd.PmxData import PmxModel
 from mmd.mmd.VmdData import VmdMotion
 from mmd.utils.MLogger import MLogger # noqa
+from tqdm import tqdm
 
 logger = MLogger(__name__)
 
 
 class VmdWriter():
-    def __init__(self, model: PmxModel, motion: VmdMotion, output_vmd_path: str):
+    def __init__(self):
+        self.model = None
+        self.motion = None
+        self.output_vmd_path = ''
+
+    def write(self, model: PmxModel, motion: VmdMotion, output_vmd_path: str):
         self.model = model
         self.motion = motion
         self.output_vmd_path = output_vmd_path
 
-    def write(self):
         """Write VMD data to a file"""
         fout = open(self.output_vmd_path, "wb")
 
@@ -43,10 +48,10 @@ class VmdWriter():
         
         # bone frames
         fout.write(struct.pack('<L', len(bone_frames)))  # ボーンフレーム数
-        for bf in bone_frames:
+        for bf in tqdm(bone_frames, desc=f'{self.model.name}: Bone'):
             bf.write(fout)
         fout.write(struct.pack('<L', len(morph_frames)))  # 表情キーフレーム数
-        for mf in morph_frames:
+        for mf in tqdm(morph_frames, desc=f'{self.model.name}: Morph'):
             mf.write(fout)
         fout.write(struct.pack('<L', len(camera_frames)))  # カメラキーフレーム数
         for cf in camera_frames:

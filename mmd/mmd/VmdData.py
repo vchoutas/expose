@@ -254,12 +254,17 @@ class VmdInfoIk:
     def __init__(self, name='', onoff=0):
         self.bname = b''
         self.name = name
+        # on: 1, off: 0
         self.onoff = onoff
 
+    def set_name(self, name):
+        self.name = name
+        self.bname = b'' if not name else name.encode('cp932').decode('shift_jis').encode('shift_jis')[:15].ljust(15, b'\x00')
 
 class VmdShowIkFrame:
     def __init__(self):
         self.fno = 0
+        # show: 1, hide: 0
         self.show = 0
         self.ik_count = 0
         self.ik = []

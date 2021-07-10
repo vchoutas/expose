@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 #
 import _pickle as cPickle
-from abc import ABCMeta, abstractmethod
-from collections import OrderedDict
 import math
 import numpy as np
 
@@ -18,15 +16,17 @@ class Deform:
     def __init__(self, index0):
         self.index0 = index0
 
+
 class Bdef1(Deform):
     def __init__(self, index0):
         self.index0 = index0
     
-    def get_idx_list(self):
+    def get_idx_list(self, weight=0):
         return [self.index0]
         
     def __str__(self):
         return "<Bdef1 {0}>".format(self.index0)
+
 
 class Bdef2(Deform):
     def __init__(self, index0, index1, weight0):
@@ -34,11 +34,17 @@ class Bdef2(Deform):
         self.index1 = index1
         self.weight0 = weight0
         
-    def get_idx_list(self):
-        return [self.index0, self.index1]
+    def get_idx_list(self, weight=0):
+        idx_list = []
+        if self.weight0 >= weight:
+            idx_list.append(self.index0)
+        if (1 - self.weight0) >= weight:
+            idx_list.append(self.index1)
+        return idx_list
         
     def __str__(self):
         return "<Bdef2 {0}, {1}, {2}>".format(self.index0, self.index1, self.weight0)
+
 
 class Bdef4(Deform):
     def __init__(self, index0, index1, index2, index3, weight0, weight1, weight2, weight3):
@@ -51,12 +57,14 @@ class Bdef4(Deform):
         self.weight2 = weight2
         self.weight3 = weight3
         
-    def get_idx_list(self):
-        return [self.index0, self.index1, self.index2, self.index3]
+    def get_idx_list(self, weight=0):
+        weight_idxs = np.where(np.array([self.weight0, self.weight1, self.weight2, self.weight3]) >= weight)
+        return (np.array([self.index0, self.index1, self.index2, self.index3])[weight_idxs]).tolist()
 
     def __str__(self):
         return "<Bdef4 {0}:{1}, {2}:{3}, {4}:{5}, {6}:{7}>".format(self.index0, self.index1, self.index2, self.index3, self.weight0, self.weight1, self.weight2, self.weight3)
             
+
 class Sdef(Deform):
     def __init__(self, index0, index1, weight0, sdef_c, sdef_r0, sdef_r1):
         self.index0 = index0
@@ -66,12 +74,13 @@ class Sdef(Deform):
         self.sdef_r0 = sdef_r0
         self.sdef_r1 = sdef_r1
         
-    def get_idx_list(self):
+    def get_idx_list(self, weight=0):
         return [self.index0, self.index1]
 
     def __str__(self):
         return "<Sdef {0}, {1}, {2}, {3} {4} {5}>".format(self.index0, self.index1, self.weight0, self.sdef_c, self.sdef_r0, self.sdef_r1)
     
+
 class Qdef(Deform):
     def __init__(self, index0, index1, weight0, sdef_c, sdef_r0, sdef_r1):
         self.index0 = index0
@@ -81,7 +90,7 @@ class Qdef(Deform):
         self.sdef_r0 = sdef_r0
         self.sdef_r1 = sdef_r1
         
-    def get_idx_list(self):
+    def get_idx_list(self, weight=0):
         return [self.index0, self.index1]
 
     def __str__(self):
@@ -155,7 +164,6 @@ class Vertex:
                 return self.deform.index0
 
         return self.deform.index0
-    
 
 
 # 材質構造-----------------------
@@ -190,6 +198,7 @@ class Material:
                    self.sphere_texture_index, self.sphere_mode, self.toon_sharing_flag,
                    self.toon_texture_index, self.comment, self.vertex_count)
 
+
 class Ik:
     def __init__(self, target_index, loop, limit_radian, link=None):
         self.target_index = target_index
@@ -200,6 +209,7 @@ class Ik:
     def __str__(self):
         return "<Ik target_index:{0}, loop:{1}, limit_radian:{2}, link:{3}".format(self.target_index, self.loop, self.limit_radian, self.link)
         
+
 class IkLink:
 
     def __init__(self, bone_index, limit_angle, limit_min=None, limit_max=None):
@@ -210,6 +220,7 @@ class IkLink:
 
     def __str__(self):
         return "<IkLink bone_index:{0}, limit_angle:{1}, limit_min:{2}, limit_max:{3}".format(self.bone_index, self.limit_angle, self.limit_min, self.limit_max)
+        
         
 # ボーン構造-----------------------
 class Bone:
@@ -328,6 +339,46 @@ class Bone:
 
 
 # モーフ構造-----------------------
+class GroupMorphData:
+    def __init__(self, morph_index, value):
+        self.morph_index = morph_index
+        self.value = value
+
+
+class VertexMorphOffset:
+    def __init__(self, vertex_index, position_offset):
+        self.vertex_index = vertex_index
+        self.position_offset = position_offset
+
+
+class BoneMorphData:
+    def __init__(self, bone_index, position, rotation):
+        self.bone_index = bone_index
+        self.position = position
+        self.rotation = rotation
+
+
+class UVMorphData:
+    def __init__(self, vertex_index, uv):
+        self.vertex_index = vertex_index
+        self.uv = uv
+
+
+class MaterialMorphData:
+    def __init__(self, material_index, calc_mode, diffuse, specular, specular_factor, ambient, edge_color, edge_size, texture_factor, sphere_texture_factor, toon_texture_factor):
+        self.material_index = material_index
+        self.calc_mode = calc_mode
+        self.diffuse = diffuse
+        self.specular = specular
+        self.specular_factor = specular_factor
+        self.ambient = ambient
+        self.edge_color = edge_color
+        self.edge_size = edge_size
+        self.texture_factor = texture_factor
+        self.sphere_texture_factor = sphere_texture_factor
+        self.toon_texture_factor = toon_texture_factor
+
+
 class Morph:
     def __init__(self, name, english_name, panel, morph_type, offsets=None):
         self.index = 0
@@ -357,48 +408,14 @@ class Morph:
         else:
             return "？"
             
-    class GroupMorphData:
-        def __init__(self, morph_index, value):
-            self.morph_index = morph_index
-            self.value = value
-
-    class VertexMorphOffset:
-        def __init__(self, vertex_index, position_offset):
-            self.vertex_index = vertex_index
-            self.position_offset = position_offset
-
-    class BoneMorphData:
-        def __init__(self, bone_index, position, rotation):
-            self.bone_index = bone_index
-            self.position = position
-            self.rotation = rotation
-
-    class UVMorphData:
-        def __init__(self, vertex_index, uv):
-            self.vertex_index = vertex_index
-            self.uv = uv
-
-    class MaterialMorphData:
-        def __init__(self, material_index, calc_mode, diffuse, specular, specular_factor, ambient, edge_color, edge_size, texture_factor, sphere_texture_factor, toon_texture_factor):
-            self.material_index = material_index
-            self.calc_mode = calc_mode
-            self.diffuse = diffuse
-            self.specular = specular
-            self.specular_factor = specular_factor
-            self.ambient = ambient
-            self.edge_color = edge_color
-            self.edge_size = edge_size
-            self.texture_factor = texture_factor
-            self.sphere_texture_factor = sphere_texture_factor
-            self.toon_texture_factor = toon_texture_factor
-
 
 # 表示枠構造-----------------------
 class DisplaySlot:
-    def __init__(self, name, english_name, special_flag, references=None):
+    def __init__(self, name, english_name, special_flag, display_type=0, references=None):
         self.name = name
         self.english_name = english_name
         self.special_flag = special_flag
+        self.display_type = display_type
         self.references = references or []
 
     def __str__(self):
@@ -451,13 +468,14 @@ class RigidBody:
         # 剛体の形状別の衝突判定用
         if self.shape_type == self.SHAPE_SPHERE:
             return Sphere(fno, self.shape_size, self.shape_position, self.shape_rotation, self.bone_name, bone_pos, bone_matrix, is_aliginment, \
-                                    is_arm_left, self.is_arm_upper, self.is_small, False)
+                          is_arm_left, self.is_arm_upper, self.is_small, False)
         elif self.shape_type == self.SHAPE_BOX:
             return Box(fno, self.shape_size, self.shape_position, self.shape_rotation, self.bone_name, bone_pos, bone_matrix, is_aliginment, \
-                                 is_arm_left, self.is_arm_upper, self.is_small, True)
+                       is_arm_left, self.is_arm_upper, self.is_small, True)
         else:
             return Capsule(fno, self.shape_size, self.shape_position, self.shape_rotation, self.bone_name, bone_pos, bone_matrix, is_aliginment, \
-                                     is_arm_left, self.is_arm_upper, self.is_small, True)
+                           is_arm_left, self.is_arm_upper, self.is_small, True)
+
 
 class RigidBodyParam:
     def __init__(self, mass, linear_damping, angular_damping, restitution, friction):
@@ -471,6 +489,7 @@ class RigidBodyParam:
         return "<RigidBodyParam mass:{0}, linear_damping:{1}, angular_damping:{2}, restitution:{3}, friction: {4}".format(
             self.mass, self.linear_damping, self.angular_damping, self.restitution, self.friction)
             
+
 # OBB（有向境界ボックス：Oriented Bounding Box）
 class OBB:
     def __init__(self, fno, shape_size, shape_position, shape_rotation, bone_name, bone_pos, bone_matrix, is_aliginment, is_arm_left, is_arm_upper, is_small, is_init_rot):
@@ -508,6 +527,7 @@ class OBB:
     def get_collistion(self, point, root_global_pos, max_length):
         pass
     
+
 # 球剛体
 class Sphere(OBB):
     def __init__(self, *args):
@@ -578,11 +598,12 @@ class Sphere(OBB):
                 z_distance = new_z_local.distanceToPoint(local_point)
 
             logger.debug("f: %s, y: %s, yt: %s, sy: %s, xt: %s, sx: %s, zt: %s, sz: %s, xd: %s, zd: %s, l: %s, d: %s, xl: %s, zl: %s, xr: %s, zr: %s", \
-                            self.fno, local_point.y() / y, y_theta, sin_y_theta, x_theta, sin_x_theta, z_theta, sin_z_theta, x_distance, z_distance, local_point.to_log(), d, \
-                            new_x_local.to_log(), new_z_local.to_log(), rep_x_collision_vec, rep_z_collision_vec)
+                         self.fno, local_point.y() / y, y_theta, sin_y_theta, x_theta, sin_x_theta, z_theta, sin_z_theta, x_distance, z_distance, local_point.to_log(), d, \
+                         new_x_local.to_log(), new_z_local.to_log(), rep_x_collision_vec, rep_z_collision_vec)
 
         # 3方向の間に点が含まれていたら衝突あり
         return (collision, near_collision, x_distance, z_distance, rep_x_collision_vec, rep_z_collision_vec)
+
 
 # 箱剛体
 class Box(OBB):
@@ -721,9 +742,10 @@ class Box(OBB):
                 z_distance = new_z_local.distanceToPoint(local_point)
 
             logger.debug("f: %s, xd: %s, zd: %s, l: %s, xl: %s, zl: %s, xr: %s, zr: %s", \
-                            self.fno, x_distance, z_distance, local_point.to_log(), new_x_local.to_log(), new_z_local.to_log(), rep_x_collision_vec, rep_z_collision_vec)
+                         self.fno, x_distance, z_distance, local_point.to_log(), new_x_local.to_log(), new_z_local.to_log(), rep_x_collision_vec, rep_z_collision_vec)
 
         return (collision, near_collision, x_distance, z_distance, rep_x_collision_vec, rep_z_collision_vec)
+
 
 # カプセル剛体
 class Capsule(OBB):
@@ -844,9 +866,9 @@ class Capsule(OBB):
                 z_distance = new_z_local.distanceToPoint(local_point)
 
             logger.debug("f: %s, localy: %s, y_theta: %s, sin_y_theta: %s, x_theta: %s, sin_x_theta: %s, z_theta: %s, sin_z_theta: %s, x_distance: %s, z_distance: %s, "\
-                            "local_point: [%s], d: %s, new_x_local: %s, new_z_local: %s, rep_x_collision_vec: %s, rep_z_collision_vec: %s", \
-                            self.fno, local_point.y() / y, y_theta, sin_y_theta, x_theta, sin_x_theta, z_theta, sin_z_theta, x_distance, z_distance, local_point.to_log(), d, \
-                            new_x_local.to_log(), new_z_local.to_log(), rep_x_collision_vec, rep_z_collision_vec)
+                         "local_point: [%s], d: %s, new_x_local: %s, new_z_local: %s, rep_x_collision_vec: %s, rep_z_collision_vec: %s", \
+                         self.fno, local_point.y() / y, y_theta, sin_y_theta, x_theta, sin_x_theta, z_theta, sin_z_theta, x_distance, z_distance, local_point.to_log(), d, \
+                         new_x_local.to_log(), new_z_local.to_log(), rep_x_collision_vec, rep_z_collision_vec)
 
         # 3方向の間に点が含まれていたら衝突あり
         return (collision, near_collision, x_distance, z_distance, rep_x_collision_vec, rep_z_collision_vec)
@@ -1014,25 +1036,6 @@ class PmxModel:
 
         return diff_pos, from_qq
 
-    # 腕系サイジングが可能かチェック
-    def check_arm_bone_can_sizing(self):
-
-        target_bones = ["左腕", "左ひじ", "左手首", "右腕", "右ひじ", "右手首"]
-
-        cannot_sizing = "腕系処理をスキップします。\n腕系処理（腕スタンス補正・捩り分散・接触回避・位置合わせ）を実行したい場合、\n腕タブのチェックスキップFLGをONにして再実行してください。"
-
-        if not set(target_bones).issubset(self.bones.keys()):
-            logger.warning("腕・ひじ・手首の左右ボーンが揃ってないため、%s\nモデル: %s", cannot_sizing, self.name, decoration=MLogger.DECORATION_BOX)
-            return False
-        
-        for bone_name in self.bones.keys():
-            if ("腕IK" in bone_name or "腕ＩＫ" in bone_name or "うでIK" in bone_name or "うでＩＫ" in bone_name or "腕XIK" in bone_name):
-                # 腕IKが入ってて、かつそれが表示されてる場合、NG
-                logger.warning("モデルに「腕IK」に類するボーンが含まれているため、%s\nモデル: %s", cannot_sizing, self.name, decoration=MLogger.DECORATION_BOX)
-                return False
-
-        return True
-    
     # ボーンリンク生成
     def create_link_2_top_lr(self, *target_bone_types, **kwargs):
         is_defined = kwargs["is_defined"] if "is_defined" in kwargs else True
@@ -1130,494 +1133,6 @@ class PmxModel:
             self.get_child_bones(child_bone, bone_list)
 
         return bone_list
-
-    # ボーン関係親子のペア
-    PARENT_BORN_PAIR = {
-        "SIZING_ROOT_BONE": [""],
-        "全ての親": ["SIZING_ROOT_BONE"],
-        "センター": ["全ての親", "SIZING_ROOT_BONE"],
-        "グルーブ": ["センター"],
-        "センター実体": ["グルーブ", "センター"],
-        "腰": ["センター実体", "グルーブ", "センター"],
-        "足中間": ["下半身"],
-        "下半身": ["腰", "センター実体", "グルーブ", "センター"],
-        "上半身": ["腰", "センター実体", "グルーブ", "センター"],
-        "上半身2": ["上半身"],
-        "首根元": ["上半身2", "上半身"],
-        "首根元2": ["首根元", "上半身2", "上半身"],
-        "首": ["首根元2", "首根元", "上半身2", "上半身"],
-        "頭": ["首"],
-        "頭頂実体": ["頭"],
-        "左肩P": ["首根元2", "首根元", "上半身2", "上半身"],
-        "左肩": ["左肩P", "首根元2", "首根元", "上半身2", "上半身"],
-        "左肩下延長": ["左肩"],
-        "左肩C": ["左肩"],
-        "左腕": ["左肩C", "左肩"],
-        "左腕捩": ["左腕"],
-        "左腕ひじ中間": ["左腕捩", "左腕"],
-        "左ひじ": ["左腕捩", "左腕"],
-        "左ひじ実体": ["左ひじ"],
-        "左手捩": ["左ひじ"],
-        "左ひじ手首中間": ["左手捩", "左ひじ"],
-        "左ひじ手首中間実体": ["左ひじ手首中間"],
-        "左手首": ["左手捩", "左ひじ"],
-        "左手首実体": ["左手首"],
-        "左親指０": ["左手首"],
-        "左親指１": ["左親指０", "左手首"],
-        "左親指２": ["左親指１"],
-        "左親指先実体": ["左親指２"],
-        "左人指０": ["左手首"],
-        "左人指１": ["左人指０", "左手首"],
-        "左人指２": ["左人指１"],
-        "左人指３": ["左人指２"],
-        "左人指先実体": ["左人指３"],
-        "左中指０": ["左手首"],
-        "左中指１": ["左中指０", "左手首"],
-        "左中指２": ["左中指１"],
-        "左中指３": ["左中指２"],
-        "左中指先実体": ["左中指３"],
-        "左薬指０": ["左手首"],
-        "左薬指１": ["左薬指０", "左手首"],
-        "左薬指２": ["左薬指１"],
-        "左薬指３": ["左薬指２"],
-        "左薬指先実体": ["左薬指３"],
-        "左小指０": ["左手首"],
-        "左小指１": ["左小指０", "左手首"],
-        "左小指２": ["左小指１"],
-        "左小指３": ["左小指２"],
-        "左小指先実体": ["左小指３"],
-        "左足": ["足中間", "下半身"],
-        "左ひざ": ["左足"],
-        "左足首": ["左ひざ"],
-        "左つま先": ["左足首"],
-        "左足IK親": ["全ての親", "SIZING_ROOT_BONE"],
-        "左足IK親底実体": ["左足IK親"],
-        "左足ＩＫ": ["左足IK親", "全ての親", "SIZING_ROOT_BONE"],
-        "左つま先ＩＫ": ["左足ＩＫ"],
-        "左足ＩＫ底実体": ["左足ＩＫ"],
-        "左足先EX": ["左つま先ＩＫ", "左足ＩＫ"],
-        "左足底実体": ["左足先EX", "左つま先ＩＫ", "左足ＩＫ"],
-        "左つま先実体": ["左足底実体", "左足先EX", "左つま先ＩＫ", "左足ＩＫ"],
-        "右肩P": ["首根元2", "首根元", "上半身2", "上半身"],
-        "右肩": ["右肩P", "首根元2", "首根元", "上半身2", "上半身"],
-        "右肩下延長": ["右肩"],
-        "右肩C": ["右肩"],
-        "右腕": ["右肩C", "右肩"],
-        "右腕捩": ["右腕"],
-        "右腕ひじ中間": ["右腕捩", "右腕"],
-        "右ひじ": ["右腕捩", "右腕"],
-        "右ひじ実体": ["右ひじ"],
-        "右手捩": ["右ひじ"],
-        "右ひじ手首中間": ["右手捩", "右ひじ"],
-        "右ひじ手首中間実体": ["右ひじ手首中間"],
-        "右手首": ["右手捩", "右ひじ"],
-        "右手首実体": ["右手首"],
-        "右親指０": ["右手首"],
-        "右親指１": ["右親指０", "右手首"],
-        "右親指２": ["右親指１"],
-        "右親指先実体": ["右親指２"],
-        "右人指０": ["右手首"],
-        "右人指１": ["右人指０", "右手首"],
-        "右人指２": ["右人指１"],
-        "右人指３": ["右人指２"],
-        "右人指先実体": ["右人指３"],
-        "右中指０": ["右手首"],
-        "右中指１": ["右中指０", "右手首"],
-        "右中指２": ["右中指１"],
-        "右中指３": ["右中指２"],
-        "右中指先実体": ["右中指３"],
-        "右薬指０": ["右手首"],
-        "右薬指１": ["右薬指０", "右手首"],
-        "右薬指２": ["右薬指１"],
-        "右薬指３": ["右薬指２"],
-        "右薬指先実体": ["右薬指３"],
-        "右小指０": ["右手首"],
-        "右小指１": ["右小指０", "右手首"],
-        "右小指２": ["右小指１"],
-        "右小指３": ["右小指２"],
-        "右小指先実体": ["右小指３"],
-        "右足": ["足中間", "下半身"],
-        "右ひざ": ["右足"],
-        "右足首": ["右ひざ"],
-        "右つま先": ["右足首"],
-        "右足IK親": ["全ての親", "SIZING_ROOT_BONE"],
-        "右足IK親底実体": ["右足IK親"],
-        "右足ＩＫ": ["右足IK親", "全ての親", "SIZING_ROOT_BONE"],
-        "右つま先ＩＫ": ["右足ＩＫ"],
-        "右足ＩＫ底実体": ["右足ＩＫ"],
-        "右足先EX": ["右つま先ＩＫ", "右足ＩＫ"],
-        "右足底実体": ["右足先EX", "右つま先ＩＫ", "右足ＩＫ"],
-        "右つま先実体": ["右足底実体", "右足先EX", "右つま先ＩＫ", "右足ＩＫ"],
-        "左目": ["頭"],
-        "右目": ["頭"]
-    }
-    
-    # 頭頂の頂点を取得
-    def get_head_top_vertex(self):
-        bone_name_list = ["頭"]
-
-        # まずX制限をかけて頂点を取得する
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_original, def_is_target=self.def_is_target_x_limit)
-
-        if not up_max_vertex:
-
-            # 頭頂頂点が取れなかった場合、X制限を外す
-            up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-                back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-                = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_original, def_is_target=None)
-
-            if not up_max_vertex:
-                if "頭" in self.bones:
-                    return Vertex(-1, self.bones["頭"].position.copy(), MVector3D(), [], [], Bdef1(-1), -1)
-                elif "首" in self.bones:
-                    return Vertex(-1, self.bones["首"].position.copy(), MVector3D(), [], [], Bdef1(-1), -1)
-                else:
-                    return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        return up_max_vertex
-    
-    # 頭用剛体生成
-    def get_head_rigidbody(self):
-        bone_name_list = ["頭"]
-
-        # 制限なしで前後左右上下
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_original, def_is_target=None)
-
-        if up_max_vertex and down_max_vertex and right_max_vertex and left_max_vertex and back_max_vertex and front_max_vertex:
-            # Yは念のため首ボーンまで
-            y_bottom = max(down_max_vertex.position.y(), self.bones["首"].position.y())
-            # 頂点が取れた場合、半径算出
-            # y_len = abs(up_max_vertex.position.y() - y_bottom)
-            x_len = abs(left_max_vertex.position.x() - right_max_vertex.position.x())
-            # z_len = abs(back_max_vertex.position.z() - front_max_vertex.position.z())
-
-            # X頂点同士の長さの半分
-            radius = x_len / 2
-
-            # center = MVector3D()
-            # # Yは下辺から半径分上
-            # center.setY(down_max_vertex.position.y() + (radius * 0.95))
-            # # Zは前面から半径分後ろ
-            # center.setZ(front_max_vertex.position.z() + (radius * 0.95))
-
-            # 中点
-            center = MVector3D(np.mean([up_max_vertex.position.data(), down_max_vertex.position.data(), left_max_vertex.position.data(), \
-                                        right_max_vertex.position.data(), back_max_vertex.position.data(), front_max_vertex.position.data()], axis=0))
-            # Xはど真ん中
-            center.setX(0)
-            # Yは下辺からちょっと上
-            center.setY(y_bottom + (radius * 0.98))
-            # Zはちょっと前に
-            center.setZ(center.z() - (radius * 0.05))
-
-            head_rigidbody = RigidBody("頭接触回避", None, self.bones["頭"].index, 0, 0, 0, \
-                                       MVector3D(radius, radius, radius), center, MVector3D(), 0, 0, 0, 0, 0, 0)
-            head_rigidbody.bone_name = "頭"
-            head_rigidbody.is_arm_upper = True
-
-            return head_rigidbody
-        
-        return None
-
-    # つま先の頂点を取得
-    def get_toe_vertex(self, direction: str):
-        # 足首より下で、指ではないボーン
-        bone_name_list = []
-
-        target_bone_name = None
-        if "{0}足首".format(direction) in self.bones:
-            target_bone_name = "{0}足首".format(direction)
-        elif "{0}足ＩＫ".format(direction) in self.bones:
-            target_bone_name = "{0}足ＩＫ".format(direction)
-        else:
-            # 足末端系ボーンがない場合、処理終了
-            return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-
-        # 足末端系ボーン
-        for bk, bv in self.bones.items():
-            if ((direction == "右" and bv.position.x() < 0) or (direction == "左" and bv.position.x() > 0)) \
-               and bv.position.y() <= self.bones[target_bone_name].position.y() and direction in bk:
-                bone_name_list.append(bk)
-        
-        if len(bone_name_list) == 0:
-            # ウェイトボーンがない場合、つま先ボーン系の位置
-            if "{0}つま先".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}つま先".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            elif "{0}つま先ＩＫ".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}つま先ＩＫ".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            elif "{0}足首".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}足首".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            elif "{0}足ＩＫ".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}足ＩＫ".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            else:
-                return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_original, def_is_target=None, \
-                                       def_is_multi_target=self.def_is_multi_target_down_front, multi_target_default_val=MVector3D(0, 99999, 99999))
-
-        if not front_max_vertex:
-            # つま先頂点が取れなかった場合
-            if "{0}つま先".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}つま先".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            elif "{0}つま先ＩＫ".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}つま先ＩＫ".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            elif "{0}足首".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}足首".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            elif "{0}足ＩＫ".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}足ＩＫ".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            else:
-                return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        return front_max_vertex
-
-    # 足底の頂点を取得
-    def get_sole_vertex(self, direction: str):
-        # 足首より下で、指ではないボーン
-        bone_name_list = []
-
-        target_bone_name = None
-        if "{0}足首".format(direction) in self.bones:
-            target_bone_name = "{0}足首".format(direction)
-        elif "{0}足ＩＫ".format(direction) in self.bones:
-            target_bone_name = "{0}足ＩＫ".format(direction)
-        else:
-            # 足末端系ボーンがない場合、処理終了
-            return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-
-        # 足末端系ボーン
-        for bk, bv in self.bones.items():
-            if ((direction == "右" and bv.position.x() < 0) or (direction == "左" and bv.position.x() > 0)) \
-               and bv.position.y() <= self.bones[target_bone_name].position.y() and direction in bk:
-                bone_name_list.append(bk)
-        
-        if len(bone_name_list) == 0:
-            # ウェイトボーンがない場合、足ＩＫの位置
-            if "{0}足ＩＫ".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}足ＩＫ".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            else:
-                return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_original, def_is_target=None, \
-                                       def_is_multi_target=self.def_is_multi_target_down_front_sole, multi_target_default_val=MVector3D(0, 99999, 99999))
-
-        if not multi_max_vertex:
-            # 足底頂点が取れなかった場合
-            if "{0}足ＩＫ".format(direction) in self.bones:
-                return Vertex(-1, self.bones["{0}足ＩＫ".format(direction)].position, MVector3D(), [], [], Bdef1(-1), -1)
-            else:
-                return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        return multi_max_vertex
-
-    # 手のひらの厚みをはかる頂点を取得
-    def get_wrist_vertex(self, direction: str):
-        # 足首より下で、指ではないボーン
-        bone_name_list = []
-
-        if "{0}手首".format(direction) in self.bones:
-            for bk, bv in self.bones.items():
-                if "{0}手首".format(direction) == bk:
-                    bone_name_list.append(bk)
-        else:
-            # 手首ボーンがない場合、処理終了
-            return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        # 腕の傾き（正確にはひじ以降の傾き）
-        _, arm_stance_qq = self.calc_arm_stance("{0}ひじ".format(direction), "{0}手首".format(direction))
-
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_horizonal, def_is_target=self.def_is_target_x_limit, \
-                                       def_is_multi_target=self.def_is_multi_target_down_front, multi_target_default_val=MVector3D(0, 99999, 99999), qq4calc=arm_stance_qq)
-
-        if not down_max_vertex:
-            # 手首の下（手のひらの厚み）が取れなかった場合、X制限なしに取得する
-
-            up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-                back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-                = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_horizonal, def_is_target=None, \
-                                           def_is_multi_target=None, multi_target_default_val=None, qq4calc=arm_stance_qq)
-
-            if not down_max_vertex:
-                # それでも取れなければ手首位置
-                return Vertex(-1, self.bones["{0}手首".format(direction)].position.copy(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        return down_max_vertex
-
-    # 指先実体をはかる頂点を取得
-    def get_finger_tail_vertex(self, finger_name: str, finger_tail_name: str):
-        # 足首より下で、指ではないボーン
-        bone_name_list = []
-        direction = finger_name[0]
-
-        if finger_name in self.bones:
-            bone_name_list.append(finger_name)
-        else:
-            # 指ボーンがない場合、処理終了
-            return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        # 腕の傾き（正確にはひじ以降の傾き）
-        _, arm_stance_qq = self.calc_arm_stance("{0}手首".format(direction), finger_name)
-
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_horizonal, def_is_target=None, \
-                                       def_is_multi_target=None, multi_target_default_val=None, qq4calc=arm_stance_qq)
-        
-        if direction == "左" and right_max_vertex:
-            return right_max_vertex
-        
-        if direction == "右" and left_max_vertex:
-            return left_max_vertex
-
-        # それでも取れなければ手首位置
-        return Vertex(-1, self.bones[finger_name].position.copy(), MVector3D(), [], [], Bdef1(-1), -1)
-
-    # ひじの厚みをはかる頂点を取得
-    def get_elbow_vertex(self, direction: str):
-        # 足首より下で、指ではないボーン
-        bone_name_list = []
-
-        if "{0}ひじ".format(direction) in self.bones or "{0}腕".format(direction) in self.bones:
-            # 念のため、「ひじ」を含むボーンを処理対象とする
-            for bk, bv in self.bones.items():
-                if "{0}腕".format(direction) == bk:
-                    bone_name_list.append(bk)
-                if "{0}ひじ".format(direction) == bk:
-                    bone_name_list.append(bk)
-        else:
-            # ひじボーンがない場合、処理終了
-            return Vertex(-1, MVector3D(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        # 腕の傾き（正確にはひじ以降の傾き）
-        _, arm_stance_qq = self.calc_arm_stance("{0}腕".format(direction), "{0}ひじ".format(direction))
-
-        up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-            = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_horizonal, def_is_target=self.def_is_target_x_limit, \
-                                       def_is_multi_target=self.def_is_multi_target_down_front, multi_target_default_val=MVector3D(0, 99999, 99999), qq4calc=arm_stance_qq)
-
-        if not down_max_vertex:
-            # 腕もひじが取れなかった場合、X制限なしに取得する
-
-            up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-                back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex \
-                = self.get_bone_end_vertex(bone_name_list, self.def_calc_vertex_pos_horizonal, def_is_target=None, \
-                                           def_is_multi_target=None, multi_target_default_val=None, qq4calc=arm_stance_qq)
-
-            if not down_max_vertex:
-                # それでも取れなければひじ位置
-                return Vertex(-1, self.bones["{0}ひじ".format(direction)].position.copy(), MVector3D(), [], [], Bdef1(-1), -1)
-        
-        return down_max_vertex
-
-    # 頂点位置を返す（オリジナルそのまま）
-    def def_calc_vertex_pos_original(self, b: Bone, v: Vertex, qq4calc: MQuaternion):
-        return v.position
-
-    # 水平にした場合の頂点位置を返す
-    def def_calc_vertex_pos_horizonal(self, b: Bone, v: Vertex, qq4calc: MQuaternion):
-        horzinal_v_pos = qq4calc.inverted() * (v.position - self.bones["{0}ひじ".format(b.name[0])].position)
-        return horzinal_v_pos
-
-    # X軸方向の制限がかかった頂点のみを対象とする
-    def def_is_target_x_limit(self, b: Bone, v: Vertex, v_pos: MVector3D):
-        return v_pos.x() - 0.1 <= b.position.x() <= v_pos.x() + 0.1
-
-    # 最も底面でかつ前面にある頂点であるか
-    def def_is_multi_target_down_front(self, multi_max_pos: MVector3D, v_pos: MVector3D):
-        return v_pos.y() <= multi_max_pos.y() + 0.1 and v_pos.z() <= multi_max_pos.z()
-    
-    # 最も底面でかつ前面にある頂点であるか
-    def def_is_multi_target_down_front_sole(self, multi_max_pos: MVector3D, v_pos: MVector3D):
-        return v_pos.y() <= multi_max_pos.y() + 0.1 and v_pos.z() <= multi_max_pos.z()
-    
-    # 指定ボーンにウェイトが乗っている頂点とそのINDEX
-    def get_bone_end_vertex(self, bone_name_list, def_calc_vertex_pos, def_is_target=None, def_is_multi_target=None, multi_target_default_val=None, qq4calc=None):
-        # 指定ボーンにウェイトが乗っているボーンINDEXリスト
-        bone_idx_list = []
-        for bk, bv in self.bones.items():
-            if bk in bone_name_list and bv.index in self.vertices:
-                bone_idx_list.append(bv.index)
-
-        if len(bone_idx_list) == 0:
-            logger.test("bone_name: %s, ウェイト頂点がない", bone_name_list)
-            # ウェイトボーンがない場合、初期値
-            return MVector3D(), None, MVector3D(), None, MVector3D(), None, MVector3D(), None, MVector3D(), None, MVector3D(), None, MVector3D(), None
-
-        logger.test("model: %s, bone_name: %s, bone_idx_list:%s", self.name, bone_name_list, bone_idx_list)
-
-        up_max_pos = MVector3D(0, -99999, 0)
-        up_max_vertex = None
-        down_max_pos = MVector3D(0, 99999, 0)
-        down_max_vertex = None
-        right_max_pos = MVector3D(99999, 0, 0)
-        right_max_vertex = None
-        left_max_pos = MVector3D(-99999, 0, 0)
-        left_max_vertex = None
-        back_max_pos = MVector3D(0, 0, -99999)
-        back_max_vertex = None
-        front_max_pos = MVector3D(0, 0, 99999)
-        front_max_vertex = None
-        multi_max_pos = multi_target_default_val
-        multi_max_vertex = None
-
-        for bone_idx in bone_idx_list:
-            if bone_idx not in self.bone_indexes:
-                continue
-
-            # ボーンINDEXに該当するボーン
-            bone = self.bones[self.bone_indexes[bone_idx]]
-
-            for v in self.vertices[bone_idx]:
-                v_pos = def_calc_vertex_pos(bone, v, qq4calc)
-
-                if def_is_target and def_is_target(bone, v, v_pos) or not def_is_target:
-                    # 処理対象頂点である場合のみ判定処理に入る
-                    if v_pos.y() < down_max_pos.y():
-                        # 指定ボーンにウェイトが乗っていて、かつ最下の頂点より下の場合、保持
-                        down_max_pos = v_pos
-                        down_max_vertex = v
-
-                    if v_pos.y() > up_max_pos.y():
-                        # 指定ボーンにウェイトが乗っていて、かつ最上の頂点より上の場合、保持
-                        up_max_pos = v_pos
-                        up_max_vertex = v
-
-                    if v_pos.x() < right_max_pos.x():
-                        # 指定ボーンにウェイトが乗っていて、かつ最下の頂点より下の場合、保持
-                        right_max_pos = v_pos
-                        right_max_vertex = v
-
-                    if v_pos.x() > left_max_pos.x():
-                        # 指定ボーンにウェイトが乗っていて、かつ最上の頂点より上の場合、保持
-                        left_max_pos = v_pos
-                        left_max_vertex = v
-
-                    if v_pos.z() < front_max_pos.z():
-                        # 指定ボーンにウェイトが乗っていて、かつ最上の頂点より手前の場合、保持
-                        front_max_pos = v_pos
-                        front_max_vertex = v
-
-                    if v_pos.z() > back_max_pos.z():
-                        # 指定ボーンにウェイトが乗っていて、かつ最下の頂点より奥の場合、保持
-                        back_max_pos = v_pos
-                        back_max_vertex = v
-                    
-                    if def_is_multi_target and def_is_multi_target(multi_max_pos, v_pos):
-                        multi_max_pos = v_pos
-                        multi_max_vertex = v
-
-        return up_max_pos, up_max_vertex, down_max_pos, down_max_vertex, right_max_pos, right_max_vertex, left_max_pos, left_max_vertex, \
-            back_max_pos, back_max_vertex, front_max_pos, front_max_vertex, multi_max_pos, multi_max_vertex
 
     @classmethod
     def get_effective_value(cls, v):

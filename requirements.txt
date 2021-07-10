@@ -23,5 +23,5 @@ cython
 scikit-image
 numpy>=1.19.1
 # Pytorch
-torch==1.6.0
-torchvision==0.7.0
+#torch==1.6.0
+#torchvision==0.7.0

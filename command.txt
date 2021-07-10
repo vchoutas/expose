@@ -17,6 +17,33 @@ cd ..\graph\torchlight
 
 python setup.py install
 
+cd ..\..\..\
+
+--------------
+
+conda create -n expose2 pip python=3.6
+
+conda activate expose2
+
+conda install pytorch==1.5.0 torchvision==0.6.0 cudatoolkit=10.1 -c pytorch
+
+pip install -r requirements.txt
+
+build
+
+python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\breast_mov_20210327_205648 --process expose,tracking --verbose 20 --log-mode 0 
+
+python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\breast_mov_20210327_205648 --order-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\breast_mov_20210327_205648\breast.csv --process order,smooth,motion --body-motion 1 --hand-motion 1 --upper-motion 1 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0
+
+python executor.py --video-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\REN1.mp4 --process prepare,expose,tracking --body-motion 1 --hand-motion 1 --upper-motion 1 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0
+
+python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\heart\heart_full5_mp4_20210608_074923 --order-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\heart\heart_full5_mp4_20210608_074923\order.txt --process order,face,smooth,motion --body-motion 1 --hand-motion 1 --face-motion 1 --upper-motion 0 --center-scale 5 --smooth-key 1 --verbose 20 --log-mode 0
+
+
+python executor.py --video-file "E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\02\buster\buster_30fps_1100-1300.mp4" --process prepare,expose,tracking --verbose 20 --log-mode 0
+
+
+python executor.py --video-file "E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\BF.avi" --process prepare,expose,tracking --verbose 20 --log-mode 0
 
 ----------
 

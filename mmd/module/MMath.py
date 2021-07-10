@@ -46,7 +46,7 @@ class MVector2D:
         elif isinstance(x, MVector2D):
             # クラスの場合
             self.__data = np.array([x.x(), x.y()], dtype=np.float64)
-        elif isinstance(x, np.ndarray):
+        elif isinstance(x, np.ndarray) or isinstance(x, list):
             # arrayそのものの場合
             self.__data = np.array([x[0], x[1]], dtype=np.float64)
         else:
@@ -298,7 +298,7 @@ class MVector3D:
         elif isinstance(x, MVector3D):
             # クラスの場合
             self.__data = np.array([x.x(), x.y(), x.z()], dtype=np.float64)
-        elif isinstance(x, np.ndarray):
+        elif isinstance(x, np.ndarray) or isinstance(x, list):
             # arrayそのものの場合
             self.__data = np.array([x[0], x[1], x[2]], dtype=np.float64)
         else:
@@ -648,7 +648,7 @@ class MVector4D:
         elif isinstance(x, MVector4D):
             # クラスの場合
             self.__data = np.array([x.x(), x.y(), x.z(), x.w()], dtype=np.float64)
-        elif isinstance(x, np.ndarray):
+        elif isinstance(x, np.ndarray) or isinstance(x, list):
             # 行列そのものの場合
             self.__data = np.array([x[0], x[1], x[2], x[3]], dtype=np.float64)
         else:
@@ -1062,6 +1062,16 @@ class MQuaternion:
     # 角度に変換
     def toDegree(self):
         return degrees(2 * acos(min(1, max(-1, self.scalar()))))
+
+    # 軸による符号付き角度に変換
+    def toDegreeSign(self, local_axis):
+        deg =  self.toDegree() * np.sign(MVector3D.dotProduct(self.vector(), local_axis)) * np.sign(self.scalar())
+
+        if abs(deg) > 180:
+            # 180度を超してる場合、フリップなので、除去
+            return (abs(deg) - 180) * np.sign(deg)
+            
+        return deg
 
     # 自分ともうひとつの値vとのtheta（変位量）を返す
     def calcTheata(self, v):
