@@ -970,19 +970,22 @@ class PmxModel:
             fixed_x_axis = MVector3D()
         
         from_pos = self.bones[bone.name].position
-        if bone.tail_position != MVector3D():
+        if not bone.getConnectionFlag() and bone.tail_position > MVector3D():
             # 表示先が相対パスの場合、保持
             to_pos = from_pos + bone.tail_position
-        elif bone.tail_index >= 0 and bone.tail_index in self.bone_indexes and self.bones[self.bone_indexes[bone.tail_index]].position != bone.position:
+        elif bone.getConnectionFlag() and bone.tail_index >= 0 and bone.tail_index in self.bone_indexes:
             # 表示先が指定されているの場合、保持
             to_pos = self.bones[self.bone_indexes[bone.tail_index]].position
         else:
-            # 表示先がない場合、とりあえず子ボーンのどれかを選択
-            for b in self.bones.values():
-                if b.parent_index == bone.index and self.bones[self.bone_indexes[b.index]].position != bone.position:
-                    to_pos = self.bones[self.bone_indexes[b.index]].position
-                    break
+            # 表示先がない場合、とりあえず親ボーンからの向きにする
+            from_pos = self.bones[self.bone_indexes[bone.parent_index]].position
+            to_pos = self.bones[bone.name].position
+            # for b in self.bones.values():
+            #     if b.parent_index == bone.index and self.bones[self.bone_indexes[b.index]].position != bone.position:
+            #         to_pos = self.bones[self.bone_indexes[b.index]].position
+            #         break
         
+        logger.test("get_local_x_axis: from: %s, to: %s, tail:%s-[%s]", from_pos, to_pos, bone.tail_index, bone.tail_position)
         # 軸制限の指定が無い場合、子の方向
         x_axis = (to_pos - from_pos).normalized()
 
@@ -991,7 +994,21 @@ class PmxModel:
             x_axis = -fixed_x_axis
 
         return x_axis
-    
+
+    def get_local_x_qq(self, bone_name: str, base_local_axis=None):
+        local_axis_qq = MQuaternion()
+
+        # 自身から親を引いた軸の向き
+        local_axis = self.get_local_x_axis(bone_name)
+        if not base_local_axis:
+            # 最も長い軸の向き(基本姿勢)を未指定の場合は求める
+            base_local_axis = MVector3D(np.where(np.abs(local_axis.data()) == np.max(np.abs(local_axis.data())), 1 * np.sign(local_axis.data()), 0))
+        local_axis_qq = MQuaternion.rotationTo(base_local_axis, local_axis.normalized())
+
+        logger.test("get_local_x_qq: local_axis[%s], base_local_axis[%s], local_axis_qq[%s]", local_axis.to_log(), base_local_axis.to_log(), local_axis_qq.toEulerAngles4MMD().to_log())
+
+        return local_axis_qq
+
     # 腕のスタンスの違い
     def calc_arm_stance(self, from_bone_name: str, to_bone_name=None):
         default_pos = MVector3D(1, 0, 0) if "左" in from_bone_name else MVector3D(-1, 0, 0)

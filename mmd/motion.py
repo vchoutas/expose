@@ -63,19 +63,20 @@ def execute(args):
         for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
             smooth_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "smooth_*.json")), key=sort_by_numeric)
 
-            trace_motion = VmdMotion()
+            trace_mov_motion = VmdMotion()
             trace_rot_motion = VmdMotion()
+            trace_miku_motion = VmdMotion()
 
             # KEY: 処理対象ボーン名, VALUE: vecリスト
             target_bone_vecs = {}
             fnos = []
-
-            for mbname in ["全ての親", "センター", "グルーブ", "pelvis0", "pelvis2", "right_f_base", 'left_f_base']:
-                target_bone_vecs[mbname] = []
+        
+            for mbname in ["全ての親", "センター", "グルーブ", "pelvis0", "pelvis2", "right_wrist", 'left_wrist']:
+                target_bone_vecs[mbname] = {}
             
             logger.info("【No.{0}】モーション結果位置計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=(len(smooth_json_pathes) * (len(PMX_CONNECTIONS.keys()) + 3)), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=(len(smooth_json_pathes) * (len(PMX_CONNECTIONS.keys()))), desc=f'No.{oidx:02d}') as pchar:
                 for sidx, smooth_json_path in enumerate(smooth_json_pathes):
                     m = smooth_pattern.match(os.path.basename(smooth_json_path))
                     if m:
@@ -90,27 +91,19 @@ def execute(args):
                         if "joints" in frame_joints:
                             for jname, joint in frame_joints["joints"].items():
                                 if jname not in target_bone_vecs:
-                                    target_bone_vecs[jname] = []
-                                target_bone_vecs[jname].append(np.array([joint["x"], joint["y"], joint["z"]]) * MIKU_METER)
+                                    target_bone_vecs[jname] = {}
+                                target_bone_vecs[jname][fno] = np.array([joint["x"], joint["y"], joint["z"]]) * MIKU_METER
                                 pchar.update(1)
 
                             for mbname in ["全ての親", "センター", "グルーブ"]:
-                                target_bone_vecs[mbname].append(np.array([0, 0, 0]))
-                                pchar.update(1)
+                                target_bone_vecs[mbname][fno] = np.array([0, 0, 0])
 
                             # 下半身（上半身と同じ位置に生成）
-                            target_bone_vecs["pelvis0"].append(np.array([target_bone_vecs["spine1"][-1][0], target_bone_vecs["spine1"][-1][1], target_bone_vecs["spine1"][-1][2]]))
-                            pchar.update(1)
+                            target_bone_vecs["pelvis0"][fno] = np.array([target_bone_vecs["spine1"][fnos[-1]][0], target_bone_vecs["spine1"][fnos[-1]][1], target_bone_vecs["spine1"][fnos[-1]][2]])
 
-                            # 下半身先
-                            target_bone_vecs["pelvis2"].append((target_bone_vecs["left_hip"][-1] + target_bone_vecs["right_hip"][-1]) / 2)
-                            pchar.update(1)
+                        if "depth" in frame_joints and "camera" in frame_joints:
+                            logger.debug("fno: {0}, depth: {1}, camera: {2}, ratio: {3}", fno, frame_joints["depth"]["depth"], frame_joints["camera"]["scale"], frame_joints["depth"]["depth"] / frame_joints["camera"]["scale"])
 
-                            # 指根元
-                            for direction in ['right', 'left']:
-                                target_bone_vecs[f"{direction}_f_base"].append((target_bone_vecs[f"{direction}_thumb1"][-1] + target_bone_vecs[f"{direction}_index1"][-1] + target_bone_vecs[f"{direction}_middle1"][-1]
-                                                                                + target_bone_vecs[f"{direction}_ring1"][-1] + target_bone_vecs[f"{direction}_pinky1"][-1]) / 5)
-                                pchar.update(1)
 
             trace_model = PmxModel()
             trace_model.vertices["vertices"] = []
@@ -149,26 +142,30 @@ def execute(args):
             with tqdm(total=(len(PMX_CONNECTIONS.keys()) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
                 for jidx, (jname, pconn) in enumerate(PMX_CONNECTIONS.items()):
                     # ボーン登録        
-                    create_bone(trace_model, jname, pconn, target_bone_vecs, miku_model)
+                    create_bone(trace_model, jname, pconn, target_bone_vecs)
 
                     mname = pconn['mmd']
                     pmname = PMX_CONNECTIONS[pconn['parent']]['mmd'] if pconn['parent'] in PMX_CONNECTIONS else pconn['parent']
                     
                     # モーションも登録
-                    for fno, joint, parent_joint in zip(fnos, target_bone_vecs[jname], target_bone_vecs[pconn['parent']]):
-                        trace_bf = trace_motion.calc_bf(mname, fno)
+                    for fno in fnos:
+                        joint = target_bone_vecs[jname][fno]
+                        parent_joint = target_bone_vecs[pconn['parent']][fno]
+                        
+                        trace_bf = trace_mov_motion.calc_bf(mname, fno)
                         # # parentが全ての親の場合
                         # trace_bf.position = MVector3D(joint) - trace_model.bones[mname].position
                         # parentが親ボーンの場合
                         trace_bf.position = MVector3D(joint) - MVector3D(parent_joint) \
                                             - (trace_model.bones[mname].position - trace_model.bones[pmname].position)
                         trace_bf.key = True
-                        trace_motion.bones[mname][fno] = trace_bf
+                        trace_mov_motion.bones[mname][fno] = trace_bf
                         pchar.update(1)
 
             for bidx, bone in trace_model.bones.items():
                 # 表示先の設定
                 if bone.tail_index and bone.tail_index in trace_model.bones:
+                    bone.flag |= 0x0001
                     bone.tail_index = trace_model.bones[bone.tail_index].index
                 else:
                     bone.tail_index = -1
@@ -182,7 +179,7 @@ def execute(args):
             
             trace_mov_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_no{oidx:02d}.vmd")
             logger.info("【No.{0}】モーション(移動)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_mov_motion_path), decoration=MLogger.DECORATION_LINE)
-            vmd_writer.write(trace_model, trace_motion, trace_mov_motion_path)
+            vmd_writer.write(trace_model, trace_mov_motion, trace_mov_motion_path)
 
             # 足ＩＫ ------------------------
             ik_show = VmdShowIkFrame()
@@ -196,17 +193,28 @@ def execute(args):
                 ik_show.ik.append(VmdInfoIk(f'{direction}つま先ＩＫ', 0))
 
             trace_rot_motion.showiks.append(ik_show)
+            trace_miku_motion.showiks.append(ik_show)
 
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_rot_model_no{oidx:02d}.pmx")
             logger.info("【No.{0}】トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
             trace_model.name = f"Trace結果 {oidx:02d} (回転用)"
             trace_model.english_name = f"TraceModel {oidx:02d} (Rot)"
-            trace_model.comment = f"Trace結果 {oidx:02d} 表示用モデル (回転用)\n足ＩＫはOFFにしています"
+            trace_model.comment = f"Trace結果 {oidx:02d} 表示用モデル (回転用)\n足ＩＫはモーション側でOFFにしています"
             pmx_writer.write(trace_model, trace_model_path)
             
             logger.info("【No.{0}】モーション(回転)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=(len(VMD_CONNECTIONS.keys()) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=((len(VMD_CONNECTIONS.keys()) + 2) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
+                for mname in ["センター", "グルーブ"]:
+                    for fno in fnos:
+                        mov_bf = trace_mov_motion.calc_bf(mname, fno)
+                        now_bf = trace_rot_motion.calc_bf(mname, fno)
+                        now_bf.position = mov_bf.position
+                        now_bf.key = True
+                        trace_rot_motion.bones[mname][fno] = now_bf
+
+                        pchar.update(1)
+
                 for jname, jconn in VMD_CONNECTIONS.items():
                     mname = PMX_CONNECTIONS[jname]['mmd']
                     direction_from_mname = PMX_CONNECTIONS[jconn["direction"][0]]['mmd']
@@ -223,29 +231,32 @@ def execute(args):
                     trace_up_to_vec = trace_model.bones[up_to_mname].position
                     trace_up = (trace_up_to_vec - trace_up_from_vec).normalized()
 
-                    trace_cross = MVector3D.crossProduct(trace_direction, trace_up).normalized()
-                    trace_stance_qq = MQuaternion.fromDirection(trace_direction, trace_cross)
+                    trace_direction_up = MVector3D.crossProduct(trace_direction, trace_up).normalized()
+                    trace_stance_qq = MQuaternion.fromDirection(trace_direction, trace_direction_up)
 
-                    trace_local_x_axis = trace_model.get_local_x_axis(mname)
+                    direction_from_links = trace_model.create_link_2_top_one(direction_from_mname, is_defined=False)
+                    direction_to_links = trace_model.create_link_2_top_one(direction_to_mname, is_defined=False)
+                    up_from_links = trace_model.create_link_2_top_one(up_from_mname, is_defined=False)
+                    up_to_links = trace_model.create_link_2_top_one(up_to_mname, is_defined=False)
 
-                    for fno, now_direction_from_vec, now_direction_to_vec, now_up_from_vec, now_up_to_vec in zip(fnos, target_bone_vecs[jconn['direction'][0]], target_bone_vecs[jconn['direction'][1]], \
-                                                                                                                 target_bone_vecs[jconn['up'][0]], target_bone_vecs[jconn['up'][1]]):                    
+                    for fno in fnos:
+                        now_direction_from_vec = calc_global_pos_from_mov(trace_model, direction_from_links, trace_mov_motion, fno)
+                        now_direction_to_vec = calc_global_pos_from_mov(trace_model, direction_to_links, trace_mov_motion, fno)
+                        now_up_from_vec = calc_global_pos_from_mov(trace_model, up_from_links, trace_mov_motion, fno)
+                        now_up_to_vec = calc_global_pos_from_mov(trace_model, up_to_links, trace_mov_motion, fno)
+
                         # トレースモデルの回転量 ------------
-                        now_direction = MVector3D(now_direction_to_vec - now_direction_from_vec).normalized()
-                        now_up = MVector3D(now_up_to_vec - now_up_from_vec).normalized()
-                        now_cross = MVector3D.crossProduct(now_direction, now_up).normalized()
-                        now_direction_qq = MQuaternion.fromDirection(now_direction, now_cross)
+                        now_direction = (now_direction_to_vec - now_direction_from_vec).normalized()
+                        now_up = (now_up_to_vec - now_up_from_vec).normalized()
+
+                        now_direction_up = MVector3D.crossProduct(now_direction, now_up).normalized()
+                        now_direction_qq = MQuaternion.fromDirection(now_direction, now_direction_up)
 
                         cancel_qq = MQuaternion()
                         for cancel_jname in jconn["cancel"]:
                             cancel_qq *= trace_rot_motion.calc_bf(PMX_CONNECTIONS[cancel_jname]['mmd'], fno).rotation
 
                         now_qq = cancel_qq.inverted() * now_direction_qq * trace_stance_qq.inverted()
-
-                        if "指" in PMX_CONNECTIONS[jname]['display'] or "ひじ" in mname or "ひざ" in mname:
-                            # ひじ・指・ひざは念のためX捩り除去
-                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, now_qq, trace_local_x_axis)
-                            now_qq = now_yz_qq
 
                         now_bf = trace_rot_motion.calc_bf(mname, fno)
                         now_bf.rotation = now_qq
@@ -257,6 +268,61 @@ def execute(args):
             trace_rot_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_rot_no{oidx:02d}.vmd")
             logger.info("【No.{0}】トレースモーション(回転)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_rot_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(trace_model, trace_rot_motion, trace_rot_motion_path)
+
+            logger.info("【No.{0}】モーション(あにまさ式ミク)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
+
+            with tqdm(total=(len(trace_rot_motion.bones.keys()) * len(fnos)), desc=f'No.{oidx:02d}') as pchar:
+                for mname in trace_rot_motion.bones:
+                    parent_name = "センター"
+                    if mname not in ["全ての親", "センター", "グルーブ"]:
+                        parent_name = trace_model.bone_indexes[trace_model.bones[mname].parent_index]
+
+                    parent_local_x_axis = MVector3D(1, 0, 0) if parent_name in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if parent_name in ["右腕", "右ひじ", "右手首"] else None
+                    target_local_x_axis = MVector3D(1, 0, 0) if mname in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if mname in ["右腕", "右ひじ", "右手首"] else None
+                    trace_parent_local_x_qq = trace_model.get_local_x_qq(parent_name, parent_local_x_axis)
+                    trace_target_local_x_qq = trace_model.get_local_x_qq(mname, target_local_x_axis) if mname not in ["全ての親", "センター", "グルーブ"] else MQuaternion()
+                    miku_parent_local_x_qq = miku_model.get_local_x_qq(parent_name, parent_local_x_axis)
+                    miku_target_local_x_qq = miku_model.get_local_x_qq(mname, target_local_x_axis) if mname not in ["全ての親", "センター", "グルーブ"] else MQuaternion()
+
+                    parent_local_x_qq = miku_parent_local_x_qq.inverted() * trace_parent_local_x_qq
+                    target_local_x_qq = miku_target_local_x_qq.inverted() * trace_target_local_x_qq
+
+                    miku_local_x_axis = miku_model.get_local_x_axis(mname)
+
+                    for fno in fnos:
+                        rot_bf = trace_rot_motion.calc_bf(mname, fno)
+                        rot_parent_bf = trace_rot_motion.calc_bf(parent_name, fno)
+                        
+                        miku_bf = trace_miku_motion.calc_bf(mname, fno)
+                        miku_parent_bf = trace_miku_motion.calc_bf(parent_name, fno)
+
+                        miku_bf.position = rot_bf.position.copy()
+                        new_miku_qq = rot_bf.rotation.copy()
+                        new_miku_qq = miku_parent_bf.rotation.inverted() * rot_parent_bf.rotation * new_miku_qq
+                        
+                        if mname[1:] in ["肩"] or mname in ["首"]:
+                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq
+                        elif mname in ["頭"]:
+                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+                        elif mname[1:] in ["手首"]:
+                            new_miku_qq = miku_parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+                        else:
+                            new_miku_qq = miku_parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+
+                        if "指" in PMX_CONNECTIONS[jname]['display'] or mname[1:] in ["ひじ", "ひざ"]:
+                            # ひじ・指・ひざは念のためX捩り除去
+                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
+                            new_miku_qq = now_yz_qq
+
+                        miku_bf.rotation = new_miku_qq
+                        miku_bf.key = True
+
+                        trace_miku_motion.bones[mname][fno] = miku_bf
+                        pchar.update(1)
+
+            trace_miku_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_miku_no{oidx:02d}.vmd")
+            logger.info("【No.{0}】トレースモーション(あにまさ式ミク)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_miku_motion_path), decoration=MLogger.DECORATION_LINE)
+            vmd_writer.write(miku_model, trace_miku_motion, trace_miku_motion_path)
 
             # logger.info("【No.{0}】モーション(回転)足首計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
@@ -271,8 +337,8 @@ def execute(args):
             #         _, trace_heel_mats = MServiceUtils.calc_global_pos(trace_model, trace_heel_links, VmdMotion(), fno, return_matrix=True)
 
             #         for fno in fnos:
-            #             now_trace_big_toe_global_vec = trace_big_toe_mats[trace_big_toe_links.last_name()] * trace_motion.calc_bf(trace_big_toe_links.last_name(), fno).position
-            #             now_trace_small_toe_global_vec = trace_small_toe_mats[trace_small_toe_links.last_name()] * trace_motion.calc_bf(trace_small_toe_links.last_name(), fno).position
+            #             now_trace_big_toe_global_vec = trace_big_toe_mats[trace_big_toe_links.last_name()] * trace_mov_motion.calc_bf(trace_big_toe_links.last_name(), fno).position
+            #             now_trace_small_toe_global_vec = trace_small_toe_mats[trace_small_toe_links.last_name()] * trace_mov_motion.calc_bf(trace_small_toe_links.last_name(), fno).position
             #             now_trace_big_toe_relative_vec = trace_heel_mats[trace_heel_links.last_name()].inverted() * now_trace_big_toe_global_vec
             #             now_trace_small_toe_relative_vec = trace_heel_mats[trace_heel_links.last_name()].inverted() * now_trace_small_toe_global_vec
 
@@ -314,10 +380,10 @@ def execute(args):
                     # _, miku_up_to_mats = MServiceUtils.calc_global_pos(miku_model, miku_up_to_links, VmdMotion(), fno, return_matrix=True)
 
                         # # ミクの回転量 ---------------------
-                        # now_miku_direction_from_vec = miku_direction_from_mats[direction_from_mname] * trace_motion.calc_bf(direction_from_mname, fno).position
-                        # now_miku_direction_to_vec = miku_direction_to_mats[direction_to_mname] * trace_motion.calc_bf(direction_to_mname, fno).position
-                        # now_miku_up_from_vec = miku_up_from_mats[up_from_mname] * trace_motion.calc_bf(up_from_mname, fno).position
-                        # now_miku_up_to_vec = miku_up_to_mats[up_to_mname] * trace_motion.calc_bf(up_to_mname, fno).position
+                        # now_miku_direction_from_vec = miku_direction_from_mats[direction_from_mname] * trace_mov_motion.calc_bf(direction_from_mname, fno).position
+                        # now_miku_direction_to_vec = miku_direction_to_mats[direction_to_mname] * trace_mov_motion.calc_bf(direction_to_mname, fno).position
+                        # now_miku_up_from_vec = miku_up_from_mats[up_from_mname] * trace_mov_motion.calc_bf(up_from_mname, fno).position
+                        # now_miku_up_to_vec = miku_up_to_mats[up_to_mname] * trace_mov_motion.calc_bf(up_to_mname, fno).position
 
                         # now_miku_direction = MVector3D(now_miku_direction_to_vec - now_miku_direction_from_vec).normalized()
                         # now_miku_up = MVector3D(now_miku_up_to_vec - now_miku_up_from_vec).normalized()
@@ -394,10 +460,10 @@ def execute(args):
 
             #         for fno in fnos:
             #             # ミクのグローバル位置
-            #             now_miku_direction_from_vec = miku_direction_from_mats[direction_from_mname] * trace_motion.calc_bf(direction_from_mname, fno).position
-            #             now_miku_direction_to_vec = miku_direction_to_mats[direction_to_mname] * trace_motion.calc_bf(direction_to_mname, fno).position
-            #             now_miku_up_from_vec = miku_up_from_mats[up_from_mname] * trace_motion.calc_bf(up_from_mname, fno).position
-            #             now_miku_up_to_vec = miku_up_to_mats[up_to_mname] * trace_motion.calc_bf(up_to_mname, fno).position
+            #             now_miku_direction_from_vec = miku_direction_from_mats[direction_from_mname] * trace_mov_motion.calc_bf(direction_from_mname, fno).position
+            #             now_miku_direction_to_vec = miku_direction_to_mats[direction_to_mname] * trace_mov_motion.calc_bf(direction_to_mname, fno).position
+            #             now_miku_up_from_vec = miku_up_from_mats[up_from_mname] * trace_mov_motion.calc_bf(up_from_mname, fno).position
+            #             now_miku_up_to_vec = miku_up_to_mats[up_to_mname] * trace_mov_motion.calc_bf(up_to_mname, fno).position
                         
 
 
@@ -469,10 +535,10 @@ def execute(args):
                     # _, miku_up_from_mats = MServiceUtils.calc_global_pos(miku_model, miku_up_from_links, VmdMotion(), fno, return_matrix=True)
                     # _, miku_up_to_mats = MServiceUtils.calc_global_pos(miku_model, miku_up_to_links, VmdMotion(), fno, return_matrix=True)
 
-                        # miku_direction_from_vec = miku_direction_from_mats[direction_from_mname] * trace_motion.calc_bf(direction_from_mname, fno).position
-                        # miku_direction_to_vec = miku_direction_to_mats[direction_to_mname] * trace_motion.calc_bf(direction_to_mname, fno).position
-                        # miku_up_from_vec = miku_up_from_mats[up_from_mname] * trace_motion.calc_bf(up_from_mname, fno).position
-                        # miku_up_to_vec = miku_up_to_mats[up_to_mname] * trace_motion.calc_bf(up_to_mname, fno).position
+                        # miku_direction_from_vec = miku_direction_from_mats[direction_from_mname] * trace_mov_motion.calc_bf(direction_from_mname, fno).position
+                        # miku_direction_to_vec = miku_direction_to_mats[direction_to_mname] * trace_mov_motion.calc_bf(direction_to_mname, fno).position
+                        # miku_up_from_vec = miku_up_from_mats[up_from_mname] * trace_mov_motion.calc_bf(up_from_mname, fno).position
+                        # miku_up_to_vec = miku_up_to_mats[up_to_mname] * trace_mov_motion.calc_bf(up_to_mname, fno).position
 
                         # miku_direction = MVector3D(miku_direction_to_vec - miku_direction_from_vec).normalized()
                         # miku_up = MVector3D(miku_up_to_vec - miku_up_from_vec).normalized()
@@ -543,10 +609,10 @@ def execute(args):
 
             #     for fno in tqdm(fnos, desc=f"No.{oidx:02d}: {mname} ... "):
             #         # オリジナルのグローバル位置
-            #         now_direction_from_vec = trace_direction_from_mats[direction_from_mname] * trace_motion.calc_bf(direction_from_mname, fno).position
-            #         now_direction_to_vec = trace_direction_to_mats[direction_to_mname] * trace_motion.calc_bf(direction_to_mname, fno).position
-            #         now_up_from_vec = trace_up_from_mats[up_from_mname] * trace_motion.calc_bf(up_from_mname, fno).position
-            #         now_up_to_vec = trace_up_to_mats[up_to_mname] * trace_motion.calc_bf(up_to_mname, fno).position
+            #         now_direction_from_vec = trace_direction_from_mats[direction_from_mname] * trace_mov_motion.calc_bf(direction_from_mname, fno).position
+            #         now_direction_to_vec = trace_direction_to_mats[direction_to_mname] * trace_mov_motion.calc_bf(direction_to_mname, fno).position
+            #         now_up_from_vec = trace_up_from_mats[up_from_mname] * trace_mov_motion.calc_bf(up_from_mname, fno).position
+            #         now_up_to_vec = trace_up_to_mats[up_to_mname] * trace_mov_motion.calc_bf(up_to_mname, fno).position
                     
             #         # ミク用モーションの生成
                     
@@ -584,10 +650,10 @@ def execute(args):
 
                     # for fidx, fno in enumerate(fnos):
 
-                    #     now_direction_from_vec = trace_direction_from_mats[direction_from_mname] * trace_motion.calc_bf(direction_from_mname, fno).position
-                    #     now_direction_to_vec = trace_direction_to_mats[direction_to_mname] * trace_motion.calc_bf(direction_to_mname, fno).position
-                    #     now_up_from_vec = trace_up_from_mats[up_from_mname] * trace_motion.calc_bf(up_from_mname, fno).position
-                    #     now_up_to_vec = trace_up_to_mats[up_to_mname] * trace_motion.calc_bf(up_to_mname, fno).position
+                    #     now_direction_from_vec = trace_direction_from_mats[direction_from_mname] * trace_mov_motion.calc_bf(direction_from_mname, fno).position
+                    #     now_direction_to_vec = trace_direction_to_mats[direction_to_mname] * trace_mov_motion.calc_bf(direction_to_mname, fno).position
+                    #     now_up_from_vec = trace_up_from_mats[up_from_mname] * trace_mov_motion.calc_bf(up_from_mname, fno).position
+                    #     now_up_to_vec = trace_up_to_mats[up_to_mname] * trace_mov_motion.calc_bf(up_to_mname, fno).position
                        
                     #     now_direction = (now_direction_to_vec - now_direction_from_vec).normalized()
                     #     now_up = (now_up_to_vec - now_up_from_vec).normalized()
@@ -667,10 +733,10 @@ def execute(args):
                     # trace_up_to_links = trace_model.create_link_2_top_one(up_to_mname, is_defined=False)
 
                     # for fno in fnos:
-                    #     trace_direction_from_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_motion, fno)
-                    #     trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_motion, fno)
-                    #     trace_up_from_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_from_links, trace_motion, fno)
-                    #     trace_up_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_to_links, trace_motion, fno)
+                    #     trace_direction_from_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_mov_motion, fno)
+                    #     trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_mov_motion, fno)
+                    #     trace_up_from_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_from_links, trace_mov_motion, fno)
+                    #     trace_up_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_to_links, trace_mov_motion, fno)
 
                     #     now_direction_from_vec = trace_direction_from_3ds[direction_from_mname]
                     #     now_direction_to_vec = trace_direction_to_3ds[direction_to_mname]
@@ -742,8 +808,8 @@ def execute(args):
             #     for fno in tqdm(fnos, desc=f"No.{oidx:02d}: {mname}(ミク) ... "):
             #         # ミク用モーションの生成
                     
-            #         _, trace_direction_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_motion, fno, return_matrix=True)
-            #         trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_motion, fno)
+            #         _, trace_direction_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_mov_motion, fno, return_matrix=True)
+            #         trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_mov_motion, fno)
             #         # directionの初期姿勢to絶対位置
             #         trace_direction_to_initial_vec = trace_direction_from_mats[direction_from_mname] * trace_direction
             #         # 初期姿勢からの差分
@@ -752,8 +818,8 @@ def execute(args):
             #         miku_direction_from = miku_direction_from_vec
             #         miku_direction_to = miku_direction_to_vec + trace_direction_to_diff_vec
 
-            #         _, trace_up_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_up_from_links, trace_motion, fno, return_matrix=True)
-            #         trace_up_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_to_links, trace_motion, fno)
+            #         _, trace_up_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_up_from_links, trace_mov_motion, fno, return_matrix=True)
+            #         trace_up_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_to_links, trace_mov_motion, fno)
             #         # upの初期姿勢to絶対位置
             #         trace_up_to_initial_vec = trace_up_from_mats[up_from_mname] * trace_up
             #         # 初期姿勢からの差分
@@ -785,8 +851,8 @@ def execute(args):
 
                 # for fno in tqdm(fnos, desc=f"No.{oidx:02d}: {mname} ... "):
                 #     # ミク用モーションの生成
-                #     _, trace_direction_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_motion, fno, return_matrix=True)
-                #     trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_motion, fno)
+                #     _, trace_direction_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_mov_motion, fno, return_matrix=True)
+                #     trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_mov_motion, fno)
                 #     # directionのfromから見たtoの相対位置
                 #     trace_direction_to_relative_vec = trace_direction_from_mats[direction_from_mname].inverted() * trace_direction_to_3ds[direction_to_mname]
                 #     # trace_direction_diff_vec = trace_direction_to_relative_vec - trace_direction
@@ -795,15 +861,15 @@ def execute(args):
 
                 # for fno in tqdm(fnos, desc=f"No.{oidx:02d}: {mname} ... "):
                 #     # ミク用モーションの生成
-                #     _, trace_direction_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_motion, fno, return_matrix=True)
-                #     trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_motion, fno)
+                #     _, trace_direction_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_direction_from_links, trace_mov_motion, fno, return_matrix=True)
+                #     trace_direction_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_direction_to_links, trace_mov_motion, fno)
                 #     # directionのfromから見たtoの相対位置
                 #     trace_direction_to_relative_vec = trace_direction_from_mats[direction_from_mname].inverted() * trace_direction_to_3ds[direction_to_mname]
                 #     # trace_direction_diff_vec = trace_direction_to_relative_vec - trace_direction
                 #     now_direction = trace_direction_to_relative_vec.normalized()
 
-                #     _, trace_up_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_up_from_links, trace_motion, fno, return_matrix=True)
-                #     trace_up_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_to_links, trace_motion, fno)
+                #     _, trace_up_from_mats = MServiceUtils.calc_global_pos(trace_model, trace_up_from_links, trace_mov_motion, fno, return_matrix=True)
+                #     trace_up_to_3ds = MServiceUtils.calc_global_pos(trace_model, trace_up_to_links, trace_mov_motion, fno)
                 #     # upのfromから見たtoの相対位置
                 #     trace_up_to_relative_vec = trace_up_from_mats[up_from_mname].inverted() * trace_up_to_3ds[up_to_mname]
                 #     # trace_up_diff_vec = trace_up_to_relative_vec - trace_up
@@ -912,7 +978,7 @@ def execute(args):
 
 
                     # # directionのtoの位置を、ミクに合わせて再計算
-                    # direction_from_ = trace_motion.calc_bf(direction_from_mname, fno)
+                    # direction_from_ = trace_mov_motion.calc_bf(direction_from_mname, fno)
                     # trace_bf.position
 
                     # now_trace_direction_from = trace_direction_from_vec + now_trace_direction_diff
@@ -1100,12 +1166,12 @@ def execute(args):
             #         for fno, joint in tqdm(zip(fnos, joints), desc=f"No.{oidx:02d}:{jname} ... "):
             #             if jname in VMD_CONNECTIONS:
             #                 # 現在の姿勢
-            #                 now_direction_from_vec = trace_motion.calc_bf(VMD_CONNECTIONS[jname]["direction"][0], fno).position + initial_direction_from_vec
-            #                 now_direction_to_vec = trace_motion.calc_bf(VMD_CONNECTIONS[jname]["direction"][1], fno).position + initial_direction_to_vec
+            #                 now_direction_from_vec = trace_mov_motion.calc_bf(VMD_CONNECTIONS[jname]["direction"][0], fno).position + initial_direction_from_vec
+            #                 now_direction_to_vec = trace_mov_motion.calc_bf(VMD_CONNECTIONS[jname]["direction"][1], fno).position + initial_direction_to_vec
             #                 now_direction = (now_direction_to_vec - now_direction_from_vec).normalized()
 
-            #                 now_up_from_vec = trace_motion.calc_bf(VMD_CONNECTIONS[jname]["up"][0], fno).position + initial_up_from_vec
-            #                 now_up_to_vec = trace_motion.calc_bf(VMD_CONNECTIONS[jname]["up"][1], fno).position + initial_up_to_vec
+            #                 now_up_from_vec = trace_mov_motion.calc_bf(VMD_CONNECTIONS[jname]["up"][0], fno).position + initial_up_from_vec
+            #                 now_up_to_vec = trace_mov_motion.calc_bf(VMD_CONNECTIONS[jname]["up"][1], fno).position + initial_up_to_vec
             #                 now_up = (now_up_to_vec - now_up_from_vec).normalized()
 
             #                 now_cross = MVector3D.crossProduct(now_direction, now_up).normalized()
@@ -1573,9 +1639,9 @@ def execute(args):
         logger.critical("モーション生成で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
         return False
 
-def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict, miku_model: PmxModel):
-    joints = target_bone_vecs[jname]
-    parent_joints = target_bone_vecs[jconn["parent"]]
+def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict):
+    joints = list(target_bone_vecs[jname].values())
+    parent_joints = list(target_bone_vecs[jconn["parent"]].values())
     # MMDボーン名
     mname = jconn["mmd"]
     # 親ボーン
@@ -1583,18 +1649,9 @@ def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs
 
     bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
 
-    # 親からの相対位置
-    if "指" in jconn["display"]:
-        # 指は完全にミクに合わせる
-        bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-    elif "足" == mname[-1] or "ひざ" == mname[-2:] or "足首" == mname[-2:]:
-        # 足は方向はミクに合わせる。長さはトレース元
-        bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-        bone_relative_pos *= bone_length / bone_relative_pos.length()
-    else:
-        # それ以外はトレース元から採取
-        bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
-        bone_relative_pos = MVector3D(bone_axis * bone_length)
+    # それ以外はトレース元から採取
+    bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
+    bone_relative_pos = MVector3D(bone_axis * bone_length)
     bone_pos = parent_bone.position + bone_relative_pos
     bone = Bone(mname, mname, bone_pos, parent_bone.index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
     bone.index = len(list(trace_model.bones.keys()))
@@ -1696,6 +1753,26 @@ def smooth_values(delimiter: int, values: list):
     smooth_vs *= delimiter / 9
 
     return smooth_vs
+
+def calc_global_pos_from_mov(model: PmxModel, links: BoneLinks, motion: VmdMotion, fno: int):
+    trans_vs = MServiceUtils.calc_relative_position(model, links, motion, fno)
+    
+    result_pos = MVector3D()
+    for v in trans_vs:
+        result_pos += v
+
+    return result_pos
+
+
+
+
+
+
+
+
+
+
+
 
 
 def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict, right_heel_links: BoneLinks, left_heel_links: BoneLinks, \
@@ -1963,80 +2040,80 @@ def create_projection_view(image_size: list, sensor_width: float, focal_length_i
 
     return mat
 
-# 足ＩＫ変換処理実行
-def convert_leg_fk2ik(oidx: int, all_frame_joints: dict, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):
-    leg_ik_bone_name = "{0}足ＩＫ".format(direction)
-    toe_ik_bone_name = "{0}つま先ＩＫ".format(direction)
-    leg_bone_name = "{0}足".format(direction)
-    knee_bone_name = "{0}ひざ".format(direction)
-    ankle_bone_name = "{0}足首".format(direction)
-    toe_bone_name = "{0}つま先".format(direction)
-    heel_bone_name = "{0}かかと".format(direction)
+# # 足ＩＫ変換処理実行
+# def convert_leg_fk2ik(oidx: int, all_frame_joints: dict, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):
+#     leg_ik_bone_name = "{0}足ＩＫ".format(direction)
+#     toe_ik_bone_name = "{0}つま先ＩＫ".format(direction)
+#     leg_bone_name = "{0}足".format(direction)
+#     knee_bone_name = "{0}ひざ".format(direction)
+#     ankle_bone_name = "{0}足首".format(direction)
+#     toe_bone_name = "{0}つま先".format(direction)
+#     heel_bone_name = "{0}かかと".format(direction)
 
-    # 足FK末端までのリンク
-    fk_links = model.create_link_2_top_one(heel_bone_name, is_defined=False)
-    # 足IK末端までのリンク
-    ik_links = model.create_link_2_top_one(leg_ik_bone_name, is_defined=False)
-    # つま先IK末端までのリンク
-    toe_ik_links = model.create_link_2_top_one(toe_ik_bone_name, is_defined=False)
-    # つま先（足首の子ボーン）の名前
-    ankle_child_bone_name = model.bone_indexes[model.bones[toe_ik_bone_name].ik.target_index]
-    # つま先末端までのリンク
-    toe_fk_links = model.create_link_2_top_one(ankle_child_bone_name, is_defined=False)
+#     # 足FK末端までのリンク
+#     fk_links = model.create_link_2_top_one(heel_bone_name, is_defined=False)
+#     # 足IK末端までのリンク
+#     ik_links = model.create_link_2_top_one(leg_ik_bone_name, is_defined=False)
+#     # つま先IK末端までのリンク
+#     toe_ik_links = model.create_link_2_top_one(toe_ik_bone_name, is_defined=False)
+#     # つま先（足首の子ボーン）の名前
+#     ankle_child_bone_name = model.bone_indexes[model.bones[toe_ik_bone_name].ik.target_index]
+#     # つま先末端までのリンク
+#     toe_fk_links = model.create_link_2_top_one(ankle_child_bone_name, is_defined=False)
 
-    fnos = motion.get_bone_fnos(leg_bone_name, knee_bone_name, ankle_bone_name)
+#     fnos = motion.get_bone_fnos(leg_bone_name, knee_bone_name, ankle_bone_name)
 
-    ik_parent_name = ik_links.get(leg_ik_bone_name, offset=-1).name
+#     ik_parent_name = ik_links.get(leg_ik_bone_name, offset=-1).name
     
-    # 足IKの移植
-    # logger.info("【No.{0}】{1}足IK移植", f"{oidx:02d}", direction)
-    fno = 0
-    for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:02d} ... ")):
-        if fno in flip_fnos or fno not in all_frame_joints:
-            # フリップはセンター計算もおかしくなるのでスキップ
-            continue
+#     # 足IKの移植
+#     # logger.info("【No.{0}】{1}足IK移植", f"{oidx:02d}", direction)
+#     fno = 0
+#     for fidx, fno in enumerate(tqdm(fnos, desc=f"No.{oidx:02d} ... ")):
+#         if fno in flip_fnos or fno not in all_frame_joints:
+#             # フリップはセンター計算もおかしくなるのでスキップ
+#             continue
 
-        leg_fk_3ds_dic = calc_global_pos(model, fk_links, motion, fno)
-        _, leg_ik_matrixs = calc_global_pos(model, ik_links, motion, fno, return_matrix=True)
+#         leg_fk_3ds_dic = calc_global_pos(model, fk_links, motion, fno)
+#         _, leg_ik_matrixs = calc_global_pos(model, ik_links, motion, fno, return_matrix=True)
 
-        # 足首の角度がある状態での、つま先までのグローバル位置
-        leg_toe_fk_3ds_dic = calc_global_pos(model, toe_fk_links, motion, fno)
+#         # 足首の角度がある状態での、つま先までのグローバル位置
+#         leg_toe_fk_3ds_dic = calc_global_pos(model, toe_fk_links, motion, fno)
 
-        # IKの親から見た相対位置
-        leg_ik_parent_matrix = leg_ik_matrixs[ik_parent_name]
+#         # IKの親から見た相対位置
+#         leg_ik_parent_matrix = leg_ik_matrixs[ik_parent_name]
 
-        bf = motion.calc_bf(leg_ik_bone_name, fno)
-        # 足ＩＫの位置は、足ＩＫの親から見た足首のローカル位置（足首位置マイナス）
-        bf.position = leg_ik_parent_matrix.inverted() * (leg_fk_3ds_dic[ankle_bone_name] - (model.bones[ankle_bone_name].position - model.bones[ik_parent_name].position))
-        bf.rotation = MQuaternion()
+#         bf = motion.calc_bf(leg_ik_bone_name, fno)
+#         # 足ＩＫの位置は、足ＩＫの親から見た足首のローカル位置（足首位置マイナス）
+#         bf.position = leg_ik_parent_matrix.inverted() * (leg_fk_3ds_dic[ankle_bone_name] - (model.bones[ankle_bone_name].position - model.bones[ik_parent_name].position))
+#         bf.rotation = MQuaternion()
 
-        # 一旦足ＩＫの位置が決まった時点で登録
-        motion.regist_bf(bf, leg_ik_bone_name, fno)
-        # 足ＩＫ回転なし状態でのつま先までのグローバル位置
-        leg_ik_3ds_dic, leg_ik_matrisxs = calc_global_pos(model, toe_ik_links, motion, fno, return_matrix=True)
+#         # 一旦足ＩＫの位置が決まった時点で登録
+#         motion.regist_bf(bf, leg_ik_bone_name, fno)
+#         # 足ＩＫ回転なし状態でのつま先までのグローバル位置
+#         leg_ik_3ds_dic, leg_ik_matrisxs = calc_global_pos(model, toe_ik_links, motion, fno, return_matrix=True)
 
-        # つま先のローカル位置
-        ankle_child_initial_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_ik_3ds_dic[toe_ik_bone_name]
-        ankle_child_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_toe_fk_3ds_dic[ankle_child_bone_name]
+#         # つま先のローカル位置
+#         ankle_child_initial_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_ik_3ds_dic[toe_ik_bone_name]
+#         ankle_child_local_pos = leg_ik_matrisxs[leg_ik_bone_name].inverted() * leg_toe_fk_3ds_dic[ankle_child_bone_name]
 
-        # 足ＩＫの回転は、足首から見たつま先の方向
-        bf.rotation = MQuaternion.rotationTo(ankle_child_initial_local_pos, ankle_child_local_pos)
+#         # 足ＩＫの回転は、足首から見たつま先の方向
+#         bf.rotation = MQuaternion.rotationTo(ankle_child_initial_local_pos, ankle_child_local_pos)
 
-        toe_vec = leg_fk_3ds_dic[toe_bone_name]
-        heel_vec = leg_fk_3ds_dic[heel_bone_name]
-        foot_vec = (toe_vec - heel_vec).normalized()
+#         toe_vec = leg_fk_3ds_dic[toe_bone_name]
+#         heel_vec = leg_fk_3ds_dic[heel_bone_name]
+#         foot_vec = (toe_vec - heel_vec).normalized()
 
-        # かかとからつま先の向きが大体水平なら接地
-        if 0.2 > abs(foot_vec.y()):
-            diff_y = max(0, min(toe_vec.y(), heel_vec.y()))
-            bf.position.setY(max(0, bf.position.y() - diff_y))
-        motion.regist_bf(bf, leg_ik_bone_name, fno)
+#         # かかとからつま先の向きが大体水平なら接地
+#         if 0.2 > abs(foot_vec.y()):
+#             diff_y = max(0, min(toe_vec.y(), heel_vec.y()))
+#             bf.position.setY(max(0, bf.position.y() - diff_y))
+#         motion.regist_bf(bf, leg_ik_bone_name, fno)
 
-        # つま先が地面にめり込んでたら上げる
-        leg_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
-        if leg_ik_3ds_dic[toe_ik_bone_name].y() < 0:
-            bf.position.setY(max(0, bf.position.y() - leg_ik_3ds_dic[toe_ik_bone_name].y()))
-        motion.regist_bf(bf, leg_ik_bone_name, fno)
+#         # つま先が地面にめり込んでたら上げる
+#         leg_ik_3ds_dic = calc_global_pos(model, toe_ik_links, motion, fno)
+#         if leg_ik_3ds_dic[toe_ik_bone_name].y() < 0:
+#             bf.position.setY(max(0, bf.position.y() - leg_ik_3ds_dic[toe_ik_bone_name].y()))
+#         motion.regist_bf(bf, leg_ik_bone_name, fno)
 
 # def calc_direction_qq(bf: VmdBoneFrame, motion: VmdMotion, joints: dict, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):
 #     direction_from_vec = get_vec3(joints["joints"], direction_from_name)
@@ -2066,52 +2143,52 @@ def convert_leg_fk2ik(oidx: int, all_frame_joints: dict, motion: VmdMotion, mode
 
 #     return qq
 
-def calc_bone_direction_qq(model: PmxModel, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):
-    direction_from_vec = get_bone_vec3(model, direction_from_name)
-    direction_to_vec = get_bone_vec3(model, direction_to_name)
-    up_from_vec = get_bone_vec3(model, up_from_name)
-    up_to_vec = get_bone_vec3(model, up_to_name)
+# def calc_bone_direction_qq(model: PmxModel, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str):
+#     direction_from_vec = get_bone_vec3(model, direction_from_name)
+#     direction_to_vec = get_bone_vec3(model, direction_to_name)
+#     up_from_vec = get_bone_vec3(model, up_from_name)
+#     up_to_vec = get_bone_vec3(model, up_to_name)
 
-    direction = (direction_to_vec - direction_from_vec).normalized()
-    up = (up_to_vec - up_from_vec).normalized()
-    qq = MQuaternion.fromDirection(direction, up)
+#     direction = (direction_to_vec - direction_from_vec).normalized()
+#     up = (up_to_vec - up_from_vec).normalized()
+#     qq = MQuaternion.fromDirection(direction, up)
 
-    return qq
+#     return qq
 
-def calc_bone_direction_qq2(bf: VmdBoneFrame, motion: VmdMotion, model: PmxModel, jname: str, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str, cross_from_name: str, cross_to_name: str):
-    direction_from_vec = get_bone_vec3(model, direction_from_name)
-    direction_to_vec = get_bone_vec3(model, direction_to_name)
-    up_from_vec = get_bone_vec3(model, up_from_name)
-    up_to_vec = get_bone_vec3(model, up_to_name)
-    cross_from_vec = get_bone_vec3(model, cross_from_name)
-    cross_to_vec = get_bone_vec3(model, cross_to_name)
+# def calc_bone_direction_qq2(bf: VmdBoneFrame, motion: VmdMotion, model: PmxModel, jname: str, direction_from_name: str, direction_to_name: str, up_from_name: str, up_to_name: str, cross_from_name: str, cross_to_name: str):
+#     direction_from_vec = get_bone_vec3(model, direction_from_name)
+#     direction_to_vec = get_bone_vec3(model, direction_to_name)
+#     up_from_vec = get_bone_vec3(model, up_from_name)
+#     up_to_vec = get_bone_vec3(model, up_to_name)
+#     cross_from_vec = get_bone_vec3(model, cross_from_name)
+#     cross_to_vec = get_bone_vec3(model, cross_to_name)
 
-    direction = (direction_to_vec - direction_from_vec).normalized()
-    up = (up_to_vec - up_from_vec).normalized()
-    cross = (cross_to_vec - cross_from_vec).normalized()
-    qq = MQuaternion.fromDirection(direction, MVector3D.crossProduct(up, cross))
+#     direction = (direction_to_vec - direction_from_vec).normalized()
+#     up = (up_to_vec - up_from_vec).normalized()
+#     cross = (cross_to_vec - cross_from_vec).normalized()
+#     qq = MQuaternion.fromDirection(direction, MVector3D.crossProduct(up, cross))
 
-    return qq
+#     return qq
 
-def get_bone_vec3(model: PmxModel, joint_name: str):
-    bone_name = VMD_CONNECTIONS[joint_name]["bname"]
-    if bone_name in model.bones:
-        return model.bones[bone_name].position
+# def get_bone_vec3(model: PmxModel, joint_name: str):
+#     bone_name = VMD_CONNECTIONS[joint_name]["bname"]
+#     if bone_name in model.bones:
+#         return model.bones[bone_name].position
     
-    return MVector3D()
+#     return MVector3D()
 
-def get_vec3(joints: dict, jname: str):
-    if jname in joints:
-        joint = joints[jname]
-        return MVector3D(joint["x"], joint["y"], joint["z"])
-    else:
-        if jname == "pelvis2":
-            # 尾てい骨くらい
-            right_hip_vec = get_vec3(joints, "right_hip")
-            left_hip_vec = get_vec3(joints, "left_hip")
-            return (right_hip_vec + left_hip_vec) / 2
+# def get_vec3(joints: dict, jname: str):
+#     if jname in joints:
+#         joint = joints[jname]
+#         return MVector3D(joint["x"], joint["y"], joint["z"])
+#     else:
+#         if jname == "pelvis2":
+#             # 尾てい骨くらい
+#             right_hip_vec = get_vec3(joints, "right_hip")
+#             left_hip_vec = get_vec3(joints, "left_hip")
+#             return (right_hip_vec + left_hip_vec) / 2
     
-    return MVector3D()
+#     return MVector3D()
 
 
 def read_bone_csv(bone_csv_path: str):
@@ -2133,7 +2210,7 @@ def read_bone_csv(bone_csv_path: str):
         for ridx, row in enumerate(reader):
             if row[0] == "Bone":
                 bone = Bone(row[1], row[2], MVector3D(float(row[5]), float(row[6]), float(row[7])), row[13], int(row[3]), \
-                            int(row[8]) * 0x0002| int(row[9]) * 0x0004 | int(row[10]) * 0x0020 | int(row[11]) * 0x0008 | int(row[12]) * 0x0010)
+                            int(row[14]) * 0x0001| int(row[8]) * 0x0002| int(row[9]) * 0x0004 | int(row[10]) * 0x0020 | int(row[11]) * 0x0008 | int(row[12]) * 0x0010)
                 bone.index = ridx - 1
 
                 if len(row[15]) > 0:
@@ -2257,437 +2334,437 @@ def read_bone_csv(bone_csv_path: str):
     return model
 
 
-# 眉モーフ
-def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict):
-    left_eye_brow1 = get_vec2(frame_joints["faces"], "left_eye_brow1")
-    left_eye_brow2 = get_vec2(frame_joints["faces"], "left_eye_brow2")
-    left_eye_brow3 = get_vec2(frame_joints["faces"], "left_eye_brow3")
-    left_eye_brow4 = get_vec2(frame_joints["faces"], "left_eye_brow4")
-    left_eye_brow5 = get_vec2(frame_joints["faces"], "left_eye_brow5")
+# # 眉モーフ
+# def calc_eyebrow(fno: int, motion: VmdMotion, frame_joints: dict):
+#     left_eye_brow1 = get_vec2(frame_joints["faces"], "left_eye_brow1")
+#     left_eye_brow2 = get_vec2(frame_joints["faces"], "left_eye_brow2")
+#     left_eye_brow3 = get_vec2(frame_joints["faces"], "left_eye_brow3")
+#     left_eye_brow4 = get_vec2(frame_joints["faces"], "left_eye_brow4")
+#     left_eye_brow5 = get_vec2(frame_joints["faces"], "left_eye_brow5")
 
-    left_eye1 = get_vec2(frame_joints["faces"], "left_eye1")
-    left_eye2 = get_vec2(frame_joints["faces"], "left_eye2")
-    left_eye3 = get_vec2(frame_joints["faces"], "left_eye3")
-    left_eye4 = get_vec2(frame_joints["faces"], "left_eye4")
-    left_eye5 = get_vec2(frame_joints["faces"], "left_eye5")
-    left_eye6 = get_vec2(frame_joints["faces"], "left_eye6")
+#     left_eye1 = get_vec2(frame_joints["faces"], "left_eye1")
+#     left_eye2 = get_vec2(frame_joints["faces"], "left_eye2")
+#     left_eye3 = get_vec2(frame_joints["faces"], "left_eye3")
+#     left_eye4 = get_vec2(frame_joints["faces"], "left_eye4")
+#     left_eye5 = get_vec2(frame_joints["faces"], "left_eye5")
+#     left_eye6 = get_vec2(frame_joints["faces"], "left_eye6")
 
-    right_eye_brow1 = get_vec2(frame_joints["faces"], "right_eye_brow1")
-    right_eye_brow2 = get_vec2(frame_joints["faces"], "right_eye_brow2")
-    right_eye_brow3 = get_vec2(frame_joints["faces"], "right_eye_brow3")
-    right_eye_brow4 = get_vec2(frame_joints["faces"], "right_eye_brow4")
-    right_eye_brow5 = get_vec2(frame_joints["faces"], "right_eye_brow5")
+#     right_eye_brow1 = get_vec2(frame_joints["faces"], "right_eye_brow1")
+#     right_eye_brow2 = get_vec2(frame_joints["faces"], "right_eye_brow2")
+#     right_eye_brow3 = get_vec2(frame_joints["faces"], "right_eye_brow3")
+#     right_eye_brow4 = get_vec2(frame_joints["faces"], "right_eye_brow4")
+#     right_eye_brow5 = get_vec2(frame_joints["faces"], "right_eye_brow5")
 
-    right_eye1 = get_vec2(frame_joints["faces"], "right_eye1")
-    right_eye2 = get_vec2(frame_joints["faces"], "right_eye2")
-    right_eye3 = get_vec2(frame_joints["faces"], "right_eye3")
-    right_eye4 = get_vec2(frame_joints["faces"], "right_eye4")
-    right_eye5 = get_vec2(frame_joints["faces"], "right_eye5")
-    right_eye6 = get_vec2(frame_joints["faces"], "right_eye6")
+#     right_eye1 = get_vec2(frame_joints["faces"], "right_eye1")
+#     right_eye2 = get_vec2(frame_joints["faces"], "right_eye2")
+#     right_eye3 = get_vec2(frame_joints["faces"], "right_eye3")
+#     right_eye4 = get_vec2(frame_joints["faces"], "right_eye4")
+#     right_eye5 = get_vec2(frame_joints["faces"], "right_eye5")
+#     right_eye6 = get_vec2(frame_joints["faces"], "right_eye6")
 
-    left_nose_1 = get_vec2(frame_joints["faces"], 'left_nose_1')
-    right_nose_2 = get_vec2(frame_joints["faces"], 'right_nose_2')
+#     left_nose_1 = get_vec2(frame_joints["faces"], 'left_nose_1')
+#     right_nose_2 = get_vec2(frame_joints["faces"], 'right_nose_2')
 
-    # 鼻の幅
-    nose_width = abs(left_nose_1.x() - right_nose_2.x())
+#     # 鼻の幅
+#     nose_width = abs(left_nose_1.x() - right_nose_2.x())
     
-    # 眉のしかめ具合
-    frown_ratio = abs(left_eye_brow1.x() - right_eye_brow1.x()) / nose_width
+#     # 眉のしかめ具合
+#     frown_ratio = abs(left_eye_brow1.x() - right_eye_brow1.x()) / nose_width
 
-    # 眉の幅
-    eye_brow_length = (euclidean_distance(left_eye_brow1, left_eye_brow5) + euclidean_distance(right_eye_brow1, right_eye_brow5)) / 2
-    # 目の幅
-    eye_length = (euclidean_distance(left_eye1, left_eye4) + euclidean_distance(right_eye1, right_eye4)) / 2
+#     # 眉の幅
+#     eye_brow_length = (euclidean_distance(left_eye_brow1, left_eye_brow5) + euclidean_distance(right_eye_brow1, right_eye_brow5)) / 2
+#     # 目の幅
+#     eye_length = (euclidean_distance(left_eye1, left_eye4) + euclidean_distance(right_eye1, right_eye4)) / 2
 
-    # 目と眉の縦幅
-    left_vertical_length = (euclidean_distance(left_eye1, left_eye_brow1) + euclidean_distance(right_eye1, right_eye_brow1)) / 2
-    center_vertical_length = (euclidean_distance(left_eye2, left_eye_brow3) + euclidean_distance(right_eye2, right_eye_brow3)) / 2
-    right_vertical_length = (euclidean_distance(left_eye4, left_eye_brow5) + euclidean_distance(right_eye4, right_eye_brow5)) / 2
+#     # 目と眉の縦幅
+#     left_vertical_length = (euclidean_distance(left_eye1, left_eye_brow1) + euclidean_distance(right_eye1, right_eye_brow1)) / 2
+#     center_vertical_length = (euclidean_distance(left_eye2, left_eye_brow3) + euclidean_distance(right_eye2, right_eye_brow3)) / 2
+#     right_vertical_length = (euclidean_distance(left_eye4, left_eye_brow5) + euclidean_distance(right_eye4, right_eye_brow5)) / 2
 
-    left_ratio = left_vertical_length / eye_brow_length
-    center_ratio = center_vertical_length / eye_brow_length
-    right_ratio = right_vertical_length / eye_brow_length
+#     left_ratio = left_vertical_length / eye_brow_length
+#     center_ratio = center_vertical_length / eye_brow_length
+#     right_ratio = right_vertical_length / eye_brow_length
 
-    updown_ratio = center_ratio - 0.5
+#     updown_ratio = center_ratio - 0.5
 
-    if updown_ratio >= 0.2:
-        # 上
-        mf = VmdMorphFrame(fno)
-        mf.set_name("上")
-        mf.ratio = max(0, min(1, abs(updown_ratio) + 0.3))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#     if updown_ratio >= 0.2:
+#         # 上
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("上")
+#         mf.ratio = max(0, min(1, abs(updown_ratio) + 0.3))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("下")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
-    else:
-        # 下
-        mf = VmdMorphFrame(fno)
-        mf.set_name("下")
-        mf.ratio = max(0, min(1, abs(updown_ratio) + 0.3))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("下")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
+#     else:
+#         # 下
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("下")
+#         mf.ratio = max(0, min(1, abs(updown_ratio) + 0.3))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("上")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("上")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
     
-    mf = VmdMorphFrame(fno)
-    mf.set_name("困る")
-    mf.ratio = max(0, min(1, (0.8 - frown_ratio)))
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("困る")
+#     mf.ratio = max(0, min(1, (0.8 - frown_ratio)))
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    if left_ratio >= right_ratio:
-        # 怒る系
-        mf = VmdMorphFrame(fno)
-        mf.set_name("怒り")
-        mf.ratio = max(0, min(1, abs(left_ratio - right_ratio)))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#     if left_ratio >= right_ratio:
+#         # 怒る系
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("怒り")
+#         mf.ratio = max(0, min(1, abs(left_ratio - right_ratio)))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("にこり")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
-    else:
-        # 笑う系
-        mf = VmdMorphFrame(fno)
-        mf.set_name("にこり")
-        mf.ratio = max(0, min(1, abs(right_ratio - left_ratio)))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("にこり")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
+#     else:
+#         # 笑う系
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("にこり")
+#         mf.ratio = max(0, min(1, abs(right_ratio - left_ratio)))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("怒り")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("怒り")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-# リップモーフ
-def calc_lip(fno: int, motion: VmdMotion, frame_joints: dict):
-    left_nose_1 = get_vec2(frame_joints["faces"], 'left_nose_1')
-    right_nose_2 = get_vec2(frame_joints["faces"], 'right_nose_2')
+# # リップモーフ
+# def calc_lip(fno: int, motion: VmdMotion, frame_joints: dict):
+#     left_nose_1 = get_vec2(frame_joints["faces"], 'left_nose_1')
+#     right_nose_2 = get_vec2(frame_joints["faces"], 'right_nose_2')
 
-    left_mouth_1 = get_vec2(frame_joints["faces"], 'left_mouth_1')
-    left_mouth_2 = get_vec2(frame_joints["faces"], 'left_mouth_2')
-    left_mouth_3 = get_vec2(frame_joints["faces"], 'left_mouth_3')
-    mouth_top = get_vec2(frame_joints["faces"], 'mouth_top')
-    right_mouth_3 = get_vec2(frame_joints["faces"], 'right_mouth_3')
-    right_mouth_2 = get_vec2(frame_joints["faces"], 'right_mouth_2')
-    right_mouth_1 = get_vec2(frame_joints["faces"], 'right_mouth_1')
-    right_mouth_5 = get_vec2(frame_joints["faces"], 'right_mouth_5')
-    right_mouth_4 = get_vec2(frame_joints["faces"], 'right_mouth_4')
-    mouth_bottom = get_vec2(frame_joints["faces"], 'mouth_bottom')
-    left_mouth_4 = get_vec2(frame_joints["faces"], 'left_mouth_4')
-    left_mouth_5 = get_vec2(frame_joints["faces"], 'left_mouth_5')
-    left_lip_1 = get_vec2(frame_joints["faces"], 'left_lip_1')
-    left_lip_2 = get_vec2(frame_joints["faces"], 'left_lip_2')
-    lip_top = get_vec2(frame_joints["faces"], 'lip_top')
-    right_lip_2 = get_vec2(frame_joints["faces"], 'right_lip_2')
-    right_lip_1 = get_vec2(frame_joints["faces"], 'right_lip_1')
-    right_lip_3 = get_vec2(frame_joints["faces"], 'right_lip_3')
-    lip_bottom = get_vec2(frame_joints["faces"], 'lip_bottom')
-    left_lip_3 = get_vec2(frame_joints["faces"], 'left_lip_3')
+#     left_mouth_1 = get_vec2(frame_joints["faces"], 'left_mouth_1')
+#     left_mouth_2 = get_vec2(frame_joints["faces"], 'left_mouth_2')
+#     left_mouth_3 = get_vec2(frame_joints["faces"], 'left_mouth_3')
+#     mouth_top = get_vec2(frame_joints["faces"], 'mouth_top')
+#     right_mouth_3 = get_vec2(frame_joints["faces"], 'right_mouth_3')
+#     right_mouth_2 = get_vec2(frame_joints["faces"], 'right_mouth_2')
+#     right_mouth_1 = get_vec2(frame_joints["faces"], 'right_mouth_1')
+#     right_mouth_5 = get_vec2(frame_joints["faces"], 'right_mouth_5')
+#     right_mouth_4 = get_vec2(frame_joints["faces"], 'right_mouth_4')
+#     mouth_bottom = get_vec2(frame_joints["faces"], 'mouth_bottom')
+#     left_mouth_4 = get_vec2(frame_joints["faces"], 'left_mouth_4')
+#     left_mouth_5 = get_vec2(frame_joints["faces"], 'left_mouth_5')
+#     left_lip_1 = get_vec2(frame_joints["faces"], 'left_lip_1')
+#     left_lip_2 = get_vec2(frame_joints["faces"], 'left_lip_2')
+#     lip_top = get_vec2(frame_joints["faces"], 'lip_top')
+#     right_lip_2 = get_vec2(frame_joints["faces"], 'right_lip_2')
+#     right_lip_1 = get_vec2(frame_joints["faces"], 'right_lip_1')
+#     right_lip_3 = get_vec2(frame_joints["faces"], 'right_lip_3')
+#     lip_bottom = get_vec2(frame_joints["faces"], 'lip_bottom')
+#     left_lip_3 = get_vec2(frame_joints["faces"], 'left_lip_3')
 
-    # 鼻の幅
-    nose_width = abs(left_nose_1.x() - right_nose_2.x())
+#     # 鼻の幅
+#     nose_width = abs(left_nose_1.x() - right_nose_2.x())
 
-    # 口角の平均値
-    corner_center = (left_mouth_1 + right_mouth_1) / 2
-    # 口角の幅
-    mouse_width = abs(left_mouth_1.x() - right_mouth_1.x())
+#     # 口角の平均値
+#     corner_center = (left_mouth_1 + right_mouth_1) / 2
+#     # 口角の幅
+#     mouse_width = abs(left_mouth_1.x() - right_mouth_1.x())
 
-    # 鼻基準の口の横幅比率
-    mouse_width_ratio = mouse_width / nose_width
+#     # 鼻基準の口の横幅比率
+#     mouse_width_ratio = mouse_width / nose_width
 
-    # 上唇の平均値
-    top_mouth_center = (right_mouth_3 + mouth_top + left_mouth_3) / 3
-    top_lip_center = (right_lip_2 + lip_top + left_lip_2) / 3
+#     # 上唇の平均値
+#     top_mouth_center = (right_mouth_3 + mouth_top + left_mouth_3) / 3
+#     top_lip_center = (right_lip_2 + lip_top + left_lip_2) / 3
 
-    # 下唇の平均値
-    bottom_mouth_center = (right_mouth_4 + mouth_bottom + left_mouth_4) / 3
-    bottom_lip_center = (right_lip_3 + lip_bottom + left_lip_3) / 3
+#     # 下唇の平均値
+#     bottom_mouth_center = (right_mouth_4 + mouth_bottom + left_mouth_4) / 3
+#     bottom_lip_center = (right_lip_3 + lip_bottom + left_lip_3) / 3
 
-    # 唇の外側の開き具合に対する内側の開き具合
-    open_ratio = (bottom_lip_center.y() - top_lip_center.y()) / (bottom_mouth_center.y() - top_mouth_center.y())
+#     # 唇の外側の開き具合に対する内側の開き具合
+#     open_ratio = (bottom_lip_center.y() - top_lip_center.y()) / (bottom_mouth_center.y() - top_mouth_center.y())
 
-    # 笑いの比率
-    smile_ratio = (bottom_mouth_center.y() - corner_center.y()) / (bottom_mouth_center.y() - top_mouth_center.y())
+#     # 笑いの比率
+#     smile_ratio = (bottom_mouth_center.y() - corner_center.y()) / (bottom_mouth_center.y() - top_mouth_center.y())
 
-    if smile_ratio >= 0:
-        mf = VmdMorphFrame(fno)
-        mf.set_name("∧")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
+#     if smile_ratio >= 0:
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("∧")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("にやり")
-        mf.ratio = max(0, min(1, abs(smile_ratio)))
-        motion.regist_mf(mf, mf.name, mf.fno)
-    else:
-        mf = VmdMorphFrame(fno)
-        mf.set_name("∧")
-        mf.ratio = max(0, min(1, abs(smile_ratio)))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("にやり")
+#         mf.ratio = max(0, min(1, abs(smile_ratio)))
+#         motion.regist_mf(mf, mf.name, mf.fno)
+#     else:
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("∧")
+#         mf.ratio = max(0, min(1, abs(smile_ratio)))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("にやり")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("にやり")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-    if mouse_width_ratio > 1.3:
-        # 横幅広がってる場合は「い」
-        mf = VmdMorphFrame(fno)
-        mf.set_name("い")
-        mf.ratio = max(0, min(1, 1.5 / mouse_width_ratio) * open_ratio)
-        motion.regist_mf(mf, mf.name, mf.fno)
+#     if mouse_width_ratio > 1.3:
+#         # 横幅広がってる場合は「い」
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("い")
+#         mf.ratio = max(0, min(1, 1.5 / mouse_width_ratio) * open_ratio)
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("う")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("う")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("あ")
-        mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("あ")
+#         mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("お")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
-    else:
-        # 狭まっている場合は「う」
-        mf = VmdMorphFrame(fno)
-        mf.set_name("い")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("お")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
+#     else:
+#         # 狭まっている場合は「う」
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("い")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("う")
-        mf.ratio = max(0, min(1, (1.2 / mouse_width_ratio) * open_ratio))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("う")
+#         mf.ratio = max(0, min(1, (1.2 / mouse_width_ratio) * open_ratio))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("あ")
-        mf.ratio = 0
-        motion.regist_mf(mf, mf.name, mf.fno)        
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("あ")
+#         mf.ratio = 0
+#         motion.regist_mf(mf, mf.name, mf.fno)        
 
-        mf = VmdMorphFrame(fno)
-        mf.set_name("お")
-        mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
-        motion.regist_mf(mf, mf.name, mf.fno)
+#         mf = VmdMorphFrame(fno)
+#         mf.set_name("お")
+#         mf.ratio = max(0, min(1 - min(0.7, smile_ratio), open_ratio))
+#         motion.regist_mf(mf, mf.name, mf.fno)
 
-def blend_eye(fno: int, motion: VmdMotion, left_eye_euler: MVector3D, right_eye_euler: MVector3D):
-    min_blink = min(motion.morphs["ウィンク右"][fno].ratio, motion.morphs["ウィンク"][fno].ratio)
-    min_smile = min(motion.morphs["ｳｨﾝｸ２右"][fno].ratio, motion.morphs["ウィンク２"][fno].ratio)
+# def blend_eye(fno: int, motion: VmdMotion, left_eye_euler: MVector3D, right_eye_euler: MVector3D):
+#     min_blink = min(motion.morphs["ウィンク右"][fno].ratio, motion.morphs["ウィンク"][fno].ratio)
+#     min_smile = min(motion.morphs["ｳｨﾝｸ２右"][fno].ratio, motion.morphs["ウィンク２"][fno].ratio)
 
-    # 両方の同じ値はさっぴく
-    motion.morphs["ウィンク右"][fno].ratio -= min_smile
-    motion.morphs["ウィンク"][fno].ratio -= min_smile
+#     # 両方の同じ値はさっぴく
+#     motion.morphs["ウィンク右"][fno].ratio -= min_smile
+#     motion.morphs["ウィンク"][fno].ratio -= min_smile
 
-    motion.morphs["ｳｨﾝｸ２右"][fno].ratio -= min_blink
-    motion.morphs["ウィンク２"][fno].ratio -= min_blink
+#     motion.morphs["ｳｨﾝｸ２右"][fno].ratio -= min_blink
+#     motion.morphs["ウィンク２"][fno].ratio -= min_blink
 
-    for morph_name in ["ウィンク右", "ウィンク", "ｳｨﾝｸ２右", "ウィンク２"]:
-        motion.morphs[morph_name][fno].ratio = max(0, min(1, motion.morphs[morph_name][fno].ratio))
+#     for morph_name in ["ウィンク右", "ウィンク", "ｳｨﾝｸ２右", "ウィンク２"]:
+#         motion.morphs[morph_name][fno].ratio = max(0, min(1, motion.morphs[morph_name][fno].ratio))
 
-    mf = VmdMorphFrame(fno)
-    mf.set_name("笑い")
-    mf.ratio = max(0, min(1, min_smile))
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("笑い")
+#     mf.ratio = max(0, min(1, min_smile))
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    mf = VmdMorphFrame(fno)
-    mf.set_name("まばたき")
-    mf.ratio = max(0, min(1, min_blink))
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("まばたき")
+#     mf.ratio = max(0, min(1, min_blink))
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    # 両目の平均とする
-    mean_eye_euler = (right_eye_euler + left_eye_euler) / 2
-    eye_bf = motion.calc_bf("両目", fno)
-    eye_bf.rotation = MQuaternion.fromEulerAngles(mean_eye_euler.x(), mean_eye_euler.y(), 0)
-    motion.regist_bf(eye_bf, "両目", fno)
+#     # 両目の平均とする
+#     mean_eye_euler = (right_eye_euler + left_eye_euler) / 2
+#     eye_bf = motion.calc_bf("両目", fno)
+#     eye_bf.rotation = MQuaternion.fromEulerAngles(mean_eye_euler.x(), mean_eye_euler.y(), 0)
+#     motion.regist_bf(eye_bf, "両目", fno)
     
 
-def calc_left_eye(fno: int, motion: VmdMotion, frame_joints: dict):
-    left_eye1 = get_vec2(frame_joints["faces"], "left_eye1")
-    left_eye2 = get_vec2(frame_joints["faces"], "left_eye2")
-    left_eye3 = get_vec2(frame_joints["faces"], "left_eye3")
-    left_eye4 = get_vec2(frame_joints["faces"], "left_eye4")
-    left_eye5 = get_vec2(frame_joints["faces"], "left_eye5")
-    left_eye6 = get_vec2(frame_joints["faces"], "left_eye6")
+# def calc_left_eye(fno: int, motion: VmdMotion, frame_joints: dict):
+#     left_eye1 = get_vec2(frame_joints["faces"], "left_eye1")
+#     left_eye2 = get_vec2(frame_joints["faces"], "left_eye2")
+#     left_eye3 = get_vec2(frame_joints["faces"], "left_eye3")
+#     left_eye4 = get_vec2(frame_joints["faces"], "left_eye4")
+#     left_eye5 = get_vec2(frame_joints["faces"], "left_eye5")
+#     left_eye6 = get_vec2(frame_joints["faces"], "left_eye6")
 
-    if "eyes" in frame_joints:
-        left_pupil = MVector2D(frame_joints["eyes"]["left"]["x"], frame_joints["eyes"]["left"]["y"])
-    else:
-        left_pupil = MVector2D()
+#     if "eyes" in frame_joints:
+#         left_pupil = MVector2D(frame_joints["eyes"]["left"]["x"], frame_joints["eyes"]["left"]["y"])
+#     else:
+#         left_pupil = MVector2D()
 
-    # 左目のEAR(eyes aspect ratio)
-    left_blink, left_smile, left_eye_euler = get_blink_ratio(fno, left_eye1, left_eye2, left_eye3, left_eye4, left_eye5, left_eye6, left_pupil)
+#     # 左目のEAR(eyes aspect ratio)
+#     left_blink, left_smile, left_eye_euler = get_blink_ratio(fno, left_eye1, left_eye2, left_eye3, left_eye4, left_eye5, left_eye6, left_pupil)
 
-    mf = VmdMorphFrame(fno)
-    mf.set_name("ウィンク右")
-    mf.ratio = max(0, min(1, left_smile))
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("ウィンク右")
+#     mf.ratio = max(0, min(1, left_smile))
 
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    mf = VmdMorphFrame(fno)
-    mf.set_name("ｳｨﾝｸ２右")
-    mf.ratio = max(0, min(1, left_blink))
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("ｳｨﾝｸ２右")
+#     mf.ratio = max(0, min(1, left_blink))
 
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    return left_eye_euler
+#     return left_eye_euler
 
-def calc_right_eye(fno: int, motion: VmdMotion, frame_joints: dict):
-    right_eye1 = get_vec2(frame_joints["faces"], "right_eye1")
-    right_eye2 = get_vec2(frame_joints["faces"], "right_eye2")
-    right_eye3 = get_vec2(frame_joints["faces"], "right_eye3")
-    right_eye4 = get_vec2(frame_joints["faces"], "right_eye4")
-    right_eye5 = get_vec2(frame_joints["faces"], "right_eye5")
-    right_eye6 = get_vec2(frame_joints["faces"], "right_eye6")
+# def calc_right_eye(fno: int, motion: VmdMotion, frame_joints: dict):
+#     right_eye1 = get_vec2(frame_joints["faces"], "right_eye1")
+#     right_eye2 = get_vec2(frame_joints["faces"], "right_eye2")
+#     right_eye3 = get_vec2(frame_joints["faces"], "right_eye3")
+#     right_eye4 = get_vec2(frame_joints["faces"], "right_eye4")
+#     right_eye5 = get_vec2(frame_joints["faces"], "right_eye5")
+#     right_eye6 = get_vec2(frame_joints["faces"], "right_eye6")
 
-    if "eyes" in frame_joints:
-        right_pupil = MVector2D(frame_joints["eyes"]["right"]["x"], frame_joints["eyes"]["right"]["y"])
-    else:
-        right_pupil = MVector2D()
+#     if "eyes" in frame_joints:
+#         right_pupil = MVector2D(frame_joints["eyes"]["right"]["x"], frame_joints["eyes"]["right"]["y"])
+#     else:
+#         right_pupil = MVector2D()
 
-    # 右目のEAR(eyes aspect ratio)
-    right_blink, right_smile, right_eye_euler = get_blink_ratio(fno, right_eye1, right_eye2, right_eye3, right_eye4, right_eye5, right_eye6, right_pupil, is_right=True)
+#     # 右目のEAR(eyes aspect ratio)
+#     right_blink, right_smile, right_eye_euler = get_blink_ratio(fno, right_eye1, right_eye2, right_eye3, right_eye4, right_eye5, right_eye6, right_pupil, is_right=True)
 
-    mf = VmdMorphFrame(fno)
-    mf.set_name("ウィンク")
-    mf.ratio = max(0, min(1, right_smile))
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("ウィンク")
+#     mf.ratio = max(0, min(1, right_smile))
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    mf = VmdMorphFrame(fno)
-    mf.set_name("ウィンク２")
-    mf.ratio = max(0, min(1, right_blink))
-    motion.regist_mf(mf, mf.name, mf.fno)
+#     mf = VmdMorphFrame(fno)
+#     mf.set_name("ウィンク２")
+#     mf.ratio = max(0, min(1, right_blink))
+#     motion.regist_mf(mf, mf.name, mf.fno)
 
-    return right_eye_euler
+#     return right_eye_euler
 
-def euclidean_distance(point1: MVector2D, point2: MVector2D):
-    return math.sqrt((point1.x() - point2.x())**2 + (point1.y() - point2.y())**2)
+# def euclidean_distance(point1: MVector2D, point2: MVector2D):
+#     return math.sqrt((point1.x() - point2.x())**2 + (point1.y() - point2.y())**2)
 
-def get_blink_ratio(fno: int, eye1: MVector2D, eye2: MVector2D, eye3: MVector2D, eye4: MVector2D, eye5: MVector2D, eye6: MVector2D, pupil: MVector2D, is_right=False):
-    #loading all the required points
-    corner_left  = eye4
-    corner_right = eye1
-    corner_center = (eye1 + eye4) / 2
+# def get_blink_ratio(fno: int, eye1: MVector2D, eye2: MVector2D, eye3: MVector2D, eye4: MVector2D, eye5: MVector2D, eye6: MVector2D, pupil: MVector2D, is_right=False):
+#     #loading all the required points
+#     corner_left  = eye4
+#     corner_right = eye1
+#     corner_center = (eye1 + eye4) / 2
     
-    center_top = (eye2 + eye3) / 2
-    center_bottom = (eye5 + eye6) / 2
+#     center_top = (eye2 + eye3) / 2
+#     center_bottom = (eye5 + eye6) / 2
 
-    #calculating distance
-    horizontal_length = euclidean_distance(corner_left, corner_right)
-    vertical_length = euclidean_distance(center_top, center_bottom)
+#     #calculating distance
+#     horizontal_length = euclidean_distance(corner_left, corner_right)
+#     vertical_length = euclidean_distance(center_top, center_bottom)
 
-    ratio = horizontal_length / vertical_length
-    new_ratio = min(1, math.sin(calc_ratio(ratio, 0, 12, 0, 1)))
+#     ratio = horizontal_length / vertical_length
+#     new_ratio = min(1, math.sin(calc_ratio(ratio, 0, 12, 0, 1)))
 
-    # 笑いの比率(日本人用に比率半分)
-    smile_ratio = (center_bottom.y() - corner_center.y()) / (center_bottom.y() - center_top.y())
+#     # 笑いの比率(日本人用に比率半分)
+#     smile_ratio = (center_bottom.y() - corner_center.y()) / (center_bottom.y() - center_top.y())
 
-    if smile_ratio > 1:
-        # １より大きい場合、目頭よりも上瞼が下にあるという事なので、通常瞬きと見なす
-        return 1, 0, MVector3D()
+#     if smile_ratio > 1:
+#         # １より大きい場合、目頭よりも上瞼が下にあるという事なので、通常瞬きと見なす
+#         return 1, 0, MVector3D()
     
-    # 目は四角の中にあるはず
-    pupil_x = 0
-    pupil_y = 0
-    if pupil != MVector2D():
-        eye_right = ((eye3 + eye5) / 2)
-        eye_left = ((eye2 + eye6) / 2)
-        pupil_horizonal_ratio = (pupil.x() - min(eye1.x(), eye4.x())) / (max(eye1.x(), eye4.x()) - min(eye1.x(), eye4.x()))
-        pupil_vertical_ratio = (pupil.y() - center_top.y()) / (center_bottom.y() - center_top.y())
+#     # 目は四角の中にあるはず
+#     pupil_x = 0
+#     pupil_y = 0
+#     if pupil != MVector2D():
+#         eye_right = ((eye3 + eye5) / 2)
+#         eye_left = ((eye2 + eye6) / 2)
+#         pupil_horizonal_ratio = (pupil.x() - min(eye1.x(), eye4.x())) / (max(eye1.x(), eye4.x()) - min(eye1.x(), eye4.x()))
+#         pupil_vertical_ratio = (pupil.y() - center_top.y()) / (center_bottom.y() - center_top.y())
 
-        if abs(pupil_horizonal_ratio) <= 1 and abs(pupil_vertical_ratio) <= 1:
-            # 比率を超えている場合、計測失敗してるので初期値            
-            pupil_x = calc_ratio(pupil_vertical_ratio, 0, 1, -15, 15)
-            pupil_y = calc_ratio(pupil_horizonal_ratio, 0, 1, -30, 20)
+#         if abs(pupil_horizonal_ratio) <= 1 and abs(pupil_vertical_ratio) <= 1:
+#             # 比率を超えている場合、計測失敗してるので初期値            
+#             pupil_x = calc_ratio(pupil_vertical_ratio, 0, 1, -15, 15)
+#             pupil_y = calc_ratio(pupil_horizonal_ratio, 0, 1, -30, 20)
 
-    return new_ratio * (1 - smile_ratio), new_ratio * smile_ratio, MVector3D(pupil_x * -1, pupil_y * -1, 0)
+#     return new_ratio * (1 - smile_ratio), new_ratio * smile_ratio, MVector3D(pupil_x * -1, pupil_y * -1, 0)
 
-def calc_ratio(ratio: float, oldmin: float, oldmax: float, newmin: float, newmax: float):
-    # https://qastack.jp/programming/929103/convert-a-number-range-to-another-range-maintaining-ratio
-    # NewValue = (((OldValue - OldMin) * (NewMax - NewMin)) / (OldMax - OldMin)) + NewMin
-    return (((ratio - oldmin) * (newmax - newmin)) / (oldmax - oldmin)) + newmin
+# def calc_ratio(ratio: float, oldmin: float, oldmax: float, newmin: float, newmax: float):
+#     # https://qastack.jp/programming/929103/convert-a-number-range-to-another-range-maintaining-ratio
+#     # NewValue = (((OldValue - OldMin) * (NewMax - NewMin)) / (OldMax - OldMin)) + NewMin
+#     return (((ratio - oldmin) * (newmax - newmin)) / (oldmax - oldmin)) + newmin
 
-def get_vec2(joints: dict, jname: str):
-    if jname in MORPH_CONNECTIONS:
-        joint = joints[MORPH_CONNECTIONS[jname]]
-        return MVector2D(joint["x"], joint["y"])
+# def get_vec2(joints: dict, jname: str):
+#     if jname in MORPH_CONNECTIONS:
+#         joint = joints[MORPH_CONNECTIONS[jname]]
+#         return MVector2D(joint["x"], joint["y"])
     
-    return MVector2D()
+#     return MVector2D()
 
 
-MORPH_CONNECTIONS = {
-    # Left Eye brow
-    'left_eye_brow1': "23",
-    'left_eye_brow2': "24",
-    'left_eye_brow3': "25",
-    'left_eye_brow4': "26",
-    'left_eye_brow5': "27",
+# MORPH_CONNECTIONS = {
+#     # Left Eye brow
+#     'left_eye_brow1': "23",
+#     'left_eye_brow2': "24",
+#     'left_eye_brow3': "25",
+#     'left_eye_brow4': "26",
+#     'left_eye_brow5': "27",
 
-    # Right Eye brow
-    'right_eye_brow1': "22",
-    'right_eye_brow2': "21",
-    'right_eye_brow3': "20",
-    'right_eye_brow4': "19",
-    'right_eye_brow5': "18",
+#     # Right Eye brow
+#     'right_eye_brow1': "22",
+#     'right_eye_brow2': "21",
+#     'right_eye_brow3': "20",
+#     'right_eye_brow4': "19",
+#     'right_eye_brow5': "18",
 
-    # Left Eye
-    'left_eye1': "46",
-    'left_eye2': "45",
-    'left_eye3': "44",
-    'left_eye4': "43",
-    'left_eye5': "48",
-    'left_eye6': "47",
+#     # Left Eye
+#     'left_eye1': "46",
+#     'left_eye2': "45",
+#     'left_eye3': "44",
+#     'left_eye4': "43",
+#     'left_eye5': "48",
+#     'left_eye6': "47",
 
-    # Right Eye
-    'right_eye1': "40",
-    'right_eye2': "39",
-    'right_eye3': "38",
-    'right_eye4': "37",
-    'right_eye5': "42",
-    'right_eye6': "41",
+#     # Right Eye
+#     'right_eye1': "40",
+#     'right_eye2': "39",
+#     'right_eye3': "38",
+#     'right_eye4': "37",
+#     'right_eye5': "42",
+#     'right_eye6': "41",
 
-    # Nose Vertical
-    'nose1': "28",
-    'nose2': "29",
-    'nose3': "30",
-    'nose4': "31",
+#     # Nose Vertical
+#     'nose1': "28",
+#     'nose2': "29",
+#     'nose3': "30",
+#     'nose4': "31",
 
-    # Nose Horizontal
-    'left_nose_1': "36",
-    'left_nose_2': "35",
-    'nose_middle': "34",
-    'right_nose_1': "33",
-    'right_nose_2': "32",
+#     # Nose Horizontal
+#     'left_nose_1': "36",
+#     'left_nose_2': "35",
+#     'nose_middle': "34",
+#     'right_nose_1': "33",
+#     'right_nose_2': "32",
 
-    # Mouth
-    'left_mouth_1': "55",
-    'left_mouth_2': "54",
-    'left_mouth_3': "53",
-    'mouth_top': "52",
-    'right_mouth_3': "51",
-    'right_mouth_2': "50",
-    'right_mouth_1': "49",
-    'right_mouth_5': "60",
-    'right_mouth_4': "59",
-    'mouth_bottom': "58",
-    'left_mouth_4': "57",
-    'left_mouth_5': "56",
+#     # Mouth
+#     'left_mouth_1': "55",
+#     'left_mouth_2': "54",
+#     'left_mouth_3': "53",
+#     'mouth_top': "52",
+#     'right_mouth_3': "51",
+#     'right_mouth_2': "50",
+#     'right_mouth_1': "49",
+#     'right_mouth_5': "60",
+#     'right_mouth_4': "59",
+#     'mouth_bottom': "58",
+#     'left_mouth_4': "57",
+#     'left_mouth_5': "56",
 
-    # Lips
-    'left_lip_1': "65",
-    'left_lip_2': "64",
-    'lip_top': "63",
-    'right_lip_2': "62",
-    'right_lip_1': "61",
-    'right_lip_3': "68",
-    'lip_bottom': "67",
-    'left_lip_3': "66",
-}
+#     # Lips
+#     'left_lip_1': "65",
+#     'left_lip_2': "64",
+#     'lip_top': "63",
+#     'right_lip_2': "62",
+#     'right_lip_1': "61",
+#     'right_lip_3': "68",
+#     'lip_bottom': "67",
+#     'left_lip_3': "66",
+# }
 
 def create_bone_leg_ik(pmx: PmxModel, direction: str):
     leg_name = f'{direction}足'
@@ -2720,9 +2797,9 @@ def create_bone_leg_ik(pmx: PmxModel, direction: str):
 
 PMX_CONNECTIONS = {
     "pelvis0": {"mmd": "下半身", "parent": "グルーブ", "tail": "pelvis", "display": "体幹"},
-    "pelvis2": {"mmd": "下半身先", "parent": "pelvis0", "tail": "", "display": "体幹"},
-    "left_hip": {"mmd": "左足", "parent": "pelvis2", "tail": "left_knee", "display": "左足"},
-    "right_hip": {"mmd": "右足", "parent": "pelvis2", "tail": "right_knee", "display": "右足"},
+    "pelvis": {"mmd": "下半身先", "parent": "pelvis0", "tail": "", "display": "体幹"},
+    "left_hip": {"mmd": "左足", "parent": "pelvis0", "tail": "left_knee", "display": "左足"},
+    "right_hip": {"mmd": "右足", "parent": "pelvis0", "tail": "right_knee", "display": "右足"},
     "spine1": {"mmd": "上半身", "parent": "グルーブ", "tail": "spine2", "display": "体幹"},
     "left_knee": {"mmd": "左ひざ", "parent": "left_hip", "tail": "left_ankle", "display": "左足"},
     "right_knee": {"mmd": "右ひざ", "parent": "right_hip", "tail": "right_ankle", "display": "右足"},
@@ -2733,50 +2810,18 @@ PMX_CONNECTIONS = {
     "left_foot": {"mmd": "左つま先", "parent": "left_ankle", "tail": "", "display": "左足"},
     "right_foot": {"mmd": "右つま先", "parent": "right_ankle", "tail": "", "display": "右足"},
     "neck": {"mmd": "頭", "parent": "spine3", "tail": "head", "display": "体幹"},
-    "left_collar": {"mmd": "左肩", "parent": "spine3", "tail": "left_shoulder", "display": "左手"},
-    "right_collar": {"mmd": "右肩", "parent": "spine3", "tail": "right_shoulder", "display": "右手"},
+    "left_collar": {"mmd": "左肩", "parent": "spine2", "tail": "left_shoulder", "display": "左手"},
+    "right_collar": {"mmd": "右肩", "parent": "spine2", "tail": "right_shoulder", "display": "右手"},
     "head": {"mmd": "頭先", "parent": "neck", "tail": "", "display": "体幹"},
     "left_shoulder": {"mmd": "左腕", "parent": "left_collar", "tail": "left_elbow", "display": "左手"},
     "right_shoulder": {"mmd": "右腕", "parent": "right_collar", "tail": "right_elbow", "display": "右手"},
     "left_elbow": {"mmd": "左ひじ", "parent": "left_shoulder", "tail": "left_wrist", "display": "左手"},
     "right_elbow": {"mmd": "右ひじ", "parent": "right_shoulder", "tail": "right_wrist", "display": "右手"},
-    "left_wrist": {"mmd": "左手首", "parent": "left_elbow", "tail": "left_f_base", "display": "左手"},
-    "right_wrist": {"mmd": "右手首", "parent": "right_elbow", "tail": "right_f_base", "display": "右手"},
+    "left_wrist": {"mmd": "左手首", "parent": "left_elbow", "tail": "", "display": "左手"},
+    "right_wrist": {"mmd": "右手首", "parent": "right_elbow", "tail": "", "display": "右手"},
     "jaw": {"mmd": "jaw", "parent": "head", "tail": "", "display": "顔"},
     "left_eye_smplx": {"mmd": "left_eye_smplx", "parent": "head", "tail": "", "display": "顔"},
     "right_eye_smplx": {"mmd": "right_eye_smplx", "parent": "head", "tail": "", "display": "顔"},
-    "left_f_base": {"mmd": "左指根元", "parent": "left_wrist", "tail": "", "display": "左指"},
-    "right_f_base": {"mmd": "右指根元", "parent": "right_wrist", "tail": "", "display": "右指"},
-    "left_index1": {"mmd": "左人指１", "parent": "left_f_base", "tail": "left_index2", "display": "左指"},
-    "left_index2": {"mmd": "左人指２", "parent": "left_index1", "tail": "left_index3", "display": "左指"},
-    "left_index3": {"mmd": "左人指３", "parent": "left_index2", "tail": "left_index", "display": "左指"},
-    "left_middle1": {"mmd": "左中指１", "parent": "left_f_base", "tail": "left_middle2", "display": "左指"},
-    "left_middle2": {"mmd": "左中指２", "parent": "left_middle1", "tail": "left_middle3", "display": "左指"},
-    "left_middle3": {"mmd": "左中指３", "parent": "left_middle2", "tail": "left_middle", "display": "左指"},
-    "left_pinky1": {"mmd": "左小指１", "parent": "left_f_base", "tail": "left_pinky2", "display": "左指"},
-    "left_pinky2": {"mmd": "左小指２", "parent": "left_pinky1", "tail": "left_pinky3", "display": "左指"},
-    "left_pinky3": {"mmd": "左小指３", "parent": "left_pinky2", "tail": "left_pinky", "display": "左指"},
-    "left_ring1": {"mmd": "左薬指１", "parent": "left_f_base", "tail": "left_ring2", "display": "左指"},
-    "left_ring2": {"mmd": "左薬指２", "parent": "left_ring1", "tail": "left_ring3", "display": "左指"},
-    "left_ring3": {"mmd": "左薬指３", "parent": "left_ring2", "tail": "left_ring", "display": "左指"},
-    "left_thumb1": {"mmd": "左親指０", "parent": "left_f_base", "tail": "left_thumb2", "display": "左指"},
-    "left_thumb2": {"mmd": "左親指１", "parent": "left_thumb1", "tail": "left_thumb3", "display": "左指"},
-    "left_thumb3": {"mmd": "左親指２", "parent": "left_thumb2", "tail": "left_thumb", "display": "左指"},
-    "right_index1": {"mmd": "右人指１", "parent": "right_f_base", "tail": "right_index2", "display": "右指"},
-    "right_index2": {"mmd": "右人指２", "parent": "right_index1", "tail": "right_index3", "display": "右指"},
-    "right_index3": {"mmd": "右人指３", "parent": "right_index2", "tail": "right_index", "display": "右指"},
-    "right_middle1": {"mmd": "右中指１", "parent": "right_f_base", "tail": "right_middle2", "display": "右指"},
-    "right_middle2": {"mmd": "右中指２", "parent": "right_middle1", "tail": "right_middle3", "display": "右指"},
-    "right_middle3": {"mmd": "右中指３", "parent": "right_middle2", "tail": "right_middle", "display": "右指"},
-    "right_pinky1": {"mmd": "右小指１", "parent": "right_f_base", "tail": "right_pinky2", "display": "右指"},
-    "right_pinky2": {"mmd": "右小指２", "parent": "right_pinky1", "tail": "right_pinky3", "display": "右指"},
-    "right_pinky3": {"mmd": "右小指３", "parent": "right_pinky2", "tail": "right_pinky", "display": "右指"},
-    "right_ring1": {"mmd": "右薬指１", "parent": "right_f_base", "tail": "right_ring2", "display": "右指"},
-    "right_ring2": {"mmd": "右薬指２", "parent": "right_ring1", "tail": "right_ring3", "display": "右指"},
-    "right_ring3": {"mmd": "右薬指３", "parent": "right_ring2", "tail": "right_ring", "display": "右指"},
-    "right_thumb1": {"mmd": "右親指０", "parent": "right_f_base", "tail": "right_thumb2", "display": "右指"},
-    "right_thumb2": {"mmd": "右親指１", "parent": "right_thumb1", "tail": "right_thumb3", "display": "右指"},
-    "right_thumb3": {"mmd": "右親指２", "parent": "right_thumb2", "tail": "right_thumb", "display": "右指"},
     "nose": {"mmd": "nose", "parent": "head", "tail": "", "display": "顔"},
     "right_eye": {"mmd": "右目", "parent": "nose", "tail": "", "display": "顔"},
     "left_eye": {"mmd": "左目", "parent": "nose", "tail": "", "display": "顔"},
@@ -2788,6 +2833,37 @@ PMX_CONNECTIONS = {
     "right_big_toe": {"mmd": "右足親指", "parent": "right_ankle", "tail": "", "display": "右足"},
     "right_small_toe": {"mmd": "右足小指", "parent": "right_ankle", "tail": "", "display": "右足"},
     "right_heel": {"mmd": "右かかと", "parent": "right_ankle", "tail": "", "display": "右足"},
+
+    "left_index1": {"mmd": "左人指１", "parent": "left_wrist", "tail": "left_index2", "display": "左指"},
+    "left_index2": {"mmd": "左人指２", "parent": "left_index1", "tail": "left_index3", "display": "左指"},
+    "left_index3": {"mmd": "左人指３", "parent": "left_index2", "tail": "left_index", "display": "左指"},
+    "left_middle1": {"mmd": "左中指１", "parent": "left_wrist", "tail": "left_middle2", "display": "左指"},
+    "left_middle2": {"mmd": "左中指２", "parent": "left_middle1", "tail": "left_middle3", "display": "左指"},
+    "left_middle3": {"mmd": "左中指３", "parent": "left_middle2", "tail": "left_middle", "display": "左指"},
+    "left_pinky1": {"mmd": "左小指１", "parent": "left_wrist", "tail": "left_pinky2", "display": "左指"},
+    "left_pinky2": {"mmd": "左小指２", "parent": "left_pinky1", "tail": "left_pinky3", "display": "左指"},
+    "left_pinky3": {"mmd": "左小指３", "parent": "left_pinky2", "tail": "left_pinky", "display": "左指"},
+    "left_ring1": {"mmd": "左薬指１", "parent": "left_wrist", "tail": "left_ring2", "display": "左指"},
+    "left_ring2": {"mmd": "左薬指２", "parent": "left_ring1", "tail": "left_ring3", "display": "左指"},
+    "left_ring3": {"mmd": "左薬指３", "parent": "left_ring2", "tail": "left_ring", "display": "左指"},
+    "left_thumb1": {"mmd": "左親指０", "parent": "left_wrist", "tail": "left_thumb2", "display": "左指"},
+    "left_thumb2": {"mmd": "左親指１", "parent": "left_thumb1", "tail": "left_thumb3", "display": "左指"},
+    "left_thumb3": {"mmd": "左親指２", "parent": "left_thumb2", "tail": "left_thumb", "display": "左指"},
+    "right_index1": {"mmd": "右人指１", "parent": "right_wrist", "tail": "right_index2", "display": "右指"},
+    "right_index2": {"mmd": "右人指２", "parent": "right_index1", "tail": "right_index3", "display": "右指"},
+    "right_index3": {"mmd": "右人指３", "parent": "right_index2", "tail": "right_index", "display": "右指"},
+    "right_middle1": {"mmd": "右中指１", "parent": "right_wrist", "tail": "right_middle2", "display": "右指"},
+    "right_middle2": {"mmd": "右中指２", "parent": "right_middle1", "tail": "right_middle3", "display": "右指"},
+    "right_middle3": {"mmd": "右中指３", "parent": "right_middle2", "tail": "right_middle", "display": "右指"},
+    "right_pinky1": {"mmd": "右小指１", "parent": "right_wrist", "tail": "right_pinky2", "display": "右指"},
+    "right_pinky2": {"mmd": "右小指２", "parent": "right_pinky1", "tail": "right_pinky3", "display": "右指"},
+    "right_pinky3": {"mmd": "右小指３", "parent": "right_pinky2", "tail": "right_pinky", "display": "右指"},
+    "right_ring1": {"mmd": "右薬指１", "parent": "right_wrist", "tail": "right_ring2", "display": "右指"},
+    "right_ring2": {"mmd": "右薬指２", "parent": "right_ring1", "tail": "right_ring3", "display": "右指"},
+    "right_ring3": {"mmd": "右薬指３", "parent": "right_ring2", "tail": "right_ring", "display": "右指"},
+    "right_thumb1": {"mmd": "右親指０", "parent": "right_wrist", "tail": "right_thumb2", "display": "右指"},
+    "right_thumb2": {"mmd": "右親指１", "parent": "right_thumb1", "tail": "right_thumb3", "display": "右指"},
+    "right_thumb3": {"mmd": "右親指２", "parent": "right_thumb2", "tail": "right_thumb", "display": "右指"},
     "left_thumb": {"mmd": "左親指先", "parent": "left_thumb3", "tail": "", "display": "左指"},
     "left_index": {"mmd": "左人差指先", "parent": "left_index3", "tail": "", "display": "左指"},
     "left_middle": {"mmd": "左中指先", "parent": "left_middle3", "tail": "", "display": "左指"},
@@ -2798,6 +2874,7 @@ PMX_CONNECTIONS = {
     "right_middle": {"mmd": "右中指先", "parent": "right_middle3", "tail": "", "display": "右指"},
     "right_ring": {"mmd": "右薬指先", "parent": "right_ring3", "tail": "", "display": "右指"},
     "right_pinky": {"mmd": "右小指先", "parent": "right_pinky3", "tail": "", "display": "右指"},
+    
     "right_eye_brow1": {"mmd": "right_eye_brow1", "parent": "head", "tail": "", "display": "眉"},
     "right_eye_brow2": {"mmd": "right_eye_brow2", "parent": "right_eye_brow1", "tail": "", "display": "眉"},
     "right_eye_brow3": {"mmd": "right_eye_brow3", "parent": "right_eye_brow2", "tail": "", "display": "眉"},
@@ -2871,55 +2948,55 @@ PMX_CONNECTIONS = {
 
 
 VMD_CONNECTIONS = {
-    'pelvis0': {'direction': ('pelvis0', 'pelvis2'), 'up': ('left_hip', 'right_hip'), 'cancel': []},
+    'pelvis0': {'direction': ('pelvis0', 'pelvis'), 'up': ('left_hip', 'right_hip'), 'cancel': []},
     'spine1': {'direction': ('spine1', 'spine2'), 'up': ('left_shoulder', 'right_shoulder'), 'cancel': []},
-    'spine2': {'direction': ('spine2', 'spine3'), 'up': ('spine1', 'spine2'), 'cancel': ['spine1']},
-    'spine3': {'direction': ('spine3', 'neck'), 'up': ('spine2', 'spine3'), 'cancel': ['spine1', 'spine2']},
-    'neck': {'direction': ('neck', 'head'), 'up': ('spine3', 'neck'), 'cancel': ['spine1', 'spine2', 'spine3']},
+    'spine2': {'direction': ('spine2', 'spine3'), 'up': ('left_shoulder', 'right_shoulder'), 'cancel': ['spine1']},
+    'spine3': {'direction': ('spine3', 'neck'), 'up': ('left_eye', 'right_eye'), 'cancel': ['spine1', 'spine2']},
+    'neck': {'direction': ('neck', 'head'), 'up': ('left_eye', 'right_eye'), 'cancel': ['spine1', 'spine2', 'spine3']},
 
-    'left_collar': {'direction': ('left_collar', 'left_shoulder'), 'up': ('spine2', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3']},
-    'left_shoulder': {'direction': ('left_shoulder', 'left_elbow'), 'up': ('left_collar', 'left_shoulder'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar']},
-    'left_elbow': {'direction': ('left_elbow', 'left_wrist'), 'up': ('left_shoulder', 'left_elbow'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder']},
-    'left_wrist': {'direction': ('left_wrist', 'left_f_base'), 'up': ('left_thumb', 'left_pinky'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow']},
-    'left_thumb1': {'direction': ('left_thumb1', 'left_thumb2'), 'up': ('left_f_base', 'left_thumb1'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    'left_thumb2': {'direction': ('left_thumb2', 'left_thumb3'), 'up': ('left_thumb1', 'left_thumb2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1']},
-    'left_thumb3': {'direction': ('left_thumb3', 'left_thumb'), 'up': ('left_thumb2', 'left_thumb3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1', 'left_thumb2']},
-    'left_index1': {'direction': ('left_index1', 'left_index2'), 'up': ('left_f_base', 'left_index1'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    'left_index2': {'direction': ('left_index2', 'left_index3'), 'up': ('left_index1', 'left_index2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1']},
-    'left_index3': {'direction': ('left_index3', 'left_index'), 'up': ('left_index2', 'left_index3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1', 'left_index2']},
-    'left_middle1': {'direction': ('left_middle1', 'left_middle2'), 'up': ('left_f_base', 'left_middle1'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    'left_middle2': {'direction': ('left_middle2', 'left_middle3'), 'up': ('left_middle1', 'left_middle2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1']},
-    'left_middle3': {'direction': ('left_middle3', 'left_middle'), 'up': ('left_middle2', 'left_middle3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1', 'left_middle2']},
-    'left_ring1': {'direction': ('left_ring1', 'left_ring2'), 'up': ('left_f_base', 'left_ring1'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    'left_ring2': {'direction': ('left_ring2', 'left_ring3'), 'up': ('left_ring1', 'left_ring2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1']},
-    'left_ring3': {'direction': ('left_ring3', 'left_ring'), 'up': ('left_ring2', 'left_ring3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1', 'left_ring2']},
-    'left_pinky1': {'direction': ('left_pinky1', 'left_pinky2'), 'up': ('left_f_base', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    'left_pinky2': {'direction': ('left_pinky2', 'left_pinky3'), 'up': ('left_pinky1', 'left_pinky2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1']},
-    'left_pinky3': {'direction': ('left_pinky3', 'left_pinky'), 'up': ('left_pinky2', 'left_pinky3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1', 'left_pinky2']},
-    'left_hip': {'direction': ('left_hip', 'left_knee'), 'up': ('pelvis2', 'left_hip'), 'cancel': ['pelvis0']},
+    'left_collar': {'direction': ('left_collar', 'left_shoulder'), 'up': ('spine2', 'spine3'), 'cancel': ['spine1', 'spine2']},
+    'left_shoulder': {'direction': ('left_shoulder', 'left_elbow'), 'up': ('left_collar', 'left_shoulder'), 'cancel': ['spine1', 'spine2', 'left_collar']},
+    'left_elbow': {'direction': ('left_elbow', 'left_wrist'), 'up': ('left_shoulder', 'left_elbow'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder']},
+    'left_wrist': {'direction': ('left_wrist', 'left_middle1'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow']},
+    'left_thumb1': {'direction': ('left_thumb1', 'left_thumb2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'left_thumb2': {'direction': ('left_thumb2', 'left_thumb3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1']},
+    'left_thumb3': {'direction': ('left_thumb3', 'left_thumb'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1', 'left_thumb2']},
+    'left_index1': {'direction': ('left_index1', 'left_index2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'left_index2': {'direction': ('left_index2', 'left_index3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1']},
+    'left_index3': {'direction': ('left_index3', 'left_index'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1', 'left_index2']},
+    'left_middle1': {'direction': ('left_middle1', 'left_middle2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'left_middle2': {'direction': ('left_middle2', 'left_middle3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1']},
+    'left_middle3': {'direction': ('left_middle3', 'left_middle'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1', 'left_middle2']},
+    'left_ring1': {'direction': ('left_ring1', 'left_ring2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'left_ring2': {'direction': ('left_ring2', 'left_ring3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1']},
+    'left_ring3': {'direction': ('left_ring3', 'left_ring'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1', 'left_ring2']},
+    'left_pinky1': {'direction': ('left_pinky1', 'left_pinky2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'left_pinky2': {'direction': ('left_pinky2', 'left_pinky3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1']},
+    'left_pinky3': {'direction': ('left_pinky3', 'left_pinky'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1', 'left_pinky2']},
+    'left_hip': {'direction': ('left_hip', 'left_knee'), 'up': ('left_hip', 'right_hip'), 'cancel': ['pelvis0']},
     'left_knee': {'direction': ('left_knee', 'left_ankle'), 'up': ('left_hip', 'left_knee'), 'cancel': ['pelvis0', 'left_hip']},
     'left_ankle': {'direction': ('left_ankle', 'left_foot'), 'up': ('left_knee', 'left_ankle'), 'cancel': ['pelvis0', 'left_hip', 'left_knee']},
 
-    'right_collar': {'direction': ('right_collar', 'right_shoulder'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3']},
-    'right_shoulder': {'direction': ('right_shoulder', 'right_elbow'), 'up': ('right_collar', 'right_shoulder'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar']},
-    'right_elbow': {'direction': ('right_elbow', 'right_wrist'), 'up': ('right_shoulder', 'right_elbow'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder']},
-    'right_wrist': {'direction': ('right_wrist', 'right_f_base'), 'up': ('right_thumb', 'right_pinky'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow']},
-    'right_thumb1': {'direction': ('right_thumb1', 'right_thumb2'), 'up': ('right_f_base', 'right_thumb1'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    'right_thumb2': {'direction': ('right_thumb2', 'right_thumb3'), 'up': ('right_thumb1', 'right_thumb2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1']},
-    'right_thumb3': {'direction': ('right_thumb3', 'right_thumb'), 'up': ('right_thumb2', 'right_thumb3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1', 'right_thumb2']},
-    'right_index1': {'direction': ('right_index1', 'right_index2'), 'up': ('right_f_base', 'right_index1'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    'right_index2': {'direction': ('right_index2', 'right_index3'), 'up': ('right_index1', 'right_index2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1']},
-    'right_index3': {'direction': ('right_index3', 'right_index'), 'up': ('right_index2', 'right_index3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1', 'right_index2']},
-    'right_middle1': {'direction': ('right_middle1', 'right_middle2'), 'up': ('right_f_base', 'right_middle1'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    'right_middle2': {'direction': ('right_middle2', 'right_middle3'), 'up': ('right_middle1', 'right_middle2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1']},
-    'right_middle3': {'direction': ('right_middle3', 'right_middle'), 'up': ('right_middle2', 'right_middle3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1', 'right_middle2']},
-    'right_ring1': {'direction': ('right_ring1', 'right_ring2'), 'up': ('right_f_base', 'right_ring1'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    'right_ring2': {'direction': ('right_ring2', 'right_ring3'), 'up': ('right_ring1', 'right_ring2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1']},
-    'right_ring3': {'direction': ('right_ring3', 'right_ring'), 'up': ('right_ring2', 'right_ring3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1', 'right_ring2']},
-    'right_pinky1': {'direction': ('right_pinky1', 'right_pinky2'), 'up': ('right_f_base', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    'right_pinky2': {'direction': ('right_pinky2', 'right_pinky3'), 'up': ('right_pinky1', 'right_pinky2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1']},
-    'right_pinky3': {'direction': ('right_pinky3', 'right_pinky'), 'up': ('right_pinky2', 'right_pinky3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1', 'right_pinky2']},
-    'right_hip': {'direction': ('right_hip', 'right_knee'), 'up': ('right_hip', 'pelvis2'), 'cancel': ['pelvis0']},
+    'right_collar': {'direction': ('right_collar', 'right_shoulder'), 'up': ('spine2', 'spine3'), 'cancel': ['spine1', 'spine2']},
+    'right_shoulder': {'direction': ('right_shoulder', 'right_elbow'), 'up': ('right_collar', 'right_shoulder'), 'cancel': ['spine1', 'spine2', 'right_collar']},
+    'right_elbow': {'direction': ('right_elbow', 'right_wrist'), 'up': ('right_shoulder', 'right_elbow'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder']},
+    'right_wrist': {'direction': ('right_wrist', 'right_middle1'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow']},
+    'right_thumb1': {'direction': ('right_thumb1', 'right_thumb2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'right_thumb2': {'direction': ('right_thumb2', 'right_thumb3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1']},
+    'right_thumb3': {'direction': ('right_thumb3', 'right_thumb'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1', 'right_thumb2']},
+    'right_index1': {'direction': ('right_index1', 'right_index2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'right_index2': {'direction': ('right_index2', 'right_index3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1']},
+    'right_index3': {'direction': ('right_index3', 'right_index'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1', 'right_index2']},
+    'right_middle1': {'direction': ('right_middle1', 'right_middle2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'right_middle2': {'direction': ('right_middle2', 'right_middle3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1']},
+    'right_middle3': {'direction': ('right_middle3', 'right_middle'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1', 'right_middle2']},
+    'right_ring1': {'direction': ('right_ring1', 'right_ring2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'right_ring2': {'direction': ('right_ring2', 'right_ring3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1']},
+    'right_ring3': {'direction': ('right_ring3', 'right_ring'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1', 'right_ring2']},
+    'right_pinky1': {'direction': ('right_pinky1', 'right_pinky2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'right_pinky2': {'direction': ('right_pinky2', 'right_pinky3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1']},
+    'right_pinky3': {'direction': ('right_pinky3', 'right_pinky'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1', 'right_pinky2']},
+    'right_hip': {'direction': ('right_hip', 'right_knee'), 'up': ('left_hip', 'right_hip'), 'cancel': ['pelvis0']},
     'right_knee': {'direction': ('right_knee', 'right_ankle'), 'up': ('right_hip', 'right_knee'), 'cancel': ['pelvis0', 'right_hip']},
     'right_ankle': {'direction': ('right_ankle', 'right_foot'), 'up': ('right_knee', 'right_ankle'), 'cancel': ['pelvis0', 'right_hip', 'right_knee']},
 
@@ -2927,46 +3004,46 @@ VMD_CONNECTIONS = {
     # 'left_collar': {'direction': ('left_collar', 'left_shoulder'), 'up': ('spine2', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3']},
     # 'left_shoulder': {'direction': ('left_shoulder', 'left_elbow'), 'up': ('left_collar', 'left_shoulder'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar']},
     # 'left_elbow': {'direction': ('left_elbow', 'left_wrist'), 'up': ('left_shoulder', 'left_elbow'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder']},
-    # 'left_wrist': {'direction': ('left_wrist', 'left_f_base'), 'up': ('left_thumb', 'left_pinky'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow']},
-    # 'left_thumb1': {'direction': ('left_thumb1', 'left_thumb2'), 'up': ('left_wrist', 'left_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    # 'left_wrist': {'direction': ('left_wrist', 'left_wrist'), 'up': ('left_thumb', 'left_pinky'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow']},
+    # 'left_thumb1': {'direction': ('left_thumb1', 'left_thumb2'), 'up': ('left_wrist', 'left_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
     # 'left_thumb2': {'direction': ('left_thumb2', 'left_thumb3'), 'up': ('left_thumb1', 'left_thumb2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1']},
     # 'left_thumb3': {'direction': ('left_thumb3', 'left_thumb'), 'up': ('left_thumb2', 'left_thumb3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1', 'left_thumb2']},
-    # 'left_index1': {'direction': ('left_index1', 'left_index2'), 'up': ('left_wrist', 'left_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    # 'left_index1': {'direction': ('left_index1', 'left_index2'), 'up': ('left_wrist', 'left_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
     # 'left_index2': {'direction': ('left_index2', 'left_index3'), 'up': ('left_index1', 'left_index2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1']},
     # 'left_index3': {'direction': ('left_index3', 'left_index'), 'up': ('left_index2', 'left_index3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1', 'left_index2']},
-    # 'left_middle1': {'direction': ('left_middle1', 'left_middle2'), 'up': ('left_wrist', 'left_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    # 'left_middle1': {'direction': ('left_middle1', 'left_middle2'), 'up': ('left_wrist', 'left_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
     # 'left_middle2': {'direction': ('left_middle2', 'left_middle3'), 'up': ('left_middle1', 'left_middle2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1']},
     # 'left_middle3': {'direction': ('left_middle3', 'left_middle'), 'up': ('left_middle2', 'left_middle3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1', 'left_middle2']},
-    # 'left_ring1': {'direction': ('left_ring1', 'left_ring2'), 'up': ('left_wrist', 'left_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    # 'left_ring1': {'direction': ('left_ring1', 'left_ring2'), 'up': ('left_wrist', 'left_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
     # 'left_ring2': {'direction': ('left_ring2', 'left_ring3'), 'up': ('left_ring1', 'left_ring2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1']},
     # 'left_ring3': {'direction': ('left_ring3', 'left_ring'), 'up': ('left_ring2', 'left_ring3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1', 'left_ring2']},
-    # 'left_pinky1': {'direction': ('left_pinky1', 'left_pinky2'), 'up': ('left_wrist', 'left_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    # 'left_pinky1': {'direction': ('left_pinky1', 'left_pinky2'), 'up': ('left_wrist', 'left_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
     # 'left_pinky2': {'direction': ('left_pinky2', 'left_pinky3'), 'up': ('left_pinky1', 'left_pinky2'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1']},
     # 'left_pinky3': {'direction': ('left_pinky3', 'left_pinky'), 'up': ('left_pinky2', 'left_pinky3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1', 'left_pinky2']},
-    # 'left_hip': {'direction': ('left_hip', 'left_knee'), 'up': ('pelvis2', 'left_hip'), 'cancel': ['pelvis0']},
+    # 'left_hip': {'direction': ('left_hip', 'left_knee'), 'up': ('pelvis', 'left_hip'), 'cancel': ['pelvis0']},
     # 'left_knee': {'direction': ('left_knee', 'left_ankle'), 'up': ('left_hip', 'left_knee'), 'cancel': ['pelvis0', 'left_hip']},
     # 'left_ankle': {'direction': ('left_ankle', 'left_foot'), 'up': ('left_knee', 'left_ankle'), 'cancel': ['pelvis0', 'left_hip', 'left_knee']},
 
     # 'right_collar': {'direction': ('right_collar', 'right_shoulder'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3']},
     # 'right_shoulder': {'direction': ('right_shoulder', 'right_elbow'), 'up': ('right_collar', 'right_shoulder'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar']},
     # 'right_elbow': {'direction': ('right_elbow', 'right_wrist'), 'up': ('right_shoulder', 'right_elbow'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder']},
-    # 'right_wrist': {'direction': ('right_wrist', 'right_f_base'), 'up': ('right_thumb', 'right_pinky'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow']},
-    # 'right_thumb1': {'direction': ('right_thumb1', 'right_thumb2'), 'up': ('right_wrist', 'right_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    # 'right_wrist': {'direction': ('right_wrist', 'right_wrist'), 'up': ('right_thumb', 'right_pinky'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow']},
+    # 'right_thumb1': {'direction': ('right_thumb1', 'right_thumb2'), 'up': ('right_wrist', 'right_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
     # 'right_thumb2': {'direction': ('right_thumb2', 'right_thumb3'), 'up': ('right_thumb1', 'right_thumb2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1']},
     # 'right_thumb3': {'direction': ('right_thumb3', 'right_thumb'), 'up': ('right_thumb2', 'right_thumb3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1', 'right_thumb2']},
-    # 'right_index1': {'direction': ('right_index1', 'right_index2'), 'up': ('right_wrist', 'right_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    # 'right_index1': {'direction': ('right_index1', 'right_index2'), 'up': ('right_wrist', 'right_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
     # 'right_index2': {'direction': ('right_index2', 'right_index3'), 'up': ('right_index1', 'right_index2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1']},
     # 'right_index3': {'direction': ('right_index3', 'right_index'), 'up': ('right_index2', 'right_index3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1', 'right_index2']},
-    # 'right_middle1': {'direction': ('right_middle1', 'right_middle2'), 'up': ('right_wrist', 'right_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    # 'right_middle1': {'direction': ('right_middle1', 'right_middle2'), 'up': ('right_wrist', 'right_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
     # 'right_middle2': {'direction': ('right_middle2', 'right_middle3'), 'up': ('right_middle1', 'right_middle2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1']},
     # 'right_middle3': {'direction': ('right_middle3', 'right_middle'), 'up': ('right_middle2', 'right_middle3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1', 'right_middle2']},
-    # 'right_ring1': {'direction': ('right_ring1', 'right_ring2'), 'up': ('right_wrist', 'right_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    # 'right_ring1': {'direction': ('right_ring1', 'right_ring2'), 'up': ('right_wrist', 'right_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
     # 'right_ring2': {'direction': ('right_ring2', 'right_ring3'), 'up': ('right_ring1', 'right_ring2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1']},
     # 'right_ring3': {'direction': ('right_ring3', 'right_ring'), 'up': ('right_ring2', 'right_ring3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1', 'right_ring2']},
-    # 'right_pinky1': {'direction': ('right_pinky1', 'right_pinky2'), 'up': ('right_wrist', 'right_f_base'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    # 'right_pinky1': {'direction': ('right_pinky1', 'right_pinky2'), 'up': ('right_wrist', 'right_wrist'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
     # 'right_pinky2': {'direction': ('right_pinky2', 'right_pinky3'), 'up': ('right_pinky1', 'right_pinky2'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1']},
     # 'right_pinky3': {'direction': ('right_pinky3', 'right_pinky'), 'up': ('right_pinky2', 'right_pinky3'), 'cancel': ['spine1', 'spine2', 'spine3', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1', 'right_pinky2']},
-    # 'right_hip': {'direction': ('right_hip', 'right_knee'), 'up': ('right_hip', 'pelvis2'), 'cancel': ['pelvis0']},
+    # 'right_hip': {'direction': ('right_hip', 'right_knee'), 'up': ('right_hip', 'pelvis'), 'cancel': ['pelvis0']},
     # 'right_knee': {'direction': ('right_knee', 'right_ankle'), 'up': ('right_hip', 'right_knee'), 'cancel': ['pelvis0', 'right_hip']},
     # 'right_ankle': {'direction': ('right_ankle', 'right_foot'), 'up': ('right_knee', 'right_ankle'), 'cancel': ['pelvis0', 'right_hip', 'right_knee']},
 
@@ -2975,11 +3052,11 @@ VMD_CONNECTIONS = {
     # 'spine2': {'direction': ('spine2', 'spine3'), 'up': ('left_shoulder', 'right_shoulder'), 'cancel': ['spine1']},
     # 'spine3': {'direction': ('spine3', 'neck'), 'up': ('left_shoulder', 'right_shoulder'), 'cancel': ['spine1', 'spine2']},
     # 'neck': {'direction': ('neck', 'head'), 'up': ('left_shoulder', 'right_shoulder'), 'cancel': ['spine1', 'spine2', 'spine3']},
-    # 'pelvis': {'direction': ('pelvis', 'pelvis2'), 'up': ('left_hip', 'right_hip'), 'cancel': []},
+    # 'pelvis': {'direction': ('pelvis', 'pelvis'), 'up': ('left_hip', 'right_hip'), 'cancel': []},
     # 'left_collar': {'direction': ('left_collar', 'left_shoulder'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3']},
     # 'left_shoulder': {'direction': ('left_shoulder', 'left_elbow'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar']},
     # 'left_elbow': {'direction': ('left_elbow', 'left_wrist'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder']},
-    # 'left_wrist': {'direction': ('left_wrist', 'left_f_base'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow']},
+    # 'left_wrist': {'direction': ('left_wrist', 'left_wrist'), 'up': ('spine1', 'spine3'), 'cancel': ['spine1', 'spine2', 'spine3', 'left_collar', 'left_shoulder', 'left_elbow']},
     
     # 'center': ("センター", None, None, MQuaternion(), None, {"rot": 0, "mov": 0.5, "sub": True}, False, False),
     # 'groove': ("グルーブ", None, None, MQuaternion(), None, {"rot": 0, "mov": 0.5, "sub": True}, False, False),
@@ -3001,7 +3078,7 @@ VMD_CONNECTIONS = {
     # 'left_elbow': ("左ひじ", ['left_elbow', 'left_wrist', 'spine3', 'left_shoulder', 'left_elbow', 'left_wrist'], ["上半身", "上半身2", "左肩", "左腕"], MQuaternion(), None, {"rot": 0.001, "mov": 0, "sub": True}, False, False),
     # 'right_wrist': ("右手首", ['right_wrist', 'right_middle1', 'right_index1', 'right_pinky1', 'right_wrist', 'right_middle1'], ["上半身", "上半身2", "右肩", "右腕", "右ひじ"], MQuaternion(), None, {"rot": 0.002, "mov": 0, "sub": True}, False, False),
     # 'left_wrist': ("左手首", ['left_wrist', 'left_middle1', 'left_index1', 'left_pinky1', 'left_wrist', 'left_middle1'], ["上半身", "上半身2", "左肩", "左腕", "左ひじ"], MQuaternion(), None, {"rot": 0.002, "mov": 0, "sub": True}, False, False),
-    # 'pelvis': ("下半身", ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis2'], [], MQuaternion.fromEulerAngles(-20, 0, 0), None, {"rot": 0.001, "mov": 0, "sub": True}, False, False),
+    # 'pelvis': ("下半身", ['spine1', 'pelvis', 'left_hip', 'right_hip', 'pelvis', 'pelvis'], [], MQuaternion.fromEulerAngles(-20, 0, 0), None, {"rot": 0.001, "mov": 0, "sub": True}, False, False),
     # 'pelvis2': ("尾てい骨", None, None, MQuaternion(), None, None, False, False),
     # 'right_hip': ("右足", ['right_hip', 'right_knee', 'pelvis2', 'right_hip', 'right_hip', 'right_knee'], ["下半身"], MQuaternion(), None, {"rot": 0.001, "mov": 0, "sub": True}, False, False),
     # 'left_hip': ("左足", ['left_hip', 'left_knee', 'pelvis2', 'left_hip', 'left_hip', 'left_knee'], ["下半身"], MQuaternion(), None, {"rot": 0.001, "mov": 0, "sub": True}, False, False),
