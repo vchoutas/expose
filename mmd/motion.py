@@ -103,7 +103,8 @@ def execute(args):
 
                         if "depth" in frame_joints and "camera" in frame_joints:
                             logger.debug("fno: {0}, depth: {1}, camera: {2}, ratio: {3}", fno, frame_joints["depth"]["depth"], frame_joints["camera"]["scale"], frame_joints["depth"]["depth"] / frame_joints["camera"]["scale"])
-
+                            pelvis_vec = calc_pelvis_vec(frame_joints, fno, args)
+                            target_bone_vecs["センター"][fno] = pelvis_vec
 
             trace_model = PmxModel()
             trace_model.vertices["vertices"] = []
@@ -139,10 +140,23 @@ def execute(args):
             
             logger.info("【No.{0}】モーション(移動)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=(len(PMX_CONNECTIONS.keys()) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=(len(PMX_CONNECTIONS.keys()) * (len(fnos) + 1)), desc=f'No.{oidx:02d}') as pchar:
+                for fno in fnos:
+                    joint = target_bone_vecs["センター"][fno]                    
+                    center_bf = trace_mov_motion.calc_bf("センター", fno)
+                    groove_bf = trace_mov_motion.calc_bf("グルーブ", fno)
+                    groove_bf.position.setY(joint.y() + trace_model.bones["グルーブ"].position.y())
+                    groove_bf.key = True
+                    trace_mov_motion.bones[groove_bf.name][fno] = groove_bf
+
+                    center_bf.position.setX(joint.x())
+                    center_bf.key = True
+                    trace_mov_motion.bones[center_bf.name][fno] = center_bf
+                    pchar.update(1)
+
                 for jidx, (jname, pconn) in enumerate(PMX_CONNECTIONS.items()):
                     # ボーン登録        
-                    create_bone(trace_model, jname, pconn, target_bone_vecs)
+                    create_bone(trace_model, jname, pconn, target_bone_vecs, miku_model)
 
                     mname = pconn['mmd']
                     pmname = PMX_CONNECTIONS[pconn['parent']]['mmd'] if pconn['parent'] in PMX_CONNECTIONS else pconn['parent']
@@ -153,6 +167,7 @@ def execute(args):
                         parent_joint = target_bone_vecs[pconn['parent']][fno]
                         
                         trace_bf = trace_mov_motion.calc_bf(mname, fno)
+
                         # # parentが全ての親の場合
                         # trace_bf.position = MVector3D(joint) - trace_model.bones[mname].position
                         # parentが親ボーンの場合
@@ -273,21 +288,44 @@ def execute(args):
 
             with tqdm(total=(len(trace_rot_motion.bones.keys()) * len(fnos)), desc=f'No.{oidx:02d}') as pchar:
                 for mname in trace_rot_motion.bones:
+                    if mname in ["センター", "グルーブ"]:
+                        for fno in fnos:
+                            rot_bf = trace_rot_motion.calc_bf(mname, fno)
+                            miku_bf = trace_miku_motion.calc_bf(mname, fno)
+                            miku_bf.position = rot_bf.position.copy()
+                            miku_bf.rotation = rot_bf.rotation.copy()
+                            miku_bf.key = True
+
+                            trace_miku_motion.bones[mname][fno] = miku_bf
+                            pchar.update(1)
+                            continue
+
                     parent_name = "センター"
                     if mname not in ["全ての親", "センター", "グルーブ"]:
                         parent_name = trace_model.bone_indexes[trace_model.bones[mname].parent_index]
 
-                    parent_local_x_axis = MVector3D(1, 0, 0) if parent_name in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if parent_name in ["右腕", "右ひじ", "右手首"] else None
-                    target_local_x_axis = MVector3D(1, 0, 0) if mname in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if mname in ["右腕", "右ひじ", "右手首"] else None
-                    trace_parent_local_x_qq = trace_model.get_local_x_qq(parent_name, parent_local_x_axis)
-                    trace_target_local_x_qq = trace_model.get_local_x_qq(mname, target_local_x_axis) if mname not in ["全ての親", "センター", "グルーブ"] else MQuaternion()
-                    miku_parent_local_x_qq = miku_model.get_local_x_qq(parent_name, parent_local_x_axis)
-                    miku_target_local_x_qq = miku_model.get_local_x_qq(mname, target_local_x_axis) if mname not in ["全ての親", "センター", "グルーブ"] else MQuaternion()
+                    trace_parent_local_x_axis = MVector3D(1, 0, 0) if parent_name in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if parent_name in ["右腕", "右ひじ", "右手首"] else None
+                    miku_parent_local_x_axis = MVector3D(1, 0, 0) if parent_name in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if parent_name in ["右腕", "右ひじ", "右手首"] else None
+                    trace_target_local_x_axis = MVector3D(1, 0, 0) if mname in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if mname in ["右腕", "右ひじ", "右手首"] else None
+                    miku_target_local_x_axis = MVector3D(1, 0, 0) if mname in ["左腕", "左ひじ", "左手首"] else MVector3D(-1, 0, 0) if mname in ["右腕", "右ひじ", "右手首"] else None
+                    if parent_name in ["右肩", "左肩"]:
+                        trace_parent_local_x_axis = trace_model.get_local_x_axis(parent_name)
+                        trace_parent_local_x_axis = MVector3D(trace_parent_local_x_axis.x(), trace_parent_local_x_axis.y(), 0).normalized()
+                        miku_parent_local_x_axis = None
+                    if mname in ["右肩", "左肩"]:
+                        trace_target_local_x_axis = trace_model.get_local_x_axis(mname)
+                        trace_target_local_x_axis = MVector3D(trace_target_local_x_axis.x(), trace_target_local_x_axis.y(), 0).normalized()
+                        miku_target_local_x_axis = None
+                    trace_parent_local_x_qq = trace_model.get_local_x_qq(parent_name, trace_parent_local_x_axis)
+                    trace_target_local_x_qq = trace_model.get_local_x_qq(mname, trace_target_local_x_axis) if mname not in ["全ての親", "センター", "グルーブ"] else MQuaternion()
+                    miku_parent_local_x_qq = miku_model.get_local_x_qq(parent_name, miku_parent_local_x_axis)
+                    miku_target_local_x_qq = miku_model.get_local_x_qq(mname, miku_target_local_x_axis) if mname not in ["全ての親", "センター", "グルーブ"] else MQuaternion()
 
                     parent_local_x_qq = miku_parent_local_x_qq.inverted() * trace_parent_local_x_qq
                     target_local_x_qq = miku_target_local_x_qq.inverted() * trace_target_local_x_qq
 
                     miku_local_x_axis = miku_model.get_local_x_axis(mname)
+                    miku_local_y_axis = MVector3D.crossProduct(miku_local_x_axis, MVector3D(0, 0, 1))
 
                     for fno in fnos:
                         rot_bf = trace_rot_motion.calc_bf(mname, fno)
@@ -298,21 +336,40 @@ def execute(args):
 
                         miku_bf.position = rot_bf.position.copy()
                         new_miku_qq = rot_bf.rotation.copy()
-                        new_miku_qq = miku_parent_bf.rotation.inverted() * rot_parent_bf.rotation * new_miku_qq
                         
-                        if mname[1:] in ["肩"] or mname in ["首"]:
-                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq
-                        elif mname in ["頭"]:
-                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
-                        elif mname[1:] in ["手首"]:
-                            new_miku_qq = miku_parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
-                        else:
-                            new_miku_qq = miku_parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
-
-                        if "指" in PMX_CONNECTIONS[jname]['display'] or mname[1:] in ["ひじ", "ひざ"]:
+                        if (len(mname) > 2 and mname[2] == "指") or mname[1:] in ["ひじ", "ひざ"]:
                             # ひじ・指・ひざは念のためX捩り除去
                             _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
                             new_miku_qq = now_yz_qq
+
+                        if mname[1:] not in ["肩", "足首"]:
+                            new_miku_qq = miku_parent_bf.rotation.inverted() * rot_parent_bf.rotation * new_miku_qq
+                        
+                        if mname[1:] in ["手首"] or (len(mname) > 2 and mname[2] == "指"):
+                            pass
+                        elif mname in ["首"]:
+                            new_miku_qq = new_miku_qq * target_local_x_qq
+                        elif mname[1:] in ["ひじ"]:
+                            new_miku_qq = new_miku_qq * parent_local_x_qq.inverted() * target_local_x_qq
+                        elif mname[1:] in ["腕"]:
+                            new_miku_qq = new_miku_qq * target_local_x_qq
+                        elif mname[1:] in ["肩"]:
+                            new_miku_qq = trace_parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+                        else:
+                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+
+                        if len(mname) > 2 and mname[2] == "指":
+                            # 指は正方向にしか曲がらない
+                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
+                            new_miku_qq = MQuaternion.fromAxisAndAngle(MVector3D(0, 0, -1), now_yz_qq.toDegree())
+                        elif mname[1:] in ["ひじ"]:
+                            # ひじは念のためX捩り除去
+                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
+                            new_miku_qq = now_yz_qq
+                        elif mname[1:] in ["ひざ"]:
+                            # ひざは足IK用にYのみ
+                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
+                            new_miku_qq = MQuaternion.fromAxisAndAngle(miku_local_y_axis, now_yz_qq.toDegree())
 
                         miku_bf.rotation = new_miku_qq
                         miku_bf.key = True
@@ -1639,7 +1696,7 @@ def execute(args):
         logger.critical("モーション生成で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
         return False
 
-def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict):
+def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict, miku_model: PmxModel):
     joints = list(target_bone_vecs[jname].values())
     parent_joints = list(target_bone_vecs[jconn["parent"]].values())
     # MMDボーン名
@@ -1649,14 +1706,19 @@ def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs
 
     bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
 
-    # それ以外はトレース元から採取
-    bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
-    bone_relative_pos = MVector3D(bone_axis * bone_length)
+    # 親からの相対位置
+    if "指" in jconn["display"]:
+        # 指は完全にミクに合わせる
+        bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
+    else:
+        # トレース元から採取
+        bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
+        bone_relative_pos = MVector3D(bone_axis * bone_length)
     bone_pos = parent_bone.position + bone_relative_pos
     bone = Bone(mname, mname, bone_pos, parent_bone.index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
     bone.index = len(list(trace_model.bones.keys()))
     if len(jconn['tail']) > 0:
-        bone.tail_index = jconn["tail"]
+        bone.tail_index = PMX_CONNECTIONS[jconn["tail"]]['mmd']
 
     # ボーンINDEX
     trace_model.bone_indexes[bone.index] = bone.name
@@ -1932,46 +1994,46 @@ def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict
                 motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
 
-def calc_pelvis_vec(all_frame_joints: dict, fno: int, args):
+def calc_pelvis_vec(frame_joints: dict, fno: int, args):
     # 画像サイズ
-    image_size = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]])
+    image_size = np.array([frame_joints["image"]["width"], frame_joints["image"]["height"]])
 
     # カメラ中央
-    camera_center_pos = np.array([all_frame_joints[fno]["others"]["center"]["x"], all_frame_joints[fno]["others"]["center"]["y"]])
+    camera_center_pos = np.array([frame_joints["others"]["center"]["x"], frame_joints["others"]["center"]["y"]])
     # カメラ倍率
-    camera_scale = all_frame_joints[fno]["camera"]["scale"]
+    camera_scale = frame_joints["camera"]["scale"]
     # センサー幅（画角？）
-    sensor_width = all_frame_joints[fno]["others"]["sensor_width"]
+    sensor_width = frame_joints["others"]["sensor_width"]
     # フォーカスのpx単位
-    focal_length_in_px = all_frame_joints[fno]["others"]["focal_length_in_px"]
+    focal_length_in_px = frame_joints["others"]["focal_length_in_px"]
     # camera_center_pos -= image_size / 2
     # Zはカメラ深度
-    depth = all_frame_joints[fno]["depth"]["depth"]
+    depth = frame_joints["depth"]["depth"]
     pelvis_z = depth * args.center_scale
 
     # # pxからmmへのスケール変換
     # mm_scale = image_size[0] * sensor_width
 
     #bbox
-    # bbox_pos = np.array([all_frame_joints[fno]["bbox"]["x"], all_frame_joints[fno]["bbox"]["y"]])
-    bbox_size = np.array([all_frame_joints[fno]["bbox"]["width"], all_frame_joints[fno]["bbox"]["height"]])
+    # bbox_pos = np.array([frame_joints["bbox"]["x"], frame_joints["bbox"]["y"]])
+    bbox_size = np.array([frame_joints["bbox"]["width"], frame_joints["bbox"]["height"]])
 
     # # 骨盤のカメラの中心からの相対位置
-    # pelvis_vec = (get_vec3(all_frame_joints[fno]["joints"], "pelvis") + get_vec3(all_frame_joints[fno]["joints"], "spine1")) / 2
+    # pelvis_vec = (get_vec3(frame_joints["joints"], "pelvis") + get_vec3(frame_joints["joints"], "spine1")) / 2
     # # pelvis_pos = np.array([(center_vec.x() / 2) + 0.5, (center_vec.y() / -2) + 0.5])
     # # bbox左上を原点とした相対位置
     # pelvis_pos = np.array([(pelvis_vec.x() / 2) + 0.5, (pelvis_vec.y() / -2) + 0.5])
 
     # 骨盤の画面内グローバル位置(骨盤と脊椎の間）)
-    pelvis_global_pos = np.array([np.average([all_frame_joints[fno]["proj_joints"]["pelvis"]["x"], all_frame_joints[fno]["proj_joints"]["spine1"]["x"]]), \
-                                  np.average([all_frame_joints[fno]["proj_joints"]["pelvis"]["y"], all_frame_joints[fno]["proj_joints"]["spine1"]["y"]])])
+    pelvis_global_pos = np.array([np.average([frame_joints["proj_joints"]["pelvis"]["x"], frame_joints["proj_joints"]["spine1"]["x"]]), \
+                                  np.average([frame_joints["proj_joints"]["pelvis"]["y"], frame_joints["proj_joints"]["spine1"]["y"]])])
     pelvis_global_pos[0] -= image_size[0] / 2
     pelvis_global_pos[1] = -pelvis_global_pos[1]
 
     # 足の画面内グローバル位置(X: 骨盤と脊椎の間、Y: つま先・踵の大きい方（地面に近い方）)
-    foot_global_pos = np.array([np.average([all_frame_joints[fno]["proj_joints"]["pelvis"]["x"], all_frame_joints[fno]["proj_joints"]["spine1"]["x"]]), \
-                                  np.max([all_frame_joints[fno]["proj_joints"]["right_big_toe"]["y"], all_frame_joints[fno]["proj_joints"]["right_heel"]["y"], \
-                                          all_frame_joints[fno]["proj_joints"]["left_big_toe"]["y"], all_frame_joints[fno]["proj_joints"]["left_heel"]["y"]])])
+    foot_global_pos = np.array([np.average([frame_joints["proj_joints"]["pelvis"]["x"], frame_joints["proj_joints"]["spine1"]["x"]]), \
+                                  np.max([frame_joints["proj_joints"]["right_big_toe"]["y"], frame_joints["proj_joints"]["right_heel"]["y"], \
+                                          frame_joints["proj_joints"]["left_big_toe"]["y"], frame_joints["proj_joints"]["left_heel"]["y"]])])
     foot_global_pos[0] -= image_size[0] / 2
     foot_global_pos[1] = -foot_global_pos[1]
 
@@ -2817,8 +2879,8 @@ PMX_CONNECTIONS = {
     "right_shoulder": {"mmd": "右腕", "parent": "right_collar", "tail": "right_elbow", "display": "右手"},
     "left_elbow": {"mmd": "左ひじ", "parent": "left_shoulder", "tail": "left_wrist", "display": "左手"},
     "right_elbow": {"mmd": "右ひじ", "parent": "right_shoulder", "tail": "right_wrist", "display": "右手"},
-    "left_wrist": {"mmd": "左手首", "parent": "left_elbow", "tail": "", "display": "左手"},
-    "right_wrist": {"mmd": "右手首", "parent": "right_elbow", "tail": "", "display": "右手"},
+    "left_wrist": {"mmd": "左手首", "parent": "left_elbow", "tail": "left_middle1", "display": "左手"},
+    "right_wrist": {"mmd": "右手首", "parent": "right_elbow", "tail": "right_middle1", "display": "右手"},
     "jaw": {"mmd": "jaw", "parent": "head", "tail": "", "display": "顔"},
     "left_eye_smplx": {"mmd": "left_eye_smplx", "parent": "head", "tail": "", "display": "顔"},
     "right_eye_smplx": {"mmd": "right_eye_smplx", "parent": "head", "tail": "", "display": "顔"},
