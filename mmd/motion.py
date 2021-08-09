@@ -198,11 +198,12 @@ def execute(args):
                                 trace_mov_motion.bones[mname][fno] = trace_bf
                                 pchar.update(1)
 
-            for bidx, bone in trace_model.bones.items():
+            for bname, bone in trace_model.bones.items():
                 # 表示先の設定
                 if bone.tail_index and bone.tail_index in trace_model.bones:
                     bone.flag |= 0x0001
                     bone.tail_index = trace_model.bones[bone.tail_index].index
+                    # local_x_axis = trace_model.get_local_x_axis(bname)
                 else:
                     bone.tail_index = -1
 
@@ -272,7 +273,7 @@ def execute(args):
                     trace_cross_from_vec = trace_model.bones[cross_from_mname].position
                     trace_cross_to_vec = trace_model.bones[cross_to_mname].position
                     trace_cross = (trace_cross_to_vec - trace_cross_from_vec).normalized()
-
+                    
                     trace_up_cross = MVector3D.crossProduct(trace_up, trace_cross).normalized()
                     trace_stance_qq = MQuaternion.fromDirection(trace_direction, trace_up_cross)
 
@@ -318,7 +319,7 @@ def execute(args):
 
             logger.info("【No.{0}】モーション(あにまさ式ミク)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=(len(trace_rot_motion.bones.keys()) * len(fnos)), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=((len(trace_rot_motion.bones.keys()) + 34) * len(fnos)), desc=f'No.{oidx:02d}') as pchar:
                 for mname in ["センター", "グルーブ"]:
                     for fno in fnos:
                         rot_bf = trace_rot_motion.calc_bf(mname, fno)
@@ -359,33 +360,54 @@ def execute(args):
                         miku_bf.position = rot_bf.position.copy()
                         new_miku_qq = rot_bf.rotation.copy()
                         
-                        if (len(mname) > 2 and mname[2] == "指") or mname[1:] in ["ひざ"]:
-                            # 指・ひざは念のためX捩り除去
-                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
-                            new_miku_qq = now_yz_qq
-                        
-                        if (len(mname) > 2 and mname[2] == "指"):
-                            pass
-                        elif mname[1:] in ["手首"]:
-                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq
-                        elif mname[1:] in ["肩", "足"]:
+                        # if (len(mname) > 2 and mname[2] == "指") or mname[1:] in ["手首"]:
+                        #     pass
+                        # elif mname[1:] in ["手首"]:
+                        #     new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq
+                        if mname[1:] in ["肩"]:
                             new_miku_qq = new_miku_qq * target_local_x_qq
                         else:
                             new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
-
-                        if len(mname) > 2 and mname[2] == "指":
-                            # 指は正方向にしか曲がらない
-                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
-                            new_miku_qq = MQuaternion.fromAxisAndAngle((MVector3D(0, 0, -1) if mname[0] == "左" else MVector3D(0, 0, 1)), now_yz_qq.toDegree())
-                        elif mname[1:] in ["ひざ"]:
-                            # ひざは足IK用にYのみ
-                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, new_miku_qq, miku_local_x_axis)
-                            new_miku_qq = MQuaternion.fromAxisAndAngle(miku_local_y_axis, now_yz_qq.toDegree())
 
                         miku_bf.rotation = new_miku_qq
                         miku_bf.key = True
 
                         trace_miku_motion.bones[mname][fno] = miku_bf
+                        pchar.update(1)
+                
+                # for mname in ["左ひじ", "右ひじ"]:
+                #     miku_local_x_axis = miku_model.get_local_x_axis(mname)
+
+                #     for fno in fnos:
+                #         miku_bf = trace_miku_motion.calc_bf(mname, fno)
+
+                #         # X捩り除去
+                #         _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
+                #         miku_bf.rotation = now_yz_qq
+                #         pchar.update(1)
+                
+                for mname in ["左ひざ", "右ひざ"]:
+                    miku_local_x_axis = miku_model.get_local_x_axis(mname)
+                    miku_local_y_axis = MVector3D.crossProduct(miku_local_x_axis, MVector3D(0, 0, 1))
+
+                    for fno in fnos:
+                        miku_bf = trace_miku_motion.calc_bf(mname, fno)
+
+                        # X捩り除去
+                        _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
+                        miku_bf.rotation = MQuaternion.fromAxisAndAngle(miku_local_y_axis, now_yz_qq.toDegree())
+                        pchar.update(1)
+                
+                for mname in ['左親指０' , '左親指１' , '左親指２' , '左人指１' , '左人指２' , '左人指３' , '左中指１' , '左中指２' , '左中指３' , '左薬指１' , '左薬指２' , '左薬指３' , '左小指１' , '左小指２' , '左小指３' , \
+                              '右親指０' , '右親指１' , '右親指２' , '右人指１' , '右人指２' , '右人指３' , '右中指１' , '右中指２' , '右中指３' , '右薬指１' , '右薬指２' , '右薬指３' , '右小指１' , '右小指２' , '右小指３']:
+                    miku_local_x_axis = miku_model.get_local_x_axis(mname)
+
+                    for fno in fnos:
+                        miku_bf = trace_miku_motion.calc_bf(mname, fno)
+
+                        # 指は正方向にしか曲がらない
+                        _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
+                        miku_bf.rotation = MQuaternion.fromAxisAndAngle((MVector3D(0, 0, -1) if mname[0] == "左" else MVector3D(0, 0, 1)), now_yz_qq.toDegree())
                         pchar.update(1)
 
             trace_miku_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_miku_no{oidx:02d}.vmd")
@@ -1792,21 +1814,21 @@ def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs
     if jname in ["mp_left_wrist", "mp_right_wrist"]:
         # 手首2は手首と合わせる
         bone_relative_pos = MVector3D()
-    else:        
-        # 親からの相対位置
-        if "指" in jconn["display"]:
-            if "手首2" in parent_bone.name:
-                # 手首2を参照している場合、手首を参照に切替
-                parent_bone = trace_model.bones[parent_bone.name[:3]]
-            # 指は完全にミクに合わせる
+    elif "指" in jconn["display"]:
+        if "手首2" in parent_bone.name:
+            # 手首2を参照している場合、手首を参照に切替
+            parent_bone = trace_model.bones[parent_bone.name[:3]]
+        # 手首と指は完全にミクに合わせる
+        bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
+    else:
+        bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
+
+        if mname[1:] in ["手首", "ひじ", "手先", "ひざ", "足首", "つま先"] and mname in miku_model.bones and parent_bone.name in miku_model.bones:
+            # 腕・足は方向はミクに合わせる。長さはトレース元
             bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-        # elif (mname in ["頭", "首"] or jconn["display"] in ["顔", "眉", "目", "口", "輪郭"]) and mname in miku_model.bones and parent_bone.name in miku_model.bones:
-        #     # 頭は方向はミクに合わせる。長さはトレース元
-        #     bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-        #     bone_relative_pos *= bone_length / bone_relative_pos.length()
+            bone_relative_pos *= bone_length / bone_relative_pos.length()
         else:
             # トレース元から採取
-            bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
             bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
             bone_relative_pos = MVector3D(bone_axis * bone_length)
     bone_pos = parent_bone.position + bone_relative_pos
@@ -2967,12 +2989,12 @@ def create_bone_leg_ik(pmx: PmxModel, direction: str):
 PMX_CONNECTIONS = {
     "pelvis": {"mmd": "下半身", "parent": "グルーブ", "tail": "pelvis2", "display": "体幹", "axis": None},
     "pelvis2": {"mmd": "下半身先", "parent": "pelvis", "tail": "", "display": "体幹", "axis": None},
-    "left_hip": {"mmd": "左足", "parent": "pelvis", "tail": "left_knee", "display": "左足", "axis": MVector3D(1, 0, 0)},
-    "right_hip": {"mmd": "右足", "parent": "pelvis", "tail": "right_knee", "display": "右足", "axis": MVector3D(-1, 0, 0)},
-    "left_knee": {"mmd": "左ひざ", "parent": "left_hip", "tail": "left_ankle", "display": "左足", "axis": MVector3D(1, 0, 0)},
-    "right_knee": {"mmd": "右ひざ", "parent": "right_hip", "tail": "right_ankle", "display": "右足", "axis": MVector3D(-1, 0, 0)},
-    "left_ankle": {"mmd": "左足首", "parent": "left_knee", "tail": "left_foot", "display": "左足", "axis": MVector3D(1, 0, 0)},
-    "right_ankle": {"mmd": "右足首", "parent": "right_knee", "tail": "right_foot", "display": "右足", "axis": MVector3D(-1, 0, 0)},
+    "left_hip": {"mmd": "左足", "parent": "pelvis", "tail": "left_knee", "display": "左足", "axis": None},
+    "right_hip": {"mmd": "右足", "parent": "pelvis", "tail": "right_knee", "display": "右足", "axis": None},
+    "left_knee": {"mmd": "左ひざ", "parent": "left_hip", "tail": "left_ankle", "display": "左足", "axis": None},
+    "right_knee": {"mmd": "右ひざ", "parent": "right_hip", "tail": "right_ankle", "display": "右足", "axis": None},
+    "left_ankle": {"mmd": "左足首", "parent": "left_knee", "tail": "left_foot", "display": "左足", "axis": None},
+    "right_ankle": {"mmd": "右足首", "parent": "right_knee", "tail": "right_foot", "display": "右足", "axis": None},
     "left_foot": {"mmd": "左つま先", "parent": "left_ankle", "tail": "", "display": "左足", "axis": None},
     "right_foot": {"mmd": "右つま先", "parent": "right_ankle", "tail": "", "display": "右足", "axis": None},
     "spine1": {"mmd": "上半身", "parent": "グルーブ", "tail": "spine2", "display": "体幹", "axis": None},
@@ -2988,8 +3010,8 @@ PMX_CONNECTIONS = {
     "right_elbow": {"mmd": "右ひじ", "parent": "right_shoulder", "tail": "right_wrist", "display": "右手", "axis": MVector3D(-1, 0, 0)},
     "left_wrist": {"mmd": "左手首", "parent": "left_elbow", "tail": "left_wrist_tail", "display": "左手", "axis": MVector3D(1, 0, 0)},
     "right_wrist": {"mmd": "右手首", "parent": "right_elbow", "tail": "right_wrist_tail", "display": "右手", "axis": MVector3D(-1, 0, 0)},
-    "left_wrist_tail": {"mmd": "左手首先", "parent": "left_wrist", "tail": "", "display": "左手", "axis": MVector3D(1, 0, 0)},
-    "right_wrist_tail": {"mmd": "右手首先", "parent": "right_wrist", "tail": "", "display": "右手", "axis": MVector3D(-1, 0, 0)},
+    "left_wrist_tail": {"mmd": "左手先", "parent": "left_wrist", "tail": "", "display": "左手", "axis": MVector3D(1, 0, 0)},
+    "right_wrist_tail": {"mmd": "右手先", "parent": "right_wrist", "tail": "", "display": "右手", "axis": MVector3D(-1, 0, 0)},
     "jaw": {"mmd": "jaw", "parent": "head", "tail": "", "display": "顔", "axis": None},
     "left_eye_smplx": {"mmd": "left_eye_smplx", "parent": "head", "tail": "", "display": "顔", "axis": None},
     "right_eye_smplx": {"mmd": "right_eye_smplx", "parent": "head", "tail": "", "display": "顔", "axis": None},
@@ -3131,18 +3153,18 @@ VMD_CONNECTIONS = {
     'left_shoulder': {'direction': ('left_shoulder', 'left_elbow'), 'up': ('left_collar', 'left_shoulder'), 'cancel': ['spine1', 'spine2', 'left_collar']},
     'left_elbow': {'direction': ('left_elbow', 'left_wrist'), 'up': ('left_shoulder', 'left_elbow'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder']},
     'left_hip': {'direction': ('left_hip', 'left_knee'), 'up': ('left_hip', 'right_hip'), 'cancel': ['pelvis']},
-    'left_knee': {'direction': ('left_knee', 'left_ankle'), 'up': ('left_hip', 'left_knee'), 'cancel': ['pelvis', 'left_hip']},
-    'left_ankle': {'direction': ('left_ankle', 'left_foot'), 'up': ('left_knee', 'left_ankle'), 'cancel': ['pelvis', 'left_hip', 'left_knee']},
+    'left_knee': {'direction': ('left_knee', 'left_ankle'), 'up': ('left_hip', 'right_hip'), 'cancel': ['pelvis', 'left_hip']},
+    'left_ankle': {'direction': ('left_ankle', 'left_foot'), 'up': ('left_hip', 'right_hip'), 'cancel': ['pelvis', 'left_hip', 'left_knee']},
 
     'right_collar': {'direction': ('right_collar', 'right_shoulder'), 'up': ('spine2', 'neck'), 'cross': ('right_shoulder', 'left_shoulder'), 'cancel': ['spine1', 'spine2']},
     'right_shoulder': {'direction': ('right_shoulder', 'right_elbow'), 'up': ('right_collar', 'right_shoulder'), 'cancel': ['spine1', 'spine2', 'right_collar']},
     'right_elbow': {'direction': ('right_elbow', 'right_wrist'), 'up': ('right_shoulder', 'right_elbow'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder']},
     'right_hip': {'direction': ('right_hip', 'right_knee'), 'up': ('right_hip', 'left_hip'), 'cancel': ['pelvis']},
-    'right_knee': {'direction': ('right_knee', 'right_ankle'), 'up': ('right_hip', 'right_knee'), 'cancel': ['pelvis', 'right_hip']},
-    'right_ankle': {'direction': ('right_ankle', 'right_foot'), 'up': ('right_knee', 'right_ankle'), 'cancel': ['pelvis', 'right_hip', 'right_knee']},
+    'right_knee': {'direction': ('right_knee', 'right_ankle'), 'up': ('right_hip', 'left_hip'), 'cancel': ['pelvis', 'right_hip']},
+    'right_ankle': {'direction': ('right_ankle', 'right_foot'), 'up': ('right_hip', 'left_hip'), 'cancel': ['pelvis', 'right_hip', 'right_knee']},
 
     'left_wrist': {'direction': ('mp_left_wrist', 'mp_left_middle1'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow']},
-    'mp_left_thumb1': {'direction': ('mp_left_thumb1', 'mp_left_thumb2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    # 'mp_left_thumb1': {'direction': ('mp_left_thumb1', 'mp_left_thumb2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
     'mp_left_thumb2': {'direction': ('mp_left_thumb2', 'mp_left_thumb3'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_thumb1']},
     'mp_left_thumb3': {'direction': ('mp_left_thumb3', 'mp_left_thumb'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_thumb1', 'mp_left_thumb2']},
     'mp_left_index1': {'direction': ('mp_left_index1', 'mp_left_index2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
@@ -3159,7 +3181,7 @@ VMD_CONNECTIONS = {
     'mp_left_pinky3': {'direction': ('mp_left_pinky3', 'mp_left_pinky'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_pinky1', 'mp_left_pinky2']},
 
     'right_wrist': {'direction': ('mp_right_wrist', 'mp_right_middle1'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow']},
-    'mp_right_thumb1': {'direction': ('mp_right_thumb1', 'mp_right_thumb2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    # 'mp_right_thumb1': {'direction': ('mp_right_thumb1', 'mp_right_thumb2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
     'mp_right_thumb2': {'direction': ('mp_right_thumb2', 'mp_right_thumb3'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_thumb1']},
     'mp_right_thumb3': {'direction': ('mp_right_thumb3', 'mp_right_thumb'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_thumb1', 'mp_right_thumb2']},
     'mp_right_index1': {'direction': ('mp_right_index1', 'mp_right_index2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
