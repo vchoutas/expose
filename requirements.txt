@@ -21,7 +21,7 @@ gast==0.2.2
 tensorflow-gpu==1.15
 cython
 scikit-image
-numpy>=1.19.1
+numpy
 # Pytorch
 #torch==1.6.0
 #torchvision==0.7.0

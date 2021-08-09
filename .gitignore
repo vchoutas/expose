@@ -20,3 +20,4 @@ test.bat
 ボーン定義.ods
 .~lock.ボーン定義.ods#
 .vscode/settings.json
+*.egg

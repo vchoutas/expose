@@ -55,6 +55,27 @@ def execute(args):
             logger.error("人物追跡設定ファイル読み込み失敗", e, decoration=MLogger.DECORATION_BOX)
             return False
 
+        # -----------------------
+
+        logger.info('追跡準備開始', decoration=MLogger.DECORATION_LINE)
+        joint_json_pathes = sorted(glob.glob(os.path.join(args.img_dir, "frames", "**", "frame_*.json")), key=sort_by_numeric)
+
+        # bboxのサイズの中央値を求める
+        all_w = []
+        all_h = []
+        for iidx, joint_json_path in enumerate(tqdm(joint_json_pathes)):
+            with open(joint_json_path, 'r') as f:
+                json_data = json.load(f)
+                width = json_data['image']['width']
+                height = json_data['image']['height']
+
+            all_w.append(json_data['bbox']['width'])
+            all_h.append(json_data['bbox']['height'])
+        median_w = np.median(all_w)
+        median_h = np.median(all_h)
+
+        # -----------------------
+
         pose_estimator = Tester(Network(), cfg)
         pose_estimator.load_weights(args.tracking_model)
 
@@ -110,35 +131,38 @@ def execute(args):
                     width = bbox_frames[joint_json_path]['image']['width']
                     height = bbox_frames[joint_json_path]['image']['height']
 
-                # enlarge bbox by 20% with same center position
-                bbox_x1y1x2y2 = xywh_to_x1y1x2y2_from_dict(bbox_frames[joint_json_path]['bbox'])
-                bbox_in_xywh = enlarge_bbox(bbox_x1y1x2y2, args.enlarge_scale, width, height)
-                bbox_det = x1y1x2y2_to_xywh(bbox_in_xywh)
+                if median_w * 0.5 <= bbox_frames[joint_json_path]['bbox']['width'] and median_h * 0.5 <= bbox_frames[joint_json_path]['bbox']['height']:
+                    # 中央値の半分以上の大きさである場合のみ、追跡対象とする
 
-                # 関節は使えるのだけピックアップ
-                keypoints = []
-                for joint_name in ["pelvis", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "neck", "head", \
-                                    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"]:
-                    keypoints.append((bbox_frames[joint_json_path]['proj_joints'][joint_name]['x'], bbox_frames[joint_json_path]['proj_joints'][joint_name]['y']))
+                    # enlarge bbox by 20% with same center position
+                    bbox_x1y1x2y2 = xywh_to_x1y1x2y2_from_dict(bbox_frames[joint_json_path]['bbox'])
+                    bbox_in_xywh = enlarge_bbox(bbox_x1y1x2y2, args.enlarge_scale, width, height)
+                    bbox_det = x1y1x2y2_to_xywh(bbox_in_xywh)
 
-                if iidx == 0 or len(prev_bbox_frames) == 0:   # First frame, all ids are assigned automatically
-                    track_id = next_id
-                    next_id += 1
-                else:
-                    # 姿勢もbboxも類似してるのを優先して追跡
-                    track_id, match_index = get_track_id_SGCN(args, bbox_det, keypoints, prev_bbox_frames, pose_matcher)
+                    # 関節は使えるのだけピックアップ
+                    keypoints = []
+                    for joint_name in ["pelvis", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "neck", "head", \
+                                        "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"]:
+                        keypoints.append((bbox_frames[joint_json_path]['proj_joints'][joint_name]['x'], bbox_frames[joint_json_path]['proj_joints'][joint_name]['y']))
 
-                    if track_id > -1:  # if candidate from prev frame matched, prevent it from matching another
-                        del prev_bbox_frames[match_index]
-                        bbox_frames[joint_json_path]["track_id"] = track_id
+                    if iidx == 0 or len(prev_bbox_frames) == 0:   # First frame, all ids are assigned automatically
+                        track_id = next_id
+                        next_id += 1
+                    else:
+                        # 姿勢もbboxも類似してるのを優先して追跡
+                        track_id, match_index = get_track_id_SGCN(args, bbox_det, keypoints, prev_bbox_frames, pose_matcher)
 
-                if track_id > -1:
-                    bbox_frames[joint_json_path]['track_id'] = track_id
-                    if track_id not in track_cnt_dict:
-                        # まだ出現なかったtrack_idの場合、場所用意
-                        track_cnt_dict[track_id] = 0
-                    # 出現回数カウント
-                    track_cnt_dict[track_id] += 1
+                        if track_id > -1:  # if candidate from prev frame matched, prevent it from matching another
+                            del prev_bbox_frames[match_index]
+                            bbox_frames[joint_json_path]["track_id"] = track_id
+
+                    if track_id > -1:
+                        bbox_frames[joint_json_path]['track_id'] = track_id
+                        if track_id not in track_cnt_dict:
+                            # まだ出現なかったtrack_idの場合、場所用意
+                            track_cnt_dict[track_id] = 0
+                        # 出現回数カウント
+                        track_cnt_dict[track_id] += 1
 
                 # JSON出力
                 with open(joint_json_path, "w") as f:
@@ -183,19 +207,6 @@ def execute(args):
             prev_bbox_frames = now_bbox_frames
             # 全データを保持（前回データはヒット分を削除したりするのでコピー保持）
             all_bbox_frames.append(cPickle.loads(cPickle.dumps(now_bbox_frames, -1)))
-
-        logger.info('追跡結果チェック開始', decoration=MLogger.DECORATION_LINE)
-
-        # bboxのサイズの中央値を求める
-        all_w = []
-        all_h = []
-        for iidx, bbox_frames in enumerate(tqdm(all_bbox_frames)):
-            for bidx, bbox_frame in enumerate(bbox_frames):
-                x1, y1, w, h = bbox_frame['bbox']
-                all_w.append(w)
-                all_h.append(h)
-        median_w = np.median(all_w)
-        median_h = np.median(all_h)
 
         logger.info('追跡結果生成開始', decoration=MLogger.DECORATION_LINE)
 

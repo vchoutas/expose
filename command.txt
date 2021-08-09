@@ -51,8 +51,7 @@ python executor.py --video-file E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03
 
 python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\03\bbf\bbf_1740-2740_mp4_20210223_111446 --process expose,tracking --verbose 20 --log-mode 0
 
-python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\BF_mp4_20210701_190611 --process motion --body-motion 1 --verbose 20 --log-mode 0
-
+python executor.py --img-dir E:\MMD\MikuMikuDance_v926x64\Work\201805_auto\01\burai\BF_mp4_20210701_190611 --process smooth,motion --body-motion 1 --smooth-key 1 --verbose 20 --log-mode 0
 
 ----------
 
