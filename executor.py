@@ -63,11 +63,6 @@ if __name__ == "__main__":
         import mmd.expose
         result = mmd.expose.execute(args)
 
-    if result and "depth" in args.process:
-        # monoloclによる人物推定
-        import mmd.depth
-        result = mmd.depth.execute(args)
-
     if result and "tracking" in args.process:
         # lighttrackによる人物追跡
         import mmd.tracking
@@ -78,10 +73,10 @@ if __name__ == "__main__":
         import mmd.order
         result = mmd.order.execute(args)
 
-    if result and "root" in args.process:
-        # 人物深度推定
-        import mmd.root
-        result = mmd.root.execute(args)
+    if result and "hand" in args.process:
+        # 手首から先推定
+        import mmd.hand
+        result = mmd.hand.execute(args)
 
     if result and "face" in args.process:
         # 人物表情推定
@@ -97,16 +92,6 @@ if __name__ == "__main__":
         # モーション生成
         import mmd.motion
         result = mmd.motion.execute(args)
-
-    if result and "demo" in args.process:
-        # モーション生成
-        import demo.face2
-        result = demo.face2.execute(args)
-
-    if result and "lip" in args.process:
-        # リップモーション生成
-        import mmd.lip
-        result = mmd.lip.execute(args)
 
     elapsed_time = time.time() - start
 

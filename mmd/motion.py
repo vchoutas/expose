@@ -98,21 +98,26 @@ def execute(args):
                             for mbname in ["全ての親", "センター", "グルーブ"]:
                                 target_bone_vecs[mbname][fno] = np.array([0, 0, 0])
 
-                            # # 上半身（下半身と同じ位置に生成）
-                            # target_bone_vecs["spine1"][fno] = np.array([target_bone_vecs["pelvis"][fnos[-1]][0], target_bone_vecs["pelvis"][fnos[-1]][1], target_bone_vecs["pelvis"][fnos[-1]][2]])
-
                             # 下半身先
                             target_bone_vecs["pelvis2"][fno] = np.mean([target_bone_vecs["left_hip"][fno], target_bone_vecs["right_hip"][fno]], axis=0)
                             pchar.update(1)
 
                             # 頭先
-                            target_bone_vecs["head_tail"][fno] = np.mean([target_bone_vecs["left_eye"][fno], target_bone_vecs["right_eye"][fno]], axis=0) + ((target_bone_vecs["head"][fno] - target_bone_vecs["neck"][fno]) / 2)
+                            target_bone_vecs["head_tail"][fno] = np.mean([target_bone_vecs["left_ear"][fno], target_bone_vecs["right_ear"][fno]], axis=0) + ((target_bone_vecs["head"][fno] - target_bone_vecs["neck"][fno]) / 2)
                             pchar.update(1)
 
                             # 手首先
                             for direction in ["left", "right"]:
                                 target_bone_vecs[f"{direction}_wrist_tail"][fno] = np.mean([target_bone_vecs[f"{direction}_index1"][fno], target_bone_vecs[f"{direction}_middle1"][fno], target_bone_vecs[f"{direction}_ring1"][fno], target_bone_vecs[f"{direction}_pinky1"][fno]], axis=0)
                                 pchar.update(1)
+                        
+                        for joint_group_name in ["mp_body_joints", "mp_left_hand_joints", "mp_right_hand_joints"]:
+                            if joint_group_name in frame_joints:
+                                for jname, joint in frame_joints[joint_group_name].items():
+                                    if jname not in target_bone_vecs:
+                                        target_bone_vecs[jname] = {}
+                                    target_bone_vecs[jname][fno] = np.array([joint["x"], joint["y"], joint["z"]]) * MIKU_METER
+                                    pchar.update(1)                               
 
                         if "depth" in frame_joints and "camera" in frame_joints:
                             logger.debug("fno: {0}, depth: {1}, camera: {2}, ratio: {3}", fno, frame_joints["depth"]["depth"], frame_joints["camera"]["scale"], frame_joints["depth"]["depth"] / frame_joints["camera"]["scale"])
@@ -174,22 +179,24 @@ def execute(args):
 
                     mname = pconn['mmd']
                     pmname = PMX_CONNECTIONS[pconn['parent']]['mmd'] if pconn['parent'] in PMX_CONNECTIONS else pconn['parent']
-                    
-                    # モーションも登録
-                    for fno in fnos:
-                        joint = target_bone_vecs[jname][fno]
-                        parent_joint = target_bone_vecs[pconn['parent']][fno]
                         
-                        trace_bf = trace_mov_motion.calc_bf(mname, fno)
+                    if jname not in ["mp_left_wrist", "mp_right_wrist"]:
+                        # モーションも登録
+                        for fno in fnos:
+                            if fno in target_bone_vecs[jname] and fno in target_bone_vecs[pconn['parent']]:
+                                joint = target_bone_vecs[jname][fno]
+                                parent_joint = target_bone_vecs[pconn['parent']][fno]
+                                
+                                trace_bf = trace_mov_motion.calc_bf(mname, fno)
 
-                        # # parentが全ての親の場合
-                        # trace_bf.position = MVector3D(joint) - trace_model.bones[mname].position
-                        # parentが親ボーンの場合
-                        trace_bf.position = MVector3D(joint) - MVector3D(parent_joint) \
-                                            - (trace_model.bones[mname].position - trace_model.bones[pmname].position)
-                        trace_bf.key = True
-                        trace_mov_motion.bones[mname][fno] = trace_bf
-                        pchar.update(1)
+                                # # parentが全ての親の場合
+                                # trace_bf.position = MVector3D(joint) - trace_model.bones[mname].position
+                                # parentが親ボーンの場合
+                                trace_bf.position = MVector3D(joint) - MVector3D(parent_joint) \
+                                                    - (trace_model.bones[mname].position - trace_model.bones[pmname].position)
+                                trace_bf.key = True
+                                trace_mov_motion.bones[mname][fno] = trace_bf
+                                pchar.update(1)
 
             for bidx, bone in trace_model.bones.items():
                 # 表示先の設定
@@ -359,12 +366,8 @@ def execute(args):
                         
                         if (len(mname) > 2 and mname[2] == "指"):
                             pass
-                        # elif mname[1:] in ["手首"]:
-                        #     new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
-                        # elif mname[1:] in ["ひじ"]:
-                        #     new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
-                        # elif mname[1:] in ["腕"]:
-                        #     new_miku_qq = trace_parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+                        elif mname[1:] in ["手首"]:
+                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq
                         elif mname[1:] in ["肩", "足"]:
                             new_miku_qq = new_miku_qq * target_local_x_qq
                         else:
@@ -1778,27 +1781,34 @@ def execute(args):
         return False
 
 def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict, miku_model: PmxModel):
+    parent_jname = jconn["parent"]
     joints = list(target_bone_vecs[jname].values())
-    parent_joints = list(target_bone_vecs[jconn["parent"]].values())
+    parent_joints = list(target_bone_vecs[parent_jname].values())
     # MMDボーン名
     mname = jconn["mmd"]
     # 親ボーン
-    parent_bone = trace_model.bones[PMX_CONNECTIONS[jconn["parent"]]['mmd']] if jconn["parent"] in PMX_CONNECTIONS else trace_model.bones[jconn["parent"]]
+    parent_bone = trace_model.bones[PMX_CONNECTIONS[parent_jname]['mmd']] if parent_jname in PMX_CONNECTIONS else trace_model.bones[parent_jname]
 
-    bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
-
-    # 親からの相対位置
-    # if "指" in jconn["display"]:
-    #     # 指は完全にミクに合わせる
-    #     bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-    # elif (mname in ["頭", "首"] or jconn["display"] in ["顔", "眉", "目", "口", "輪郭"]) and mname in miku_model.bones and parent_bone.name in miku_model.bones:
-    #     # 頭は方向はミクに合わせる。長さはトレース元
-    #     bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-    #     bone_relative_pos *= bone_length / bone_relative_pos.length()
-    # else:
-    # トレース元から採取
-    bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
-    bone_relative_pos = MVector3D(bone_axis * bone_length)
+    if jname in ["mp_left_wrist", "mp_right_wrist"]:
+        # 手首2は手首と合わせる
+        bone_relative_pos = MVector3D()
+    else:        
+        # 親からの相対位置
+        if "指" in jconn["display"]:
+            if "手首2" in parent_bone.name:
+                # 手首2を参照している場合、手首を参照に切替
+                parent_bone = trace_model.bones[parent_bone.name[:3]]
+            # 指は完全にミクに合わせる
+            bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
+        # elif (mname in ["頭", "首"] or jconn["display"] in ["顔", "眉", "目", "口", "輪郭"]) and mname in miku_model.bones and parent_bone.name in miku_model.bones:
+        #     # 頭は方向はミクに合わせる。長さはトレース元
+        #     bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
+        #     bone_relative_pos *= bone_length / bone_relative_pos.length()
+        else:
+            # トレース元から採取
+            bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
+            bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
+            bone_relative_pos = MVector3D(bone_axis * bone_length)
     bone_pos = parent_bone.position + bone_relative_pos
     bone = Bone(mname, mname, bone_pos, parent_bone.index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
     bone.index = len(list(trace_model.bones.keys()))
@@ -2995,46 +3005,48 @@ PMX_CONNECTIONS = {
     "right_small_toe": {"mmd": "右足小指", "parent": "right_ankle", "tail": "", "display": "右足", "axis": None},
     "right_heel": {"mmd": "右かかと", "parent": "right_ankle", "tail": "", "display": "右足", "axis": None},
 
-    "left_index1": {"mmd": "左人指１", "parent": "left_wrist", "tail": "left_index2", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_index2": {"mmd": "左人指２", "parent": "left_index1", "tail": "left_index3", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_index3": {"mmd": "左人指３", "parent": "left_index2", "tail": "left_index", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_middle1": {"mmd": "左中指１", "parent": "left_wrist", "tail": "left_middle2", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_middle2": {"mmd": "左中指２", "parent": "left_middle1", "tail": "left_middle3", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_middle3": {"mmd": "左中指３", "parent": "left_middle2", "tail": "left_middle", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_pinky1": {"mmd": "左小指１", "parent": "left_wrist", "tail": "left_pinky2", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_pinky2": {"mmd": "左小指２", "parent": "left_pinky1", "tail": "left_pinky3", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_pinky3": {"mmd": "左小指３", "parent": "left_pinky2", "tail": "left_pinky", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_ring1": {"mmd": "左薬指１", "parent": "left_wrist", "tail": "left_ring2", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_ring2": {"mmd": "左薬指２", "parent": "left_ring1", "tail": "left_ring3", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_ring3": {"mmd": "左薬指３", "parent": "left_ring2", "tail": "left_ring", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_thumb1": {"mmd": "左親指０", "parent": "left_wrist", "tail": "left_thumb2", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_thumb2": {"mmd": "左親指１", "parent": "left_thumb1", "tail": "left_thumb3", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_thumb3": {"mmd": "左親指２", "parent": "left_thumb2", "tail": "left_thumb", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "right_index1": {"mmd": "右人指１", "parent": "right_wrist", "tail": "right_index2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_index2": {"mmd": "右人指２", "parent": "right_index1", "tail": "right_index3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_index3": {"mmd": "右人指３", "parent": "right_index2", "tail": "right_index", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_middle1": {"mmd": "右中指１", "parent": "right_wrist", "tail": "right_middle2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_middle2": {"mmd": "右中指２", "parent": "right_middle1", "tail": "right_middle3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_middle3": {"mmd": "右中指３", "parent": "right_middle2", "tail": "right_middle", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_pinky1": {"mmd": "右小指１", "parent": "right_wrist", "tail": "right_pinky2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_pinky2": {"mmd": "右小指２", "parent": "right_pinky1", "tail": "right_pinky3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_pinky3": {"mmd": "右小指３", "parent": "right_pinky2", "tail": "right_pinky", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_ring1": {"mmd": "右薬指１", "parent": "right_wrist", "tail": "right_ring2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_ring2": {"mmd": "右薬指２", "parent": "right_ring1", "tail": "right_ring3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_ring3": {"mmd": "右薬指３", "parent": "right_ring2", "tail": "right_ring", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_thumb1": {"mmd": "右親指０", "parent": "right_wrist", "tail": "right_thumb2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_thumb2": {"mmd": "右親指１", "parent": "right_thumb1", "tail": "right_thumb3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_thumb3": {"mmd": "右親指２", "parent": "right_thumb2", "tail": "right_thumb", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "left_thumb": {"mmd": "左親指先", "parent": "left_thumb3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_index": {"mmd": "左人差指先", "parent": "left_index3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_middle": {"mmd": "左中指先", "parent": "left_middle3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_ring": {"mmd": "左薬指先", "parent": "left_ring3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "left_pinky": {"mmd": "左小指先", "parent": "left_pinky3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
-    "right_thumb": {"mmd": "右親指先", "parent": "right_thumb3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_index": {"mmd": "右人差指先", "parent": "right_index3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_middle": {"mmd": "右中指先", "parent": "right_middle3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_ring": {"mmd": "右薬指先", "parent": "right_ring3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
-    "right_pinky": {"mmd": "右小指先", "parent": "right_pinky3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_left_wrist": {"mmd": "左手首2", "parent": "left_wrist", "tail": "mp_left_middle1", "display": "左手", "axis": MVector3D(1, 0, 0)},
+    "mp_right_wrist": {"mmd": "右手首2", "parent": "right_wrist", "tail": "mp_right_middle1", "display": "右手", "axis": MVector3D(-1, 0, 0)},
+    "mp_left_index1": {"mmd": "左人指１", "parent": "mp_left_wrist", "tail": "mp_left_index2", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_index2": {"mmd": "左人指２", "parent": "mp_left_index1", "tail": "mp_left_index3", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_index3": {"mmd": "左人指３", "parent": "mp_left_index2", "tail": "mp_left_index", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_middle1": {"mmd": "左中指１", "parent": "mp_left_wrist", "tail": "mp_left_middle2", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_middle2": {"mmd": "左中指２", "parent": "mp_left_middle1", "tail": "mp_left_middle3", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_middle3": {"mmd": "左中指３", "parent": "mp_left_middle2", "tail": "mp_left_middle", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_pinky1": {"mmd": "左小指１", "parent": "mp_left_wrist", "tail": "mp_left_pinky2", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_pinky2": {"mmd": "左小指２", "parent": "mp_left_pinky1", "tail": "mp_left_pinky3", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_pinky3": {"mmd": "左小指３", "parent": "mp_left_pinky2", "tail": "mp_left_pinky", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_ring1": {"mmd": "左薬指１", "parent": "mp_left_wrist", "tail": "mp_left_ring2", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_ring2": {"mmd": "左薬指２", "parent": "mp_left_ring1", "tail": "mp_left_ring3", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_ring3": {"mmd": "左薬指３", "parent": "mp_left_ring2", "tail": "mp_left_ring", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_thumb1": {"mmd": "左親指０", "parent": "mp_left_wrist", "tail": "mp_left_thumb2", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_thumb2": {"mmd": "左親指１", "parent": "mp_left_thumb1", "tail": "mp_left_thumb3", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_thumb3": {"mmd": "左親指２", "parent": "mp_left_thumb2", "tail": "mp_left_thumb", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_right_index1": {"mmd": "右人指１", "parent": "mp_right_wrist", "tail": "mp_right_index2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_index2": {"mmd": "右人指２", "parent": "mp_right_index1", "tail": "mp_right_index3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_index3": {"mmd": "右人指３", "parent": "mp_right_index2", "tail": "mp_right_index", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_middle1": {"mmd": "右中指１", "parent": "mp_right_wrist", "tail": "mp_right_middle2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_middle2": {"mmd": "右中指２", "parent": "mp_right_middle1", "tail": "mp_right_middle3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_middle3": {"mmd": "右中指３", "parent": "mp_right_middle2", "tail": "mp_right_middle", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_pinky1": {"mmd": "右小指１", "parent": "mp_right_wrist", "tail": "mp_right_pinky2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_pinky2": {"mmd": "右小指２", "parent": "mp_right_pinky1", "tail": "mp_right_pinky3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_pinky3": {"mmd": "右小指３", "parent": "mp_right_pinky2", "tail": "mp_right_pinky", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_ring1": {"mmd": "右薬指１", "parent": "mp_right_wrist", "tail": "mp_right_ring2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_ring2": {"mmd": "右薬指２", "parent": "mp_right_ring1", "tail": "mp_right_ring3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_ring3": {"mmd": "右薬指３", "parent": "mp_right_ring2", "tail": "mp_right_ring", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_thumb1": {"mmd": "右親指０", "parent": "mp_right_wrist", "tail": "mp_right_thumb2", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_thumb2": {"mmd": "右親指１", "parent": "mp_right_thumb1", "tail": "mp_right_thumb3", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_thumb3": {"mmd": "右親指２", "parent": "mp_right_thumb2", "tail": "mp_right_thumb", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_left_thumb": {"mmd": "左親指先", "parent": "mp_left_thumb3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_index": {"mmd": "左人差指先", "parent": "mp_left_index3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_middle": {"mmd": "左中指先", "parent": "mp_left_middle3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_ring": {"mmd": "左薬指先", "parent": "mp_left_ring3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_left_pinky": {"mmd": "左小指先", "parent": "mp_left_pinky3", "tail": "", "display": "左指", "axis": MVector3D(1, 0, 0)},
+    "mp_right_thumb": {"mmd": "右親指先", "parent": "mp_right_thumb3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_index": {"mmd": "右人差指先", "parent": "mp_right_index3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_middle": {"mmd": "右中指先", "parent": "mp_right_middle3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_ring": {"mmd": "右薬指先", "parent": "mp_right_ring3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_pinky": {"mmd": "右小指先", "parent": "mp_right_pinky3", "tail": "", "display": "右指", "axis": MVector3D(-1, 0, 0)},
     
     "right_eye_brow1": {"mmd": "right_eye_brow1", "parent": "head", "tail": "", "display": "眉", "axis": None},
     "right_eye_brow2": {"mmd": "right_eye_brow2", "parent": "right_eye_brow1", "tail": "", "display": "眉", "axis": None},
@@ -3118,22 +3130,6 @@ VMD_CONNECTIONS = {
     'left_collar': {'direction': ('left_collar', 'left_shoulder'), 'up': ('spine2', 'neck'), 'cross': ('left_shoulder', 'right_shoulder'), 'cancel': ['spine1', 'spine2']},
     'left_shoulder': {'direction': ('left_shoulder', 'left_elbow'), 'up': ('left_collar', 'left_shoulder'), 'cancel': ['spine1', 'spine2', 'left_collar']},
     'left_elbow': {'direction': ('left_elbow', 'left_wrist'), 'up': ('left_shoulder', 'left_elbow'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder']},
-    # 'left_wrist': {'direction': ('left_wrist', 'left_wrist_tail'), 'up': ('left_elbow', 'left_wrist'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow']},
-    # 'left_thumb1': {'direction': ('left_thumb1', 'left_thumb2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    # 'left_thumb2': {'direction': ('left_thumb2', 'left_thumb3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1']},
-    # 'left_thumb3': {'direction': ('left_thumb3', 'left_thumb'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_thumb1', 'left_thumb2']},
-    # 'left_index1': {'direction': ('left_index1', 'left_index2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    # 'left_index2': {'direction': ('left_index2', 'left_index3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1']},
-    # 'left_index3': {'direction': ('left_index3', 'left_index'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_index1', 'left_index2']},
-    # 'left_middle1': {'direction': ('left_middle1', 'left_middle2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    # 'left_middle2': {'direction': ('left_middle2', 'left_middle3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1']},
-    # 'left_middle3': {'direction': ('left_middle3', 'left_middle'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_middle1', 'left_middle2']},
-    # 'left_ring1': {'direction': ('left_ring1', 'left_ring2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    # 'left_ring2': {'direction': ('left_ring2', 'left_ring3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1']},
-    # 'left_ring3': {'direction': ('left_ring3', 'left_ring'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_ring1', 'left_ring2']},
-    # 'left_pinky1': {'direction': ('left_pinky1', 'left_pinky2'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
-    # 'left_pinky2': {'direction': ('left_pinky2', 'left_pinky3'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1']},
-    # 'left_pinky3': {'direction': ('left_pinky3', 'left_pinky'), 'up': ('left_index1', 'left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_pinky1', 'left_pinky2']},
     'left_hip': {'direction': ('left_hip', 'left_knee'), 'up': ('left_hip', 'right_hip'), 'cancel': ['pelvis']},
     'left_knee': {'direction': ('left_knee', 'left_ankle'), 'up': ('left_hip', 'left_knee'), 'cancel': ['pelvis', 'left_hip']},
     'left_ankle': {'direction': ('left_ankle', 'left_foot'), 'up': ('left_knee', 'left_ankle'), 'cancel': ['pelvis', 'left_hip', 'left_knee']},
@@ -3141,23 +3137,41 @@ VMD_CONNECTIONS = {
     'right_collar': {'direction': ('right_collar', 'right_shoulder'), 'up': ('spine2', 'neck'), 'cross': ('right_shoulder', 'left_shoulder'), 'cancel': ['spine1', 'spine2']},
     'right_shoulder': {'direction': ('right_shoulder', 'right_elbow'), 'up': ('right_collar', 'right_shoulder'), 'cancel': ['spine1', 'spine2', 'right_collar']},
     'right_elbow': {'direction': ('right_elbow', 'right_wrist'), 'up': ('right_shoulder', 'right_elbow'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder']},
-    # 'right_wrist': {'direction': ('right_wrist', 'right_wrist_tail'), 'up': ('right_elbow', 'right_wrist'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow']},
-    # 'right_thumb1': {'direction': ('right_thumb1', 'right_thumb2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    # 'right_thumb2': {'direction': ('right_thumb2', 'right_thumb3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1']},
-    # 'right_thumb3': {'direction': ('right_thumb3', 'right_thumb'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_thumb1', 'right_thumb2']},
-    # 'right_index1': {'direction': ('right_index1', 'right_index2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    # 'right_index2': {'direction': ('right_index2', 'right_index3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1']},
-    # 'right_index3': {'direction': ('right_index3', 'right_index'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_index1', 'right_index2']},
-    # 'right_middle1': {'direction': ('right_middle1', 'right_middle2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    # 'right_middle2': {'direction': ('right_middle2', 'right_middle3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1']},
-    # 'right_middle3': {'direction': ('right_middle3', 'right_middle'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_middle1', 'right_middle2']},
-    # 'right_ring1': {'direction': ('right_ring1', 'right_ring2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    # 'right_ring2': {'direction': ('right_ring2', 'right_ring3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1']},
-    # 'right_ring3': {'direction': ('right_ring3', 'right_ring'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_ring1', 'right_ring2']},
-    # 'right_pinky1': {'direction': ('right_pinky1', 'right_pinky2'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
-    # 'right_pinky2': {'direction': ('right_pinky2', 'right_pinky3'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1']},
-    # 'right_pinky3': {'direction': ('right_pinky3', 'right_pinky'), 'up': ('right_index1', 'right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_pinky1', 'right_pinky2']},
     'right_hip': {'direction': ('right_hip', 'right_knee'), 'up': ('right_hip', 'left_hip'), 'cancel': ['pelvis']},
     'right_knee': {'direction': ('right_knee', 'right_ankle'), 'up': ('right_hip', 'right_knee'), 'cancel': ['pelvis', 'right_hip']},
     'right_ankle': {'direction': ('right_ankle', 'right_foot'), 'up': ('right_knee', 'right_ankle'), 'cancel': ['pelvis', 'right_hip', 'right_knee']},
+
+    'left_wrist': {'direction': ('mp_left_wrist', 'mp_left_middle1'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow']},
+    'mp_left_thumb1': {'direction': ('mp_left_thumb1', 'mp_left_thumb2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'mp_left_thumb2': {'direction': ('mp_left_thumb2', 'mp_left_thumb3'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_thumb1']},
+    'mp_left_thumb3': {'direction': ('mp_left_thumb3', 'mp_left_thumb'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_thumb1', 'mp_left_thumb2']},
+    'mp_left_index1': {'direction': ('mp_left_index1', 'mp_left_index2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'mp_left_index2': {'direction': ('mp_left_index2', 'mp_left_index3'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_index1']},
+    'mp_left_index3': {'direction': ('mp_left_index3', 'mp_left_index'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_index1', 'mp_left_index2']},
+    'mp_left_middle1': {'direction': ('mp_left_middle1', 'mp_left_middle2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'mp_left_middle2': {'direction': ('mp_left_middle2', 'mp_left_middle3'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_middle1']},
+    'mp_left_middle3': {'direction': ('mp_left_middle3', 'mp_left_middle'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_middle1', 'mp_left_middle2']},
+    'mp_left_ring1': {'direction': ('mp_left_ring1', 'mp_left_ring2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'mp_left_ring2': {'direction': ('mp_left_ring2', 'mp_left_ring3'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_ring1']},
+    'mp_left_ring3': {'direction': ('mp_left_ring3', 'mp_left_ring'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_ring1', 'mp_left_ring2']},
+    'mp_left_pinky1': {'direction': ('mp_left_pinky1', 'mp_left_pinky2'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist']},
+    'mp_left_pinky2': {'direction': ('mp_left_pinky2', 'mp_left_pinky3'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_pinky1']},
+    'mp_left_pinky3': {'direction': ('mp_left_pinky3', 'mp_left_pinky'), 'up': ('mp_left_index1', 'mp_left_pinky1'), 'cancel': ['spine1', 'spine2', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist', 'mp_left_pinky1', 'mp_left_pinky2']},
+
+    'right_wrist': {'direction': ('mp_right_wrist', 'mp_right_middle1'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow']},
+    'mp_right_thumb1': {'direction': ('mp_right_thumb1', 'mp_right_thumb2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'mp_right_thumb2': {'direction': ('mp_right_thumb2', 'mp_right_thumb3'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_thumb1']},
+    'mp_right_thumb3': {'direction': ('mp_right_thumb3', 'mp_right_thumb'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_thumb1', 'mp_right_thumb2']},
+    'mp_right_index1': {'direction': ('mp_right_index1', 'mp_right_index2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'mp_right_index2': {'direction': ('mp_right_index2', 'mp_right_index3'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_index1']},
+    'mp_right_index3': {'direction': ('mp_right_index3', 'mp_right_index'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_index1', 'mp_right_index2']},
+    'mp_right_middle1': {'direction': ('mp_right_middle1', 'mp_right_middle2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'mp_right_middle2': {'direction': ('mp_right_middle2', 'mp_right_middle3'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_middle1']},
+    'mp_right_middle3': {'direction': ('mp_right_middle3', 'mp_right_middle'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_middle1', 'mp_right_middle2']},
+    'mp_right_ring1': {'direction': ('mp_right_ring1', 'mp_right_ring2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'mp_right_ring2': {'direction': ('mp_right_ring2', 'mp_right_ring3'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_ring1']},
+    'mp_right_ring3': {'direction': ('mp_right_ring3', 'mp_right_ring'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_ring1', 'mp_right_ring2']},
+    'mp_right_pinky1': {'direction': ('mp_right_pinky1', 'mp_right_pinky2'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist']},
+    'mp_right_pinky2': {'direction': ('mp_right_pinky2', 'mp_right_pinky3'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_pinky1']},
+    'mp_right_pinky3': {'direction': ('mp_right_pinky3', 'mp_right_pinky'), 'up': ('mp_right_index1', 'mp_right_pinky1'), 'cancel': ['spine1', 'spine2', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist', 'mp_right_pinky1', 'mp_right_pinky2']},
 }

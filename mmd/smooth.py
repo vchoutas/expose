@@ -66,6 +66,51 @@ def execute(args):
                         all_joints[(jname, 'y')][fno] = joint["y"]
                         all_joints[(jname, 'z')][fno] = joint["z"]
                     
+                    if "mp_body_joints" in frame_joints:
+                        for jname, joint in frame_joints["mp_body_joints"].items():
+                            if (jname, 'mbx') not in all_joints:
+                                all_joints[(jname, 'mbx')] = {}
+
+                            if (jname, 'mby') not in all_joints:
+                                all_joints[(jname, 'mby')] = {}
+
+                            if (jname, 'mbz') not in all_joints:
+                                all_joints[(jname, 'mbz')] = {}
+                            
+                            all_joints[(jname, 'mbx')][fno] = joint["x"]
+                            all_joints[(jname, 'mby')][fno] = joint["y"]
+                            all_joints[(jname, 'mbz')][fno] = joint["z"]
+                    
+                    if "mp_left_hand_joints" in frame_joints:
+                        for jname, joint in frame_joints["mp_left_hand_joints"].items():
+                            if (jname, 'mlx') not in all_joints:
+                                all_joints[(jname, 'mlx')] = {}
+
+                            if (jname, 'mly') not in all_joints:
+                                all_joints[(jname, 'mly')] = {}
+
+                            if (jname, 'mlz') not in all_joints:
+                                all_joints[(jname, 'mlz')] = {}
+                            
+                            all_joints[(jname, 'mlx')][fno] = joint["x"]
+                            all_joints[(jname, 'mly')][fno] = joint["y"]
+                            all_joints[(jname, 'mlz')][fno] = joint["z"]
+                    
+                    if "mp_right_hand_joints" in frame_joints:
+                        for jname, joint in frame_joints["mp_right_hand_joints"].items():
+                            if (jname, 'mrx') not in all_joints:
+                                all_joints[(jname, 'mrx')] = {}
+
+                            if (jname, 'mry') not in all_joints:
+                                all_joints[(jname, 'mry')] = {}
+
+                            if (jname, 'mrz') not in all_joints:
+                                all_joints[(jname, 'mrz')] = {}
+                            
+                            all_joints[(jname, 'mrx')][fno] = joint["x"]
+                            all_joints[(jname, 'mry')][fno] = joint["y"]
+                            all_joints[(jname, 'mrz')][fno] = joint["z"]
+                    
                     if "faces" in frame_joints:
                         # 表情グローバル座標を保持
                         for fname, face in frame_joints["faces"].items():
@@ -116,6 +161,24 @@ def execute(args):
                         frame_joints["joints"][jname]["x"] = all_joints[(jname, 'x')][fno]
                         frame_joints["joints"][jname]["y"] = all_joints[(jname, 'y')][fno]
                         frame_joints["joints"][jname]["z"] = all_joints[(jname, 'z')][fno]
+
+                    if "mp_body_joints" in frame_joints:
+                        for jname, joint in frame_joints["mp_body_joints"].items():
+                            frame_joints["mp_body_joints"][jname]["x"] = all_joints[(jname, 'mbx')][fno]
+                            frame_joints["mp_body_joints"][jname]["y"] = all_joints[(jname, 'mby')][fno]
+                            frame_joints["mp_body_joints"][jname]["z"] = all_joints[(jname, 'mbz')][fno]
+
+                    if "mp_left_hand_joints" in frame_joints:
+                        for jname, joint in frame_joints["mp_left_hand_joints"].items():
+                            frame_joints["mp_left_hand_joints"][jname]["x"] = all_joints[(jname, 'mlx')][fno]
+                            frame_joints["mp_left_hand_joints"][jname]["y"] = all_joints[(jname, 'mly')][fno]
+                            frame_joints["mp_left_hand_joints"][jname]["z"] = all_joints[(jname, 'mlz')][fno]
+
+                    if "mp_right_hand_joints" in frame_joints:
+                        for jname, joint in frame_joints["mp_right_hand_joints"].items():
+                            frame_joints["mp_right_hand_joints"][jname]["x"] = all_joints[(jname, 'mrx')][fno]
+                            frame_joints["mp_right_hand_joints"][jname]["y"] = all_joints[(jname, 'mry')][fno]
+                            frame_joints["mp_right_hand_joints"][jname]["z"] = all_joints[(jname, 'mrz')][fno]
 
                     # 表情グローバル座標を保存
                     if "faces" in frame_joints:
