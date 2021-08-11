@@ -55,7 +55,7 @@ def execute(args):
         ordered_person_dir_pathes = sorted(glob.glob(os.path.join(args.img_dir, "smooth", "*")), key=sort_by_numeric)
 
         smooth_pattern = re.compile(r'^smooth_(\d+)\.')
-        start_z = 9999999999
+        start_lower_depth = None
 
         pmx_writer = PmxWriter()
         vmd_writer = VmdWriter()
@@ -71,7 +71,7 @@ def execute(args):
             target_bone_vecs = {}
             fnos = []
         
-            for mbname in ["全ての親", "センター", "グルーブ", "pelvis2", "head_tail", "right_wrist_tail", "left_wrist_tail"]:
+            for mbname in ["全ての親", "センター", "グルーブ", "pelvis2", "head_tail", "right_wrist_tail", "left_wrist_tail", "params"]:
                 target_bone_vecs[mbname] = {}
             
             logger.info("【No.{0}】モーション結果位置計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
@@ -117,12 +117,20 @@ def execute(args):
                                     if jname not in target_bone_vecs:
                                         target_bone_vecs[jname] = {}
                                     target_bone_vecs[jname][fno] = np.array([joint["x"], joint["y"], joint["z"]]) * MIKU_METER
-                                    pchar.update(1)                               
-
-                        if "depth" in frame_joints and "camera" in frame_joints:
-                            logger.debug("fno: {0}, depth: {1}, camera: {2}, ratio: {3}", fno, frame_joints["depth"]["depth"], frame_joints["camera"]["scale"], frame_joints["depth"]["depth"] / frame_joints["camera"]["scale"])
-                            # pelvis_vec = calc_pelvis_vec(frame_joints, fno, args)
-                            target_bone_vecs["センター"][fno] = MVector3D()
+                                    pchar.update(1)
+                        
+                        # パラも別保持
+                        for group_name in ["image", "others", "camera", "depth", "bbox"]:
+                            if fno not in target_bone_vecs["params"]:
+                                target_bone_vecs["params"][fno] = {}
+                            target_bone_vecs["params"][fno][group_name] = frame_joints[group_name]
+                        
+                        # 下半身・足の平面XY位置をパラに保持
+                        target_bone_vecs["params"][fno]["proj_pelvis"] = frame_joints["proj_joints"]["pelvis"]
+                        target_bone_vecs["params"][fno]["proj_left_foot"] = frame_joints["proj_joints"]["left_foot"]
+                        target_bone_vecs["params"][fno]["proj_right_foot"] = frame_joints["proj_joints"]["right_foot"]
+                        target_bone_vecs["params"][fno]["proj_left_heel"] = frame_joints["proj_joints"]["left_heel"]
+                        target_bone_vecs["params"][fno]["proj_right_heel"] = frame_joints["proj_joints"]["right_heel"]
 
             trace_model = PmxModel()
             trace_model.vertices["vertices"] = []
@@ -160,15 +168,11 @@ def execute(args):
 
             with tqdm(total=(len(PMX_CONNECTIONS.keys()) * (len(fnos) + 1)), desc=f'No.{oidx:02d}') as pchar:
                 for fno in fnos:
-                    joint = target_bone_vecs["センター"][fno]                    
-                    center_bf = trace_mov_motion.calc_bf("センター", fno)
                     groove_bf = trace_mov_motion.calc_bf("グルーブ", fno)
-                    # groove_bf.position.setY(joint.y() + trace_model.bones["グルーブ"].position.y())
-                    groove_bf.position.setY(joint.y())
                     groove_bf.key = True
                     trace_mov_motion.bones[groove_bf.name][fno] = groove_bf
 
-                    center_bf.position.setX(joint.x())
+                    center_bf = trace_mov_motion.calc_bf("センター", fno)
                     center_bf.key = True
                     trace_mov_motion.bones[center_bf.name][fno] = center_bf
                     pchar.update(1)
@@ -206,6 +210,28 @@ def execute(args):
                     # local_x_axis = trace_model.get_local_x_axis(bname)
                 else:
                     bone.tail_index = -1
+
+            logger.info("【No.{0}】トレース(センター)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
+            
+            with tqdm(total=(len(fnos)), desc=f'No.{oidx:02d}') as pchar:
+                target_links = {}
+                for target_name in ["下半身", "頭先", "左手首", "右手首", "左つま先", "右つま先"]:
+                    target_links[target_name] = trace_model.create_link_2_top_one(target_name, is_defined=False)
+
+                for fno in fnos:
+                    center_pos, start_lower_depth = calc_center(trace_model, target_links, trace_mov_motion, target_bone_vecs["params"][fno], fno, start_lower_depth)
+
+                    groove_bf = trace_mov_motion.calc_bf("グルーブ", fno)
+                    groove_bf.position.setY(center_pos.y())
+                    groove_bf.key = True
+                    trace_mov_motion.bones[groove_bf.name][fno] = groove_bf
+
+                    center_bf = trace_mov_motion.calc_bf("センター", fno)
+                    center_bf.position.setX(center_pos.x())
+                    center_bf.position.setZ(center_pos.z())
+                    center_bf.key = True
+                    trace_mov_motion.bones[center_bf.name][fno] = center_bf
+                    pchar.update(1)
 
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_model_no{oidx:02d}.pmx")
             logger.info("【No.{0}】トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
@@ -1954,270 +1980,386 @@ def calc_global_pos_from_mov(model: PmxModel, links: BoneLinks, motion: VmdMotio
 
 
 
-def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict, right_heel_links: BoneLinks, left_heel_links: BoneLinks, \
-                      fidx: int, fno: int, prev_fno: int, is_leg_ik: bool, right_toe_ik_links: BoneLinks, left_toe_ik_links: BoneLinks):
+# def check_proj_joints(model: PmxModel, motion: VmdMotion, all_frame_joints: dict, right_heel_links: BoneLinks, left_heel_links: BoneLinks, \
+#                       fidx: int, fno: int, prev_fno: int, is_leg_ik: bool, right_toe_ik_links: BoneLinks, left_toe_ik_links: BoneLinks):
 
-    # XZ調整 --------------------------
-    if is_leg_ik and fidx > 0 and fno in all_frame_joints:
-        # 画像サイズからブレ許容量
-        # image_max = max(all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"])
-        image_offset = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]]) * 0.012
+#     # XZ調整 --------------------------
+#     if is_leg_ik and fidx > 0 and fno in all_frame_joints:
+#         # 画像サイズからブレ許容量
+#         # image_max = max(all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"])
+#         image_offset = np.array([all_frame_joints[fno]["image"]["width"], all_frame_joints[fno]["image"]["height"]]) * 0.012
 
-        past_avg_right_heel_x = []
-        past_avg_right_heel_y = []
-        past_avg_right_big_toe_x = []
-        past_avg_right_big_toe_y = []
-        past_avg_right_small_toe_x = []
-        past_avg_right_small_toe_y = []
-        past_avg_left_heel_x = []
-        past_avg_left_heel_y = []
-        past_avg_left_big_toe_x = []
-        past_avg_left_big_toe_y = []
-        past_avg_left_small_toe_x = []
-        past_avg_left_small_toe_y = []
+#         past_avg_right_heel_x = []
+#         past_avg_right_heel_y = []
+#         past_avg_right_big_toe_x = []
+#         past_avg_right_big_toe_y = []
+#         past_avg_right_small_toe_x = []
+#         past_avg_right_small_toe_y = []
+#         past_avg_left_heel_x = []
+#         past_avg_left_heel_y = []
+#         past_avg_left_big_toe_x = []
+#         past_avg_left_big_toe_y = []
+#         past_avg_left_small_toe_x = []
+#         past_avg_left_small_toe_y = []
 
-        for f in range(fno - 1, max(0, fno - 11), -1):
-            if f in all_frame_joints:
-                past_avg_right_heel_x.append(all_frame_joints[f]["proj_joints"]["right_heel"]["x"])
-                past_avg_right_heel_y.append(all_frame_joints[f]["proj_joints"]["right_heel"]["y"])
-                past_avg_right_big_toe_x.append(all_frame_joints[f]["proj_joints"]["right_big_toe"]["x"])
-                past_avg_right_big_toe_y.append(all_frame_joints[f]["proj_joints"]["right_big_toe"]["y"])
-                past_avg_right_small_toe_x.append(all_frame_joints[f]["proj_joints"]["right_small_toe"]["x"])
-                past_avg_right_small_toe_y.append(all_frame_joints[f]["proj_joints"]["right_small_toe"]["y"])
-                past_avg_left_heel_x.append(all_frame_joints[f]["proj_joints"]["left_heel"]["x"])
-                past_avg_left_heel_y.append(all_frame_joints[f]["proj_joints"]["left_heel"]["y"])
-                past_avg_left_big_toe_x.append(all_frame_joints[f]["proj_joints"]["left_big_toe"]["x"])
-                past_avg_left_big_toe_y.append(all_frame_joints[f]["proj_joints"]["left_big_toe"]["y"])
-                past_avg_left_small_toe_x.append(all_frame_joints[f]["proj_joints"]["left_small_toe"]["x"])
-                past_avg_left_small_toe_y.append(all_frame_joints[f]["proj_joints"]["left_small_toe"]["y"])
+#         for f in range(fno - 1, max(0, fno - 11), -1):
+#             if f in all_frame_joints:
+#                 past_avg_right_heel_x.append(all_frame_joints[f]["proj_joints"]["right_heel"]["x"])
+#                 past_avg_right_heel_y.append(all_frame_joints[f]["proj_joints"]["right_heel"]["y"])
+#                 past_avg_right_big_toe_x.append(all_frame_joints[f]["proj_joints"]["right_big_toe"]["x"])
+#                 past_avg_right_big_toe_y.append(all_frame_joints[f]["proj_joints"]["right_big_toe"]["y"])
+#                 past_avg_right_small_toe_x.append(all_frame_joints[f]["proj_joints"]["right_small_toe"]["x"])
+#                 past_avg_right_small_toe_y.append(all_frame_joints[f]["proj_joints"]["right_small_toe"]["y"])
+#                 past_avg_left_heel_x.append(all_frame_joints[f]["proj_joints"]["left_heel"]["x"])
+#                 past_avg_left_heel_y.append(all_frame_joints[f]["proj_joints"]["left_heel"]["y"])
+#                 past_avg_left_big_toe_x.append(all_frame_joints[f]["proj_joints"]["left_big_toe"]["x"])
+#                 past_avg_left_big_toe_y.append(all_frame_joints[f]["proj_joints"]["left_big_toe"]["y"])
+#                 past_avg_left_small_toe_x.append(all_frame_joints[f]["proj_joints"]["left_small_toe"]["x"])
+#                 past_avg_left_small_toe_y.append(all_frame_joints[f]["proj_joints"]["left_small_toe"]["y"])
     
-        past_avg_right_heel_x = np.mean(past_avg_right_heel_x) if len(past_avg_right_heel_x) > 0 else 0
-        past_avg_right_heel_y = np.mean(past_avg_right_heel_y) if len(past_avg_right_heel_y) > 0 else 0
-        past_avg_right_big_toe_x = np.mean(past_avg_right_big_toe_x) if len(past_avg_right_big_toe_x) > 0 else 0
-        past_avg_right_big_toe_y = np.mean(past_avg_right_big_toe_y) if len(past_avg_right_big_toe_y) > 0 else 0
-        past_avg_right_small_toe_x = np.mean(past_avg_right_small_toe_x) if len(past_avg_right_small_toe_x) > 0 else 0
-        past_avg_right_small_toe_y = np.mean(past_avg_right_small_toe_y) if len(past_avg_right_small_toe_y) > 0 else 0
-        past_avg_left_heel_x = np.mean(past_avg_left_heel_x) if len(past_avg_left_heel_x) > 0 else 0
-        past_avg_left_heel_y = np.mean(past_avg_left_heel_y) if len(past_avg_left_heel_y) > 0 else 0
-        past_avg_left_big_toe_x = np.mean(past_avg_left_big_toe_x) if len(past_avg_left_big_toe_x) > 0 else 0
-        past_avg_left_big_toe_y = np.mean(past_avg_left_big_toe_y) if len(past_avg_left_big_toe_y) > 0 else 0
-        past_avg_left_small_toe_x = np.mean(past_avg_left_small_toe_x) if len(past_avg_left_small_toe_x) > 0 else 0
-        past_avg_left_small_toe_y = np.mean(past_avg_left_small_toe_y) if len(past_avg_left_small_toe_y) > 0 else 0
+#         past_avg_right_heel_x = np.mean(past_avg_right_heel_x) if len(past_avg_right_heel_x) > 0 else 0
+#         past_avg_right_heel_y = np.mean(past_avg_right_heel_y) if len(past_avg_right_heel_y) > 0 else 0
+#         past_avg_right_big_toe_x = np.mean(past_avg_right_big_toe_x) if len(past_avg_right_big_toe_x) > 0 else 0
+#         past_avg_right_big_toe_y = np.mean(past_avg_right_big_toe_y) if len(past_avg_right_big_toe_y) > 0 else 0
+#         past_avg_right_small_toe_x = np.mean(past_avg_right_small_toe_x) if len(past_avg_right_small_toe_x) > 0 else 0
+#         past_avg_right_small_toe_y = np.mean(past_avg_right_small_toe_y) if len(past_avg_right_small_toe_y) > 0 else 0
+#         past_avg_left_heel_x = np.mean(past_avg_left_heel_x) if len(past_avg_left_heel_x) > 0 else 0
+#         past_avg_left_heel_y = np.mean(past_avg_left_heel_y) if len(past_avg_left_heel_y) > 0 else 0
+#         past_avg_left_big_toe_x = np.mean(past_avg_left_big_toe_x) if len(past_avg_left_big_toe_x) > 0 else 0
+#         past_avg_left_big_toe_y = np.mean(past_avg_left_big_toe_y) if len(past_avg_left_big_toe_y) > 0 else 0
+#         past_avg_left_small_toe_x = np.mean(past_avg_left_small_toe_x) if len(past_avg_left_small_toe_x) > 0 else 0
+#         past_avg_left_small_toe_y = np.mean(past_avg_left_small_toe_y) if len(past_avg_left_small_toe_y) > 0 else 0
 
-        # 2F目以降は、前Fからの移動量を計算する
-        # 右かかと
-        right_heel_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_heel"]["x"] - past_avg_right_heel_x)
-        right_heel_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_heel"]["y"] - past_avg_right_heel_y)
-        # 右足親指
-        right_big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_big_toe"]["x"] - past_avg_right_big_toe_x)
-        right_big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_big_toe"]["y"] - past_avg_right_big_toe_y)
-        # 右足小指
-        right_small_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_small_toe"]["x"] - past_avg_right_small_toe_x)
-        right_small_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_small_toe"]["y"] - past_avg_right_small_toe_y)
-        # 左かかと
-        left_heel_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_heel"]["x"] - past_avg_left_heel_x)
-        left_heel_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_heel"]["y"] - past_avg_left_heel_y)
-        # 左足親指
-        left_big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_big_toe"]["x"] - past_avg_left_big_toe_x)
-        left_big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_big_toe"]["y"] - past_avg_left_big_toe_y)
-        # 左足小指
-        left_small_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_small_toe"]["x"] - past_avg_left_small_toe_x)
-        left_small_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_small_toe"]["y"] - past_avg_left_small_toe_y)
+#         # 2F目以降は、前Fからの移動量を計算する
+#         # 右かかと
+#         right_heel_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_heel"]["x"] - past_avg_right_heel_x)
+#         right_heel_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_heel"]["y"] - past_avg_right_heel_y)
+#         # 右足親指
+#         right_big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_big_toe"]["x"] - past_avg_right_big_toe_x)
+#         right_big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_big_toe"]["y"] - past_avg_right_big_toe_y)
+#         # 右足小指
+#         right_small_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["right_small_toe"]["x"] - past_avg_right_small_toe_x)
+#         right_small_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["right_small_toe"]["y"] - past_avg_right_small_toe_y)
+#         # 左かかと
+#         left_heel_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_heel"]["x"] - past_avg_left_heel_x)
+#         left_heel_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_heel"]["y"] - past_avg_left_heel_y)
+#         # 左足親指
+#         left_big_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_big_toe"]["x"] - past_avg_left_big_toe_x)
+#         left_big_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_big_toe"]["y"] - past_avg_left_big_toe_y)
+#         # 左足小指
+#         left_small_toe_x_diff = abs(all_frame_joints[fno]["proj_joints"]["left_small_toe"]["x"] - past_avg_left_small_toe_x)
+#         left_small_toe_y_diff = abs(all_frame_joints[fno]["proj_joints"]["left_small_toe"]["y"] - past_avg_left_small_toe_y)
         
-        is_fix_right = False
+#         is_fix_right = False
 
-        if right_heel_x_diff < image_offset[0] and right_heel_y_diff < image_offset[1]:
-            # 右足ＩＫ固定
-            now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-            prev_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", prev_fno)
-            diff_right_leg_vec = prev_right_leg_ik_bf.position - now_right_leg_ik_bf.position
-            now_right_leg_ik_bf.position += diff_right_leg_vec
-            motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
+#         if right_heel_x_diff < image_offset[0] and right_heel_y_diff < image_offset[1]:
+#             # 右足ＩＫ固定
+#             now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+#             prev_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", prev_fno)
+#             diff_right_leg_vec = prev_right_leg_ik_bf.position - now_right_leg_ik_bf.position
+#             now_right_leg_ik_bf.position += diff_right_leg_vec
+#             motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
-            # センター調整
-            now_center_bf = motion.calc_bf("センター", fno)
-            now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_leg_vec.z())
-            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+#             # センター調整
+#             now_center_bf = motion.calc_bf("センター", fno)
+#             now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_leg_vec.z())
+#             motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-            # 左足ＩＫ調整
-            now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
-            now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_leg_vec.z())
-            motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
+#             # 左足ＩＫ調整
+#             now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+#             now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_leg_vec.z())
+#             motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
-            is_fix_right = True
+#             is_fix_right = True
 
-        elif (right_big_toe_x_diff < image_offset[0] and right_big_toe_y_diff < image_offset[1]) or \
-                (right_small_toe_x_diff < image_offset[0] and right_small_toe_y_diff < image_offset[1]):
-            # 右つま先ＩＫ固定
-            now_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_ik_links, motion, fno)
-            prev_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_ik_links, motion, prev_fno)
-            diff_right_toe_vec = prev_right_toe_ik_3ds_dic["右つま先ＩＫ"] - now_right_toe_ik_3ds_dic["右つま先ＩＫ"]
+#         elif (right_big_toe_x_diff < image_offset[0] and right_big_toe_y_diff < image_offset[1]) or \
+#                 (right_small_toe_x_diff < image_offset[0] and right_small_toe_y_diff < image_offset[1]):
+#             # 右つま先ＩＫ固定
+#             now_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_ik_links, motion, fno)
+#             prev_right_toe_ik_3ds_dic = calc_global_pos(model, right_toe_ik_links, motion, prev_fno)
+#             diff_right_toe_vec = prev_right_toe_ik_3ds_dic["右つま先ＩＫ"] - now_right_toe_ik_3ds_dic["右つま先ＩＫ"]
 
-            now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-            now_right_leg_ik_bf.position += diff_right_toe_vec
-            motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
+#             now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+#             now_right_leg_ik_bf.position += diff_right_toe_vec
+#             motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
-            # センター調整
-            now_center_bf = motion.calc_bf("センター", fno)
-            now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_toe_vec.z())
-            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+#             # センター調整
+#             now_center_bf = motion.calc_bf("センター", fno)
+#             now_center_bf.position.setZ(now_center_bf.position.z() + diff_right_toe_vec.z())
+#             motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-            # 左足ＩＫ調整
-            now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
-            now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_toe_vec.z())
-            motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
+#             # 左足ＩＫ調整
+#             now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+#             now_left_leg_ik_bf.position.setZ(now_left_leg_ik_bf.position.z() + diff_right_toe_vec.z())
+#             motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
-            is_fix_right = True
+#             is_fix_right = True
 
-        if left_heel_x_diff < image_offset[0] and left_heel_y_diff < image_offset[1]:
-            # 左足ＩＫ固定
-            now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
-            prev_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", prev_fno)
-            diff_left_leg_vec = prev_left_leg_ik_bf.position - now_left_leg_ik_bf.position
-            now_left_leg_ik_bf.position += diff_left_leg_vec
-            motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
+#         if left_heel_x_diff < image_offset[0] and left_heel_y_diff < image_offset[1]:
+#             # 左足ＩＫ固定
+#             now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+#             prev_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", prev_fno)
+#             diff_left_leg_vec = prev_left_leg_ik_bf.position - now_left_leg_ik_bf.position
+#             now_left_leg_ik_bf.position += diff_left_leg_vec
+#             motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
-            # センター調整
-            now_center_bf = motion.calc_bf("センター", fno)
-            now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_leg_vec.z())
-            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+#             # センター調整
+#             now_center_bf = motion.calc_bf("センター", fno)
+#             now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_leg_vec.z())
+#             motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-            if not is_fix_right:
-                # 右足ＩＫ調整
-                now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-                now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_leg_vec.z())
-                motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
+#             if not is_fix_right:
+#                 # 右足ＩＫ調整
+#                 now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+#                 now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_leg_vec.z())
+#                 motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
-        elif (left_big_toe_x_diff < image_offset[0] and left_big_toe_y_diff < image_offset[1]) or \
-                (left_small_toe_x_diff < image_offset[0] and left_small_toe_y_diff < image_offset[1]):
-            # 左つま先ＩＫ固定
-            now_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_ik_links, motion, fno)
-            prev_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_ik_links, motion, prev_fno)
-            diff_left_toe_vec = prev_left_toe_ik_3ds_dic["左つま先ＩＫ"] - now_left_toe_ik_3ds_dic["左つま先ＩＫ"]
+#         elif (left_big_toe_x_diff < image_offset[0] and left_big_toe_y_diff < image_offset[1]) or \
+#                 (left_small_toe_x_diff < image_offset[0] and left_small_toe_y_diff < image_offset[1]):
+#             # 左つま先ＩＫ固定
+#             now_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_ik_links, motion, fno)
+#             prev_left_toe_ik_3ds_dic = calc_global_pos(model, left_toe_ik_links, motion, prev_fno)
+#             diff_left_toe_vec = prev_left_toe_ik_3ds_dic["左つま先ＩＫ"] - now_left_toe_ik_3ds_dic["左つま先ＩＫ"]
 
-            now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
-            now_left_leg_ik_bf.position += diff_left_toe_vec
-            motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
+#             now_left_leg_ik_bf = motion.calc_bf("左足ＩＫ", fno)
+#             now_left_leg_ik_bf.position += diff_left_toe_vec
+#             motion.regist_bf(now_left_leg_ik_bf, now_left_leg_ik_bf.name, fno)
 
-            # センター調整
-            now_center_bf = motion.calc_bf("センター", fno)
-            now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_toe_vec.z())
-            motion.regist_bf(now_center_bf, now_center_bf.name, fno)
+#             # センター調整
+#             now_center_bf = motion.calc_bf("センター", fno)
+#             now_center_bf.position.setZ(now_center_bf.position.z() + diff_left_toe_vec.z())
+#             motion.regist_bf(now_center_bf, now_center_bf.name, fno)
 
-            if not is_fix_right:
-                # 右足ＩＫ調整
-                now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
-                now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_toe_vec.z())
-                motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
+#             if not is_fix_right:
+#                 # 右足ＩＫ調整
+#                 now_right_leg_ik_bf = motion.calc_bf("右足ＩＫ", fno)
+#                 now_right_leg_ik_bf.position.setZ(now_right_leg_ik_bf.position.z() + diff_left_toe_vec.z())
+#                 motion.regist_bf(now_right_leg_ik_bf, now_right_leg_ik_bf.name, fno)
 
-
-def calc_pelvis_vec(frame_joints: dict, fno: int, args):
+def calc_center(trace_model: PmxModel, target_all_links: dict, trace_mov_motion: VmdMotion, params: dict, fno: int, start_lower_depth: None):
     # 画像サイズ
-    image_size = np.array([frame_joints["image"]["width"], frame_joints["image"]["height"]])
+    image_size = np.array([params["image"]["width"], params["image"]["height"]])
+    # 画像サイズの最大公約数
+    image_gcd = np.gcd.reduce(image_size)
+    # 画像サイズの比率
+    image_ratio = (int(image_size[0] / image_gcd), int(image_size[1] / image_gcd))
 
     # カメラ中央
-    camera_center_pos = np.array([frame_joints["others"]["center"]["x"], frame_joints["others"]["center"]["y"]])
+    camera_center_pos = MVector3D(0, 0, 0.1)
     # カメラ倍率
-    camera_scale = frame_joints["camera"]["scale"]
+    camera_scale = params["camera"]["scale"]
     # センサー幅（画角？）
-    sensor_width = frame_joints["others"]["sensor_width"]
-    # フォーカスのpx単位
-    focal_length_in_px = frame_joints["others"]["focal_length_in_px"]
-    # camera_center_pos -= image_size / 2
-    # Zはカメラ深度
-    depth = frame_joints["depth"]["depth"]
-    pelvis_z = depth * args.center_scale
+    sensor_width = params["others"]["sensor_width"]
+    # フォーカスのmm単位
+    focal_length_in_px = params["others"]["focal_length_in_px"]
+    # カメラ深度
+    depth = params["depth"]["depth"]
 
-    # # pxからmmへのスケール変換
-    # mm_scale = image_size[0] * sensor_width
+    min_z = 99999
+    target_global_poses = {}
+    for target_name, target_links in target_all_links.items():
+        # 四肢のグローバル位置を求める
+        target_global_poses[target_name] = calc_global_pos_from_mov(trace_model, target_links, trace_mov_motion, fno)
+        if min_z > target_global_poses[target_name].z():
+            min_z = target_global_poses[target_name].z()
 
-    #bbox
-    # bbox_pos = np.array([frame_joints["bbox"]["x"], frame_joints["bbox"]["y"]])
-    bbox_size = np.array([frame_joints["bbox"]["width"], frame_joints["bbox"]["height"]])
+    # 最もZが小さいものがカメラ深度の位置に相当
+    # 最小Zと下半身の差を加味して、下半身の深度を算出
+    lower_depth = depth + min_z + (target_global_poses["下半身"].z() - min_z)
 
-    # # 骨盤のカメラの中心からの相対位置
-    # pelvis_vec = (get_vec3(frame_joints["joints"], "pelvis") + get_vec3(frame_joints["joints"], "spine1")) / 2
-    # # pelvis_pos = np.array([(center_vec.x() / 2) + 0.5, (center_vec.y() / -2) + 0.5])
-    # # bbox左上を原点とした相対位置
-    # pelvis_pos = np.array([(pelvis_vec.x() / 2) + 0.5, (pelvis_vec.y() / -2) + 0.5])
+    center_pos = MVector3D()
+    center_pos.setX((params["proj_pelvis"]["x"] - (image_size[0] / 2)) / (depth * 5))
+    # ミクの下半身分引く
+    center_pos.setY(((image_size[1] - params["proj_pelvis"]["y"]) / (image_size[1] / 12)) - 5)
 
-    # 骨盤の画面内グローバル位置(骨盤と脊椎の間）)
-    pelvis_global_pos = np.array([np.average([frame_joints["proj_joints"]["pelvis"]["x"], frame_joints["proj_joints"]["spine1"]["x"]]), \
-                                  np.average([frame_joints["proj_joints"]["pelvis"]["y"], frame_joints["proj_joints"]["spine1"]["y"]])])
-    pelvis_global_pos[0] -= image_size[0] / 2
-    pelvis_global_pos[1] = -pelvis_global_pos[1]
+    if not start_lower_depth:
+        return center_pos, lower_depth
 
-    # 足の画面内グローバル位置(X: 骨盤と脊椎の間、Y: つま先・踵の大きい方（地面に近い方）)
-    foot_global_pos = np.array([np.average([frame_joints["proj_joints"]["pelvis"]["x"], frame_joints["proj_joints"]["spine1"]["x"]]), \
-                                  np.max([frame_joints["proj_joints"]["right_big_toe"]["y"], frame_joints["proj_joints"]["right_heel"]["y"], \
-                                          frame_joints["proj_joints"]["left_big_toe"]["y"], frame_joints["proj_joints"]["left_heel"]["y"]])])
-    foot_global_pos[0] -= image_size[0] / 2
-    foot_global_pos[1] = -foot_global_pos[1]
+    center_pos.setZ(lower_depth - start_lower_depth)
 
+    return center_pos, start_lower_depth
+
+# プロジェクション座標からグローバル座標の位置際算出
+def calc_unproject_vec(position: MVector3D, length: float, angle: float, image_ratio: tuple, project_vec: MVector3D):
     # モデル座標系
-    model_view = create_model_view(camera_center_pos, camera_scale, image_size, depth, focal_length_in_px)
+    model_view = create_model_view(position, length)
+
     # プロジェクション座標系
-    projection_view = create_projection_view(image_size, sensor_width, focal_length_in_px)
+    projection_view = create_projection_view(angle, image_ratio)
 
     # viewport
-    viewport_rect = MRect(0, 0, args.center_scale * 7, args.center_scale * 7)
+    viewport_rect = MRect(0, 0, image_ratio[0], image_ratio[1])
 
-    # 逆プロジェクション座標位置
-    pelvis_project_vec = MVector3D(pelvis_global_pos[0], pelvis_global_pos[1], 1)
-    pelvis_global_vec = pelvis_project_vec.unproject(model_view, projection_view, viewport_rect)
-    # pelvis_global_vec.setX(pelvis_global_vec.x() - (image_size[0] / 2))
-    # pelvis_global_vec /= mmd_scale_vec
+    # グローバル座標位置
+    global_vec = project_vec.unproject(model_view, projection_view, viewport_rect)
 
-    # foot_project_vec = MVector3D(foot_global_pos[0], foot_global_pos[1], 1)
-    # foot_global_vec = foot_project_vec.unproject(model_view, projection_view, viewport_rect)
-    # foot_global_vec.setX(foot_global_vec.x() - (image_size[0] / 2))
-    # foot_global_vec /= mmd_scale_vec
-    
-    # camera_scale * 
-    # upper_bf = motion.calc_bf("上半身", fno)
-    # upper_x_qq, _, _, _ = separate_local_qq(upper_bf.fno, upper_bf.name, upper_bf.rotation, upper_bf.rotation * MVector3D(1, 0, 0))
+    return global_vec
 
-    # upper_dot = MQuaternion.dotProduct(MQuaternion(), upper_x_qq)
-    # pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), pelvis_z * math.sin(abs(upper_dot)))
-    # logger.debug("calc_pelvis_vec fno: {0}, pelvis_z: {1}, upper_x_qq: {2}, upper_dot: {3}, result: {4}", fno, pelvis_z, upper_x_qq.toDegree(), upper_dot, pelvis_mmd_vec.z())
+# プロジェクション座標正規位置算出
+def calc_project_vec(position: MVector3D, length: float, angle: float, image_ratio: tuple, global_vec: MVector3D):
+    # モデル座標系
+    model_view = create_model_view(position, length)
 
-    pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), pelvis_z)
-    logger.debug("calc_pelvis_vec fno: {0}, pelvis_z: {1}, camera_scale: {2}, depth: {3}, bbox_size: {4}, {5}", fno, pelvis_z, camera_scale, depth, bbox_size[0], bbox_size[1])
+    # プロジェクション座標系
+    projection_view = create_projection_view(angle, image_ratio)
 
-    return pelvis_mmd_vec
+    # viewport
+    viewport_rect = MRect(0, 0, image_ratio[0], image_ratio[1])
 
+    # プロジェクション座標位置
+    project_vec = global_vec.project(model_view, projection_view, viewport_rect)
+
+    return project_vec
+
+# プロジェクション座標系作成
+def create_projection_view(angle: float, image_ratio: tuple):
+    mat = MMatrix4x4()
+    mat.setToIdentity()
+    # MMDの縦の視野角。
+    # https://ch.nicovideo.jp/t-ebiing/blomaga/ar510610
+    mat.perspective(angle * 0.98, image_ratio[0] / image_ratio[1], 0.001, 50000)
+
+    return mat
 
 # モデル座標系作成
-def create_model_view(camera_center_pos: list, camera_scale: float, image_size: list, depth: float, focal_length_in_px: float):
+def create_model_view(position: MVector3D, length: float):
     # モデル座標系（原点を見るため、単位行列）
     model_view = MMatrix4x4()
-    model_view.setToIdentity()   
+    model_view.setToIdentity()
 
-    camera_eye = MVector3D(image_size[0] / 2, -(image_size[1] / 2), focal_length_in_px)
-    camera_pos = MVector3D(camera_center_pos[0], -camera_center_pos[1], depth)
+    # カメラ角度
+    camera_qq = MQuaternion()
 
-    # カメラの注視点（グローバル座標）
-    mat_pos = MMatrix4x4()
-    mat_pos.setToIdentity()
-    mat_pos.translate(camera_pos)
-    mat_pos.scale(camera_scale)
-    camera_center = mat_pos * MVector3D()
+    # カメラの原点（グローバル座標）
+    mat_origin = MMatrix4x4()
+    mat_origin.setToIdentity()
+    mat_origin.translate(position)
+    mat_origin.rotate(camera_qq)
+    mat_origin.translate(MVector3D(0, 0, length))
+    camera_origin = mat_origin * MVector3D()
+
+    mat_up = MMatrix4x4()
+    mat_up.setToIdentity()
+    mat_up.rotate(camera_qq)
+    camera_up = mat_up * MVector3D(0, 1, 0)
 
     # カメラ座標系の行列
     # eye: カメラの原点（グローバル座標）
     # center: カメラの注視点（グローバル座標）
     # up: カメラの上方向ベクトル
-    model_view.lookAt(camera_eye, camera_center, MVector3D(0, 1, 0))
+    model_view.lookAt(camera_origin, position, camera_up)
 
     return model_view
 
-# プロジェクション座標系作成
-def create_projection_view(image_size: list, sensor_width: float, focal_length_in_px: float):
-    mat = MMatrix4x4()
-    mat.setToIdentity()
-    mat.perspective(sensor_width, image_size[0] / image_size[1], 0, focal_length_in_px)
 
-    return mat
+
+# def calc_pelvis_vec(frame_joints: dict, fno: int, args):
+#     # 画像サイズ
+#     image_size = np.array([frame_joints["image"]["width"], frame_joints["image"]["height"]])
+
+#     # カメラ中央
+#     camera_center_pos = np.array([frame_joints["others"]["center"]["x"], frame_joints["others"]["center"]["y"]])
+#     # カメラ倍率
+#     camera_scale = frame_joints["camera"]["scale"]
+#     # センサー幅（画角？）
+#     sensor_width = frame_joints["others"]["sensor_width"]
+#     # フォーカスのpx単位
+#     focal_length_in_px = frame_joints["others"]["focal_length_in_px"]
+#     # camera_center_pos -= image_size / 2
+#     # Zはカメラ深度
+#     depth = frame_joints["depth"]["depth"]
+#     pelvis_z = depth * args.center_scale
+
+#     # # pxからmmへのスケール変換
+#     # mm_scale = image_size[0] * sensor_width
+
+#     #bbox
+#     # bbox_pos = np.array([frame_joints["bbox"]["x"], frame_joints["bbox"]["y"]])
+#     bbox_size = np.array([frame_joints["bbox"]["width"], frame_joints["bbox"]["height"]])
+
+#     # # 骨盤のカメラの中心からの相対位置
+#     # pelvis_vec = (get_vec3(frame_joints["joints"], "pelvis") + get_vec3(frame_joints["joints"], "spine1")) / 2
+#     # # pelvis_pos = np.array([(center_vec.x() / 2) + 0.5, (center_vec.y() / -2) + 0.5])
+#     # # bbox左上を原点とした相対位置
+#     # pelvis_pos = np.array([(pelvis_vec.x() / 2) + 0.5, (pelvis_vec.y() / -2) + 0.5])
+
+#     # 骨盤の画面内グローバル位置(骨盤と脊椎の間）)
+#     pelvis_global_pos = np.array([np.average([frame_joints["proj_joints"]["pelvis"]["x"], frame_joints["proj_joints"]["spine1"]["x"]]), \
+#                                   np.average([frame_joints["proj_joints"]["pelvis"]["y"], frame_joints["proj_joints"]["spine1"]["y"]])])
+#     pelvis_global_pos[0] -= image_size[0] / 2
+#     pelvis_global_pos[1] = -pelvis_global_pos[1]
+
+#     # 足の画面内グローバル位置(X: 骨盤と脊椎の間、Y: つま先・踵の大きい方（地面に近い方）)
+#     foot_global_pos = np.array([np.average([frame_joints["proj_joints"]["pelvis"]["x"], frame_joints["proj_joints"]["spine1"]["x"]]), \
+#                                   np.max([frame_joints["proj_joints"]["right_big_toe"]["y"], frame_joints["proj_joints"]["right_heel"]["y"], \
+#                                           frame_joints["proj_joints"]["left_big_toe"]["y"], frame_joints["proj_joints"]["left_heel"]["y"]])])
+#     foot_global_pos[0] -= image_size[0] / 2
+#     foot_global_pos[1] = -foot_global_pos[1]
+
+#     # モデル座標系
+#     model_view = create_model_view(camera_center_pos, camera_scale, image_size, depth, focal_length_in_px)
+#     # プロジェクション座標系
+#     projection_view = create_projection_view(image_size, sensor_width, focal_length_in_px)
+
+#     # viewport
+#     viewport_rect = MRect(0, 0, args.center_scale * 7, args.center_scale * 7)
+
+#     # 逆プロジェクション座標位置
+#     pelvis_project_vec = MVector3D(pelvis_global_pos[0], pelvis_global_pos[1], 1)
+#     pelvis_global_vec = pelvis_project_vec.unproject(model_view, projection_view, viewport_rect)
+#     # pelvis_global_vec.setX(pelvis_global_vec.x() - (image_size[0] / 2))
+#     # pelvis_global_vec /= mmd_scale_vec
+
+#     # foot_project_vec = MVector3D(foot_global_pos[0], foot_global_pos[1], 1)
+#     # foot_global_vec = foot_project_vec.unproject(model_view, projection_view, viewport_rect)
+#     # foot_global_vec.setX(foot_global_vec.x() - (image_size[0] / 2))
+#     # foot_global_vec /= mmd_scale_vec
+    
+#     # camera_scale * 
+#     # upper_bf = motion.calc_bf("上半身", fno)
+#     # upper_x_qq, _, _, _ = separate_local_qq(upper_bf.fno, upper_bf.name, upper_bf.rotation, upper_bf.rotation * MVector3D(1, 0, 0))
+
+#     # upper_dot = MQuaternion.dotProduct(MQuaternion(), upper_x_qq)
+#     # pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), pelvis_z * math.sin(abs(upper_dot)))
+#     # logger.debug("calc_pelvis_vec fno: {0}, pelvis_z: {1}, upper_x_qq: {2}, upper_dot: {3}, result: {4}", fno, pelvis_z, upper_x_qq.toDegree(), upper_dot, pelvis_mmd_vec.z())
+
+#     pelvis_mmd_vec = MVector3D(pelvis_global_vec.x(), pelvis_global_vec.y(), pelvis_z)
+#     logger.debug("calc_pelvis_vec fno: {0}, pelvis_z: {1}, camera_scale: {2}, depth: {3}, bbox_size: {4}, {5}", fno, pelvis_z, camera_scale, depth, bbox_size[0], bbox_size[1])
+
+#     return pelvis_mmd_vec
+
+
+# # モデル座標系作成
+# def create_model_view(camera_center_pos: list, camera_scale: float, image_size: list, depth: float, focal_length_in_px: float):
+#     # モデル座標系（原点を見るため、単位行列）
+#     model_view = MMatrix4x4()
+#     model_view.setToIdentity()   
+
+#     camera_eye = MVector3D(image_size[0] / 2, -(image_size[1] / 2), focal_length_in_px)
+#     camera_pos = MVector3D(camera_center_pos[0], -camera_center_pos[1], depth)
+
+#     # カメラの注視点（グローバル座標）
+#     mat_pos = MMatrix4x4()
+#     mat_pos.setToIdentity()
+#     mat_pos.translate(camera_pos)
+#     mat_pos.scale(camera_scale)
+#     camera_center = mat_pos * MVector3D()
+
+#     # カメラ座標系の行列
+#     # eye: カメラの原点（グローバル座標）
+#     # center: カメラの注視点（グローバル座標）
+#     # up: カメラの上方向ベクトル
+#     model_view.lookAt(camera_eye, camera_center, MVector3D(0, 1, 0))
+
+#     return model_view
+
+# # プロジェクション座標系作成
+# def create_projection_view(image_size: list, sensor_width: float, focal_length_in_px: float):
+#     mat = MMatrix4x4()
+#     mat.setToIdentity()
+#     mat.perspective(sensor_width, image_size[0] / image_size[1], 0, focal_length_in_px)
+
+#     return mat
 
 # # 足ＩＫ変換処理実行
 # def convert_leg_fk2ik(oidx: int, all_frame_joints: dict, motion: VmdMotion, model: PmxModel, flip_fnos: list, direction: str):

@@ -73,10 +73,10 @@ if __name__ == "__main__":
         import mmd.order
         result = mmd.order.execute(args)
 
-    if result and "hand" in args.process:
-        # 手首から先推定
-        import mmd.hand
-        result = mmd.hand.execute(args)
+    if result and "mediapipe" in args.process:
+        # mediapipe推定
+        import mmd.mediapipe
+        result = mmd.mediapipe.execute(args)
 
     if result and "face" in args.process:
         # 人物表情推定
