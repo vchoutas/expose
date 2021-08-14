@@ -35,13 +35,8 @@ if __name__ == "__main__":
     parser.add_argument('--face-model', type=str, dest='face_model', default="data/shape_predictor_68_face_landmarks.dat", help='Learning model for person face')
     parser.add_argument('--order-file', type=str, dest='order_file', default='', help='Index ordering file path')
     parser.add_argument('--bone-config', type=str, dest='bone_config', default="config/あにまさ式ミク準標準ボーン.csv", help='MMD Model Bone csv')
-    parser.add_argument('--body-motion', type=int, dest='body_motion', default="0", help='Whether to generate body motion')
-    parser.add_argument('--upper-motion', type=int, dest='upper_motion', default="0", help='Whether to generate upper motion only')
     parser.add_argument('--hand-motion', type=int, dest='hand_motion', default="0", help='Whether to generate hand motion')
     parser.add_argument('--face-motion', type=int, dest='face_motion', default="0", help='Whether to generate face motion')
-    parser.add_argument('--center-scale', type=float, dest='center_scale', default="4", help='center scale')
-    parser.add_argument('--remove-key', type=float, dest='remove_key', default="1", help='remove key')
-    parser.add_argument('--smooth-key', type=float, dest='smooth_key', default="1", help='smooth key')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='Log level')
     parser.add_argument("--log-mode", type=int, dest='log_mode', default=0, help='Log output mode')
 

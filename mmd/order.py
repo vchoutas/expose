@@ -93,6 +93,9 @@ def execute(args):
             for joint_json_path in joint_json_pathes:
                 with open(joint_json_path, 'r') as f:
                     bbox_frame = json.load(f)
+                    if 'track_id' not in bbox_frame:
+                        continue
+                    
                     track_id = bbox_frame['track_id']
                     for oidx, order_idxs in enumerate(order_list):
                         if str(track_id) in order_idxs:

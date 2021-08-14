@@ -6,6 +6,9 @@ conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.2 -c pytorch
 
 pip install -r requirements.txt
 
+"C:\Development\Anaconda3\envs\expose\Lib\site-packages\bezier\extra-dll\bezier-2e929504.dll"
+をひとつ上の階層に
+
 cd lighttrack\lib
 
 python setup_windows.py build_ext --inplace
@@ -18,6 +21,25 @@ cd ..\graph\torchlight
 python setup.py install
 
 cd ..\..\..\
+
+--------------
+
+Docker 版
+
+https://docs.docker.jp/docker-for-windows/install.html#install-docker-desktop-on-windows
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 --------------
 

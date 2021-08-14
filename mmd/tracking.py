@@ -120,6 +120,7 @@ def execute(args):
                 # 人物が一件も見つからなかった場合
                 now_bbox_frames = []
                 all_bbox_frames.append([])
+
                 continue
             
             # 一人以上人物が見つかった場合
@@ -164,12 +165,18 @@ def execute(args):
                         # 出現回数カウント
                         track_cnt_dict[track_id] += 1
 
-                # JSON出力
-                with open(joint_json_path, "w") as f:
-                    json.dump(bbox_frames[joint_json_path], f, indent=4)
+                    # JSON出力
+                    with open(joint_json_path, "w") as f:
+                        json.dump(bbox_frames[joint_json_path], f, indent=4)
 
-                # 今回分として保持
-                now_bbox_frames.append({'track_id': track_id, 'bbox': bbox_det, 'keypoints': keypoints, 'width': width, 'height': height, 'json_path': joint_json_path})
+                    # 今回分として保持
+                    now_bbox_frames.append({'track_id': track_id, 'bbox': bbox_det, 'keypoints': keypoints, 'width': width, 'height': height, 'json_path': joint_json_path})
+
+                else:
+                    # tracking対象外でJSON出力
+                    bbox_frames[joint_json_path]["track_id"] = -1
+                    with open(joint_json_path, "w") as f:
+                        json.dump(bbox_frames[joint_json_path], f, indent=4)
 
             for bidx, now_bbox_frame in enumerate(now_bbox_frames):
                 joint_json_path = now_bbox_frame['json_path']

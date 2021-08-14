@@ -1090,7 +1090,7 @@ class PmxModel:
             # まだリンクが生成されていない場合、順序保持辞書生成
             links = BoneLinks()
         
-        if target_bone_name not in self.bones and target_bone_name not in self.PARENT_BORN_PAIR:
+        if target_bone_name not in self.bones:
             # 開始ボーン名がなければ終了
             return links
 
@@ -1103,21 +1103,10 @@ class PmxModel:
         links.append(self.bones[target_bone_name].copy())
 
         parent_name = None
-        if is_defined:
-            # 定義済みの場合
-            if target_bone_name not in self.PARENT_BORN_PAIR:
-                raise SizingException("ボーンリンクの生成に失敗しました。モデル「%s」の「%s」ボーンが準標準までの構造ではない可能性があります。" % (self.name, target_bone_name))
-                
-            for pname in self.PARENT_BORN_PAIR[target_bone_name]:
-                # 親子関係のボーンリストから親ボーンが存在した場合
-                if pname in self.bones:
-                    parent_name = pname
-                    break
-        else:
-            # 未定義でよい場合
-            if self.bones[target_bone_name].parent_index >= 0:
-                # 親ボーンが存在している場合
-                parent_name = self.bone_indexes[self.bones[target_bone_name].parent_index]
+        # 未定義でよい場合
+        if self.bones[target_bone_name].parent_index >= 0:
+            # 親ボーンが存在している場合
+            parent_name = self.bone_indexes[self.bones[target_bone_name].parent_index]
 
         if not parent_name:
             # 親ボーンがボーンインデックスリストになければ終了
