@@ -1326,7 +1326,7 @@ def get_blink_ratio(fno: int, eye_top1: MVector3D, eye_top3: MVector3D, eye_top6
     vertical_length = euclidean_distance(center_top, center_bottom)
 
     ratio = horizontal_length / vertical_length
-    new_ratio = min(1, math.sin(calc_ratio(ratio, 0, 30, 0, 1)))
+    new_ratio = min(1, math.sin(calc_ratio(ratio, 0, 20, 0, 1)))
 
     # 笑いの比率(日本人用に比率半分)
     smile_ratio = (center_bottom.y() - corner_center.y()) / (center_bottom.y() - center_top.y())
