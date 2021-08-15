@@ -222,7 +222,7 @@ def execute(args):
                     if jname not in ["mp_left_wrist", "mp_right_wrist"]:
                         # モーションも登録
                         for fno in fnos:
-                            if fno in target_bone_vecs[jname] and fno in target_bone_vecs[pconn['parent']]:
+                            if jname in target_bone_vecs and fno in target_bone_vecs[jname] and pconn['parent'] in target_bone_vecs and fno in target_bone_vecs[pconn['parent']]:
                                 joint = target_bone_vecs[jname][fno]
                                 parent_joint = target_bone_vecs[pconn['parent']][fno]
                                 
@@ -643,33 +643,37 @@ def calc_leg_ik_ratio(trace_model: PmxModel, miku_model: PmxModel):
 
 def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict, miku_model: PmxModel):
     parent_jname = jconn["parent"]
-    joints = list(target_bone_vecs[jname].values())
-    parent_joints = list(target_bone_vecs[parent_jname].values())
     # MMDボーン名
     mname = jconn["mmd"]
     # 親ボーン
     parent_bone = trace_model.bones[PMX_CONNECTIONS[parent_jname]['mmd']] if parent_jname in PMX_CONNECTIONS else trace_model.bones[parent_jname]
 
-    if jname in ["mp_left_wrist", "mp_right_wrist"]:
-        # 手首2は手首と合わせる
+    if jname not in target_bone_vecs or parent_jname not in target_bone_vecs:
         bone_relative_pos = MVector3D()
-    elif "指" in jconn["display"]:
-        if "手首2" in parent_bone.name:
-            # 手首2を参照している場合、手首を参照に切替
-            parent_bone = trace_model.bones[parent_bone.name[:3]]
-        # 手首と指は完全にミクに合わせる
-        bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
     else:
-        bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
+        joints = list(target_bone_vecs[jname].values())
+        parent_joints = list(target_bone_vecs[parent_jname].values())
 
-        if mname[1:] in ["手首", "ひじ", "手先", "ひざ", "足首", "つま先"] and mname in miku_model.bones and parent_bone.name in miku_model.bones:
-            # 腕・足は方向はミクに合わせる。長さはトレース元
+        if jname in ["mp_left_wrist", "mp_right_wrist"]:
+            # 手首2は手首と合わせる
+            bone_relative_pos = MVector3D()
+        elif "指" in jconn["display"]:
+            if "手首2" in parent_bone.name:
+                # 手首2を参照している場合、手首を参照に切替
+                parent_bone = trace_model.bones[parent_bone.name[:3]]
+            # 手首と指は完全にミクに合わせる
             bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
-            bone_relative_pos *= bone_length / bone_relative_pos.length()
         else:
-            # トレース元から採取
-            bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
-            bone_relative_pos = MVector3D(bone_axis * bone_length)
+            bone_length = np.median(np.linalg.norm(np.array(joints) - np.array(parent_joints), ord=2, axis=1))
+
+            if mname[1:] in ["手首", "ひじ", "手先", "ひざ", "足首", "つま先"] and mname in miku_model.bones and parent_bone.name in miku_model.bones:
+                # 腕・足は方向はミクに合わせる。長さはトレース元
+                bone_relative_pos = miku_model.bones[mname].position - miku_model.bones[parent_bone.name].position
+                bone_relative_pos *= bone_length / bone_relative_pos.length()
+            else:
+                # トレース元から採取
+                bone_axis = MVector3D(np.median(np.array(joints), axis=0) - np.median(np.array(parent_joints), axis=0)).normalized()
+                bone_relative_pos = MVector3D(bone_axis * bone_length)
     bone_pos = parent_bone.position + bone_relative_pos
     bone = Bone(mname, mname, bone_pos, parent_bone.index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
     bone.index = len(list(trace_model.bones.keys()))
