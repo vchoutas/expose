@@ -21,7 +21,7 @@ mp_holistic = mp.solutions.holistic
 
 def execute(args):
     try:
-        logger.info('手指・表情推定処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
+        logger.info('mediapipe推定処理開始: {0}', args.img_dir, decoration=MLogger.DECORATION_BOX)
 
         if not os.path.exists(args.img_dir):
             logger.error("指定された処理用ディレクトリが存在しません。: {0}", args.img_dir, decoration=MLogger.DECORATION_BOX)
@@ -43,7 +43,7 @@ def execute(args):
             min_tracking_confidence=0.5) as holistic:
 
             for oidx, ordered_person_dir_path in enumerate(ordered_person_dir_pathes):    
-                logger.info("【No.{0}】手指・表情推定開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
+                logger.info("【No.{0}】mediapipe推定開始", f"{oidx:03}", decoration=MLogger.DECORATION_LINE)
 
                 frame_json_pathes = sorted(glob.glob(os.path.join(ordered_person_dir_path, "frame_*.json")), key=sort_by_numeric)
 
@@ -103,11 +103,11 @@ def execute(args):
                             with open(frame_json_path, 'w') as f:
                                 json.dump(frame_joints, f, indent=4)
 
-        logger.info('手指・表情推定処理終了: {0}', os.path.join(args.img_dir, "ordered"), decoration=MLogger.DECORATION_BOX)
+        logger.info('mediapipe推定処理終了: {0}', os.path.join(args.img_dir, "ordered"), decoration=MLogger.DECORATION_BOX)
 
         return True
     except Exception as e:
-        logger.critical("手指・表情推定で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
+        logger.critical("mediapipe推定で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
         return False
 
 # 瞳の重心を求める

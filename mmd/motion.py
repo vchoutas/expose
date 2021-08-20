@@ -67,17 +67,23 @@ def execute(args):
             trace_rot_motion = VmdMotion()
             trace_miku_motion = VmdMotion()
 
+            mp_trace_mov_motion = VmdMotion()
+            mp_trace_rot_motion = VmdMotion()
+            mp_trace_miku_motion = VmdMotion()
+
             # KEY: 処理対象ボーン名, VALUE: vecリスト
             target_bone_vecs = {}
             fnos = []
             face_fnos = []
+            mp_fnos = []
         
-            for mbname in ["全ての親", "センター", "グルーブ", "pelvis2", "head_tail", "right_wrist_tail", "left_wrist_tail", "params"]:
+            for mbname in ["全ての親", "センター", "グルーブ", "pelvis2", "head_tail", "right_wrist_tail", "left_wrist_tail", "params", \
+                           "Groove", "mp_pelvis", "mp_spine1", "mp_neck", "mp_head", "mp_head_tail", "mp_left_collar", "mp_right_collar", "mp_pelvis2"]:
                 target_bone_vecs[mbname] = {}
             
             logger.info("【No.{0}】モーション結果位置計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=(len(smooth_json_pathes) * (len(PMX_CONNECTIONS.keys()))), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=(len(smooth_json_pathes) * (len(PMX_CONNECTIONS.keys()) * 2)), desc=f'No.{oidx:02d}') as pchar:
                 for sidx, smooth_json_path in enumerate(smooth_json_pathes):
                     m = smooth_pattern.match(os.path.basename(smooth_json_path))
                     if m:
@@ -112,13 +118,49 @@ def execute(args):
                                 target_bone_vecs[f"{direction}_wrist_tail"][fno] = np.mean([target_bone_vecs[f"{direction}_index1"][fno], target_bone_vecs[f"{direction}_middle1"][fno], target_bone_vecs[f"{direction}_ring1"][fno], target_bone_vecs[f"{direction}_pinky1"][fno]], axis=0)
                                 pchar.update(1)
                         
-                        for joint_group_name in ["mp_body_joints", "mp_left_hand_joints", "mp_right_hand_joints"]:
+                        for joint_group_name in ["mp_left_hand_joints", "mp_right_hand_joints"]:
                             if joint_group_name in frame_joints:
                                 for jname, joint in frame_joints[joint_group_name].items():
                                     if jname not in target_bone_vecs:
                                         target_bone_vecs[jname] = {}
                                     target_bone_vecs[jname][fno] = np.array([joint["x"], joint["y"], joint["z"]]) * MIKU_METER
                                     pchar.update(1)
+                        
+                        if "mp_body_joints" in frame_joints:
+                            mp_fnos.append(fno)
+
+                            for jname, joint in frame_joints["mp_body_joints"].items():
+                                if jname not in target_bone_vecs:
+                                    target_bone_vecs[jname] = {}
+                                target_bone_vecs[jname][fno] = np.array([joint["wx"], joint["wy"], joint["wz"]]) * MIKU_METER
+                                pchar.update(1)
+
+                            # グルーブ
+                            target_bone_vecs["Groove"][fno] = np.array([0, 0, 0])
+
+                            # 下半身
+                            target_bone_vecs['mp_pelvis'][fno] = np.mean([target_bone_vecs['mp_left_hip'][fno], target_bone_vecs['mp_right_hip'][fno]], axis=0)
+
+                            # 上半身
+                            target_bone_vecs['mp_spine1'][fno] = np.mean([target_bone_vecs['mp_left_hip'][fno], target_bone_vecs['mp_right_hip'][fno]], axis=0)
+                            
+                            # 首
+                            target_bone_vecs['mp_neck'][fno] = np.mean([target_bone_vecs['mp_left_shoulder'][fno], target_bone_vecs['mp_right_shoulder'][fno]], axis=0)
+
+                            # 頭
+                            target_bone_vecs['mp_head'][fno] = np.mean([target_bone_vecs['mp_left_ear'][fno], target_bone_vecs['mp_right_ear'][fno]], axis=0)
+
+                            # 頭先
+                            target_bone_vecs['mp_head_tail'][fno] = target_bone_vecs['mp_head'][fno] + ((target_bone_vecs['mp_head'][fno] - target_bone_vecs['mp_neck'][fno]) / 3)
+                        
+                            # 左肩
+                            target_bone_vecs['mp_left_collar'][fno] = np.mean([target_bone_vecs['mp_left_shoulder'][fno], target_bone_vecs['mp_right_shoulder'][fno]], axis=0)
+                        
+                            # 右肩
+                            target_bone_vecs['mp_right_collar'][fno] = np.mean([target_bone_vecs['mp_left_shoulder'][fno], target_bone_vecs['mp_right_shoulder'][fno]], axis=0)
+
+                            # 下半身先
+                            target_bone_vecs['mp_pelvis2'][fno] = target_bone_vecs['mp_pelvis'][fno] + ((target_bone_vecs['mp_neck'][fno] - target_bone_vecs['mp_spine1'][fno]) / 3)
 
                         if "mp_face_joints" in frame_joints:
                             face_fnos.append(fno)
@@ -156,42 +198,14 @@ def execute(args):
                                 target_bone_vecs["params"][fno]["visibility"][mname] = frame_joints["mp_body_joints"][jname]["visibility"]
                             else:
                                 target_bone_vecs["params"][fno]["visibility"][mname] = 0
-                            
-            trace_model = PmxModel()
-            trace_model.vertices["vertices"] = []
-            # 空テクスチャを登録
-            trace_model.textures.append("")
-
-            # 全ての親 ------------------------
-            trace_model.bones["全ての親"] = Bone("全ての親", "Root", MVector3D(), -1, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
-            trace_model.bones["全ての親"].index = 0
-            trace_model.bone_indexes[0] = "全ての親"
-            trace_model.display_slots["Root"] = DisplaySlot("Root", "Root", 1, 0)
-            trace_model.display_slots["Root"].references.append(trace_model.bones["全ての親"].index)
-
-            # モーフの表示枠
-            trace_model.display_slots["表情"] = DisplaySlot("表情", "Exp", 1, 1)
-
-            # センター ------------------------
-            trace_model.bones["センター"] = Bone("センター", "Center", MVector3D(0, 9, 0), trace_model.bones["全ての親"].index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
-            trace_model.bones["センター"].index = len(trace_model.bones) - 1
-            trace_model.bone_indexes[trace_model.bones["センター"].index] = "センター"
-            trace_model.display_slots["センター"] = DisplaySlot("センター", "Center", 0, 0)
-            trace_model.display_slots["センター"].references.append(trace_model.bones["センター"].index)
-
-            # グルーブ ------------------------
-            trace_model.bones["グルーブ"] = Bone("グルーブ", "Groove", MVector3D(0, 9.5, 0), trace_model.bones["センター"].index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
-            trace_model.bones["グルーブ"].index = len(trace_model.bones) - 1
-            trace_model.bone_indexes[trace_model.bones["グルーブ"].index] = "グルーブ"
-            trace_model.display_slots["センター"].references.append(trace_model.bones["グルーブ"].index)
-
-            # その他
-            for display_name in ["体幹", "左足", "右足", "左手", "右手", "左指", "右指", "顔", "眉", "鼻", "目", "口", "輪郭"]:
-                trace_model.display_slots[display_name] = DisplaySlot(display_name, display_name, 0, 0)
+            
+            # 初期化
+            trace_model = init_trace_model()
+            mp_trace_model = init_trace_model()
             
             logger.info("【No.{0}】モーション(移動)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=(len(PMX_CONNECTIONS.keys()) * (len(fnos) + 1)), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=((len(PMX_CONNECTIONS.keys()) + len(MP_PMX_CONNECTIONS.keys())) * (len(fnos) + 1)), desc=f'No.{oidx:02d}') as pchar:
                 for fno in fnos:
                     groove_bf = trace_mov_motion.calc_bf("グルーブ", fno)
                     groove_bf.key = True
@@ -202,59 +216,73 @@ def execute(args):
                     trace_mov_motion.bones[center_bf.name][fno] = center_bf
                     pchar.update(1)
 
-                for jidx, (jname, pconn) in enumerate(PMX_CONNECTIONS.items()):
-                    if "mp_index" in pconn:
-                        # mediapipeのfaceは対象外
-                        pchar.update(len(fnos))
-                        continue
-                    
-                    if not args.hand_motion and "hand" in pconn:
-                        # 手首から先はオプショナル
-                        pchar.update(len(fnos))
-                        continue
-
-                    # ボーン登録        
-                    create_bone(trace_model, jname, pconn, target_bone_vecs, miku_model)
-
-                    mname = pconn['mmd']
-                    pmname = PMX_CONNECTIONS[pconn['parent']]['mmd'] if pconn['parent'] in PMX_CONNECTIONS else pconn['parent']
+                for conns, target_trace_model, target_trace_mov_motion in [(PMX_CONNECTIONS, trace_model, trace_mov_motion), (MP_PMX_CONNECTIONS, mp_trace_model, mp_trace_mov_motion)]:
+                    for jidx, (jname, pconn) in enumerate(conns.items()):
+                        if "mp_index" in pconn:
+                            # mediapipeのfaceは対象外
+                            pchar.update(len(fnos))
+                            continue
                         
-                    if jname not in ["mp_left_wrist", "mp_right_wrist"]:
-                        # モーションも登録
-                        for fno in fnos:
-                            if jname in target_bone_vecs and fno in target_bone_vecs[jname] and pconn['parent'] in target_bone_vecs and fno in target_bone_vecs[pconn['parent']]:
-                                joint = target_bone_vecs[jname][fno]
-                                parent_joint = target_bone_vecs[pconn['parent']][fno]
-                                
-                                trace_bf = trace_mov_motion.calc_bf(mname, fno)
+                        if not args.hand_motion and "hand" in pconn:
+                            # 手首から先はオプショナル
+                            pchar.update(len(fnos))
+                            continue
 
-                                # # parentが全ての親の場合
-                                # trace_bf.position = MVector3D(joint) - trace_model.bones[mname].position
-                                # parentが親ボーンの場合
-                                trace_bf.position = MVector3D(joint) - MVector3D(parent_joint) \
-                                                    - (trace_model.bones[mname].position - trace_model.bones[pmname].position)
-                                trace_bf.key = True
-                                trace_mov_motion.bones[mname][fno] = trace_bf
-                                pchar.update(1)
+                        # ボーン登録        
+                        create_bone(target_trace_model, jname, pconn, target_bone_vecs, miku_model, conns)
 
-            for bname, bone in trace_model.bones.items():
-                # 表示先の設定
-                if bone.tail_index and bone.tail_index in trace_model.bones:
-                    bone.flag |= 0x0001
-                    bone.tail_index = trace_model.bones[bone.tail_index].index
-                    # local_x_axis = trace_model.get_local_x_axis(bname)
-                else:
-                    bone.tail_index = -1
+                        mname = pconn['mmd']
+                        pmname = conns[pconn['parent']]['mmd'] if pconn['parent'] in conns else pconn['parent']
+                            
+                        if jname not in ["mp_left_wrist", "mp_right_wrist"]:
+                            # モーションも登録
+                            for fno in fnos:
+                                if jname in target_bone_vecs and fno in target_bone_vecs[jname] and pconn['parent'] in target_bone_vecs and fno in target_bone_vecs[pconn['parent']]:
+                                    joint = target_bone_vecs[jname][fno]
+                                    parent_joint = target_bone_vecs[pconn['parent']][fno]
+                                    
+                                    trace_bf = target_trace_mov_motion.calc_bf(mname, fno)
+
+                                    parent_bone = target_trace_model.bones[pmname] if pmname in target_trace_model.bones else None
+                                    if not parent_bone:
+                                        for b in trace_model.bones.values():
+                                            if b.english_name == pmname:
+                                                parent_bone = b
+                                                break
+
+                                    # # parentが全ての親の場合
+                                    # trace_bf.position = MVector3D(joint) - target_trace_model.bones[mname].position
+                                    # parentが親ボーンの場合
+                                    trace_bf.position = MVector3D(joint) - MVector3D(parent_joint) \
+                                                        - (target_trace_model.bones[mname].position - parent_bone.position)
+                                    trace_bf.key = True
+                                    target_trace_mov_motion.bones[mname][fno] = trace_bf
+                                    pchar.update(1)
+
+            for target_trace_model in [trace_model, mp_trace_model]:
+                for bname, bone in target_trace_model.bones.items():
+                    # 表示先の設定
+                    if bone.tail_index and bone.tail_index in target_trace_model.bones:
+                        bone.flag |= 0x0001
+                        bone.tail_index = target_trace_model.bones[bone.tail_index].index
+                    else:
+                        bone.tail_index = -1
 
             logger.info("【No.{0}】トレース(センター)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
             
-            with tqdm(total=(len(fnos)), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=(len(fnos) * 2), desc=f'No.{oidx:02d}') as pchar:
                 target_links = {}
-                for target_name in ["下半身", "上半身", "上半身2", "左かかと", "右かかと", "左つま先", "右つま先"]:
+                for target_name in ["下半身", "上半身", "上半身2", "左足", "右足", "左かかと", "右かかと", "左つま先", "右つま先"]:
                     target_links[target_name] = trace_model.create_link_2_top_one(target_name, is_defined=False)
-
+                
+                depths = []
+                min_leg_ys = []
+                groove_ys = []
                 for fno in fnos:
-                    center_pos, start_lower_depth = calc_center(trace_model, target_links, trace_mov_motion, target_bone_vecs["params"][fno], fno, start_lower_depth)
+                    center_pos, min_leg_y, start_lower_depth = calc_center(trace_model, target_links, trace_mov_motion, target_bone_vecs["params"][fno], fno, start_lower_depth)
+                    min_leg_ys.append(min_leg_y)
+                    groove_ys.append(center_pos.y())
+                    depths.append(center_pos.z())
 
                     groove_bf = trace_mov_motion.calc_bf("グルーブ", fno)
                     groove_bf.position.setY(center_pos.y())
@@ -267,7 +295,20 @@ def execute(args):
                     center_bf.key = True
                     trace_mov_motion.bones[center_bf.name][fno] = center_bf
                     pchar.update(1)
+                
+                # 中央のY値が接地してると見なす
+                all_min_leg_ys = np.array(min_leg_ys) + min(trace_model.bones["左つま先"].position.y(), 
+                                    trace_model.bones["右つま先"].position.y(), trace_model.bones["左かかと"].position.y(), trace_model.bones["右かかと"].position.y())
+                median_leg_y = np.median(all_min_leg_ys)
 
+                for fno in fnos:
+                    # グルーブを設定しなおす
+                    groove_bf = trace_mov_motion.calc_bf("グルーブ", fno)
+                    groove_bf.position.setY(groove_bf.position.y() - median_leg_y)
+                    trace_mov_motion.bones[groove_bf.name][fno] = groove_bf
+                    pchar.update(1)
+
+            # expose
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_model_no{oidx:02d}.pmx")
             logger.info("【No.{0}】トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
             trace_model.name = f"Trace結果 {oidx:02d} (移動用)"
@@ -279,6 +320,18 @@ def execute(args):
             logger.info("【No.{0}】モーション(移動)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_mov_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(trace_model, trace_mov_motion, trace_mov_motion_path)
 
+            # mediapipe
+            mp_trace_model_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_mov_model_no{oidx:02d}.pmx")
+            logger.info("【No.{0}】Mediapipe トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_model_path), decoration=MLogger.DECORATION_LINE)
+            mp_trace_model.name = f"Mediapipe Trace結果 {oidx:02d} (移動用)"
+            mp_trace_model.english_name = f"Mediapipe TraceModel {oidx:02d} (Move)"
+            mp_trace_model.comment = f"Mediapipe Trace結果 {oidx:02d} 表示用モデル (移動用)\n足ＩＫがありません"
+            pmx_writer.write(mp_trace_model, mp_trace_model_path)
+            
+            mp_trace_mov_motion_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_mov_no{oidx:02d}.vmd")
+            logger.info("【No.{0}】mediapipeモーション(移動)生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_mov_motion_path), decoration=MLogger.DECORATION_LINE)
+            vmd_writer.write(mp_trace_model, mp_trace_mov_motion, mp_trace_mov_motion_path)
+
             # 足ＩＫ ------------------------
             ik_show = VmdShowIkFrame()
             ik_show.fno = 0
@@ -286,23 +339,33 @@ def execute(args):
 
             for direction in ["左", "右"]:
                 create_bone_leg_ik(trace_model, direction)
+                create_bone_leg_ik(mp_trace_model, direction)
                 
                 ik_show.ik.append(VmdInfoIk(f'{direction}足ＩＫ', 0))
                 ik_show.ik.append(VmdInfoIk(f'{direction}つま先ＩＫ', 0))
 
             trace_rot_motion.showiks.append(ik_show)
             trace_miku_motion.showiks.append(ik_show)
+            mp_trace_rot_motion.showiks.append(ik_show)
+            mp_trace_miku_motion.showiks.append(ik_show)
 
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_rot_model_no{oidx:02d}.pmx")
-            logger.info("【No.{0}】トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
+            logger.info("【No.{0}】トレース(回転)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
             trace_model.name = f"Trace結果 {oidx:02d} (回転用)"
             trace_model.english_name = f"TraceModel {oidx:02d} (Rot)"
             trace_model.comment = f"Trace結果 {oidx:02d} 表示用モデル (回転用)\n足ＩＫはモーション側でOFFにしています"
             pmx_writer.write(trace_model, trace_model_path)
-            
-            logger.info("【No.{0}】モーション(回転)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            with tqdm(total=((len(VMD_CONNECTIONS.keys()) + 2) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
+            mp_trace_model_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_rot_model_no{oidx:02d}.pmx")
+            logger.info("【No.{0}】Mediapipe トレース(回転)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_model_path), decoration=MLogger.DECORATION_LINE)
+            mp_trace_model.name = f"Mediapipe Trace結果 {oidx:02d} (回転用)"
+            mp_trace_model.english_name = f"Mediapipe TraceModel {oidx:02d} (Rot)"
+            mp_trace_model.comment = f"Mediapipe Trace結果 {oidx:02d} 表示用モデル (回転用)\n足ＩＫはモーション側でOFFにしています"
+            pmx_writer.write(mp_trace_model, mp_trace_model_path)
+                        
+            logger.info("【No.{0}】モーション(回転)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
+            
+            with tqdm(total=((len(VMD_CONNECTIONS.keys()) + len(MP_VMD_CONNECTIONS.keys()) + 2) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
                 for mname in ["センター", "グルーブ"]:
                     for fno in fnos:
                         mov_bf = trace_mov_motion.calc_bf(mname, fno)
@@ -313,82 +376,88 @@ def execute(args):
 
                         pchar.update(1)
 
-                for jname, jconn in VMD_CONNECTIONS.items():
-                    if not args.hand_motion and ("hand" in PMX_CONNECTIONS[jname] or "_wrist" in jname):
-                        # 手首から先はオプショナル
-                        pchar.update(len(fnos))
-                        continue
+                for jconns, pconns, target_trace_model, target_trace_mov_motion, target_trace_rot_motion in [(VMD_CONNECTIONS, PMX_CONNECTIONS, trace_model, trace_mov_motion, trace_rot_motion), 
+                                                                                                             (MP_VMD_CONNECTIONS, MP_PMX_CONNECTIONS, mp_trace_model, mp_trace_mov_motion, mp_trace_rot_motion)]:
+                    for jname, jconn in jconns.items():
+                        if not args.hand_motion and ("hand" in pconns[jname] or "_wrist" in jname):
+                            # 手首から先はオプショナル
+                            pchar.update(len(fnos))
+                            continue
 
-                    mname = PMX_CONNECTIONS[jname]['mmd']
-                    direction_from_mname = PMX_CONNECTIONS[jconn["direction"][0]]['mmd']
-                    direction_to_mname = PMX_CONNECTIONS[jconn["direction"][1]]['mmd']
-                    up_from_mname = PMX_CONNECTIONS[jconn["up"][0]]['mmd']
-                    up_to_mname = PMX_CONNECTIONS[jconn["up"][1]]['mmd']
-                    cross_from_mname = PMX_CONNECTIONS[jconn["cross"][0]]['mmd'] if 'cross' in jconn else direction_from_mname
-                    cross_to_mname = PMX_CONNECTIONS[jconn["cross"][1]]['mmd'] if 'cross' in jconn else direction_to_mname
+                        mname = pconns[jname]['mmd']
+                        direction_from_mname = pconns[jconn["direction"][0]]['mmd']
+                        direction_to_mname = pconns[jconn["direction"][1]]['mmd']
+                        up_from_mname = pconns[jconn["up"][0]]['mmd']
+                        up_to_mname = pconns[jconn["up"][1]]['mmd']
+                        cross_from_mname = pconns[jconn["cross"][0]]['mmd'] if 'cross' in jconn else direction_from_mname
+                        cross_to_mname = pconns[jconn["cross"][1]]['mmd'] if 'cross' in jconn else direction_to_mname
 
-                    # トレースモデルの初期姿勢
-                    trace_direction_from_vec = trace_model.bones[direction_from_mname].position
-                    trace_direction_to_vec = trace_model.bones[direction_to_mname].position
-                    trace_direction = (trace_direction_to_vec - trace_direction_from_vec).normalized()
+                        # トレースモデルの初期姿勢
+                        target_trace_direction_from_vec = target_trace_model.bones[direction_from_mname].position
+                        target_trace_direction_to_vec = target_trace_model.bones[direction_to_mname].position
+                        target_trace_direction = (target_trace_direction_to_vec - target_trace_direction_from_vec).normalized()
 
-                    trace_up_from_vec = trace_model.bones[up_from_mname].position
-                    trace_up_to_vec = trace_model.bones[up_to_mname].position
-                    trace_up = (trace_up_to_vec - trace_up_from_vec).normalized()
+                        target_trace_up_from_vec = target_trace_model.bones[up_from_mname].position
+                        target_trace_up_to_vec = target_trace_model.bones[up_to_mname].position
+                        target_trace_up = (target_trace_up_to_vec - target_trace_up_from_vec).normalized()
 
-                    trace_cross_from_vec = trace_model.bones[cross_from_mname].position
-                    trace_cross_to_vec = trace_model.bones[cross_to_mname].position
-                    trace_cross = (trace_cross_to_vec - trace_cross_from_vec).normalized()
-                    
-                    trace_up_cross = MVector3D.crossProduct(trace_up, trace_cross).normalized()
-                    trace_stance_qq = MQuaternion.fromDirection(trace_direction, trace_up_cross)
+                        target_trace_cross_from_vec = target_trace_model.bones[cross_from_mname].position
+                        target_trace_cross_to_vec = target_trace_model.bones[cross_to_mname].position
+                        target_trace_cross = (target_trace_cross_to_vec - target_trace_cross_from_vec).normalized()
+                        
+                        target_trace_up_cross = MVector3D.crossProduct(target_trace_up, target_trace_cross).normalized()
+                        target_trace_stance_qq = MQuaternion.fromDirection(target_trace_direction, target_trace_up_cross)
 
-                    direction_from_links = trace_model.create_link_2_top_one(direction_from_mname, is_defined=False)
-                    direction_to_links = trace_model.create_link_2_top_one(direction_to_mname, is_defined=False)
-                    up_from_links = trace_model.create_link_2_top_one(up_from_mname, is_defined=False)
-                    up_to_links = trace_model.create_link_2_top_one(up_to_mname, is_defined=False)
-                    cross_from_links = trace_model.create_link_2_top_one(cross_from_mname, is_defined=False)
-                    cross_to_links = trace_model.create_link_2_top_one(cross_to_mname, is_defined=False)
+                        direction_from_links = target_trace_model.create_link_2_top_one(direction_from_mname, is_defined=False)
+                        direction_to_links = target_trace_model.create_link_2_top_one(direction_to_mname, is_defined=False)
+                        up_from_links = target_trace_model.create_link_2_top_one(up_from_mname, is_defined=False)
+                        up_to_links = target_trace_model.create_link_2_top_one(up_to_mname, is_defined=False)
+                        cross_from_links = target_trace_model.create_link_2_top_one(cross_from_mname, is_defined=False)
+                        cross_to_links = target_trace_model.create_link_2_top_one(cross_to_mname, is_defined=False)
 
-                    for fno in fnos:
-                        now_direction_from_vec = calc_global_pos_from_mov(trace_model, direction_from_links, trace_mov_motion, fno)
-                        now_direction_to_vec = calc_global_pos_from_mov(trace_model, direction_to_links, trace_mov_motion, fno)
-                        now_up_from_vec = calc_global_pos_from_mov(trace_model, up_from_links, trace_mov_motion, fno)
-                        now_up_to_vec = calc_global_pos_from_mov(trace_model, up_to_links, trace_mov_motion, fno)
-                        now_cross_from_vec = calc_global_pos_from_mov(trace_model, cross_from_links, trace_mov_motion, fno)
-                        now_cross_to_vec = calc_global_pos_from_mov(trace_model, cross_to_links, trace_mov_motion, fno)
+                        for fno in fnos:
+                            now_direction_from_vec = calc_global_pos_from_mov(target_trace_model, direction_from_links, target_trace_mov_motion, fno)
+                            now_direction_to_vec = calc_global_pos_from_mov(target_trace_model, direction_to_links, target_trace_mov_motion, fno)
+                            now_up_from_vec = calc_global_pos_from_mov(target_trace_model, up_from_links, target_trace_mov_motion, fno)
+                            now_up_to_vec = calc_global_pos_from_mov(target_trace_model, up_to_links, target_trace_mov_motion, fno)
+                            now_cross_from_vec = calc_global_pos_from_mov(target_trace_model, cross_from_links, target_trace_mov_motion, fno)
+                            now_cross_to_vec = calc_global_pos_from_mov(target_trace_model, cross_to_links, target_trace_mov_motion, fno)
 
-                        # トレースモデルの回転量 ------------
-                        now_direction = (now_direction_to_vec - now_direction_from_vec).normalized()
-                        now_up = (now_up_to_vec - now_up_from_vec).normalized()
-                        now_cross = (now_cross_to_vec - now_cross_from_vec).normalized()
+                            # トレースモデルの回転量 ------------
+                            now_direction = (now_direction_to_vec - now_direction_from_vec).normalized()
+                            now_up = (now_up_to_vec - now_up_from_vec).normalized()
+                            now_cross = (now_cross_to_vec - now_cross_from_vec).normalized()
 
-                        now_up_cross = MVector3D.crossProduct(now_up, now_cross).normalized()
-                        now_stance_qq = MQuaternion.fromDirection(now_direction, now_up_cross)
+                            now_up_cross = MVector3D.crossProduct(now_up, now_cross).normalized()
+                            now_stance_qq = MQuaternion.fromDirection(now_direction, now_up_cross)
 
-                        cancel_qq = MQuaternion()
-                        for cancel_jname in jconn["cancel"]:
-                            cancel_qq *= trace_rot_motion.calc_bf(PMX_CONNECTIONS[cancel_jname]['mmd'], fno).rotation
+                            cancel_qq = MQuaternion()
+                            for cancel_jname in jconn["cancel"]:
+                                cancel_qq *= target_trace_rot_motion.calc_bf(pconns[cancel_jname]['mmd'], fno).rotation
 
-                        now_qq = cancel_qq.inverted() * now_stance_qq * trace_stance_qq.inverted()
+                            now_qq = cancel_qq.inverted() * now_stance_qq * target_trace_stance_qq.inverted()
 
-                        now_bf = trace_rot_motion.calc_bf(mname, fno)
-                        now_bf.rotation = now_qq
-                        now_bf.key = True
-                        trace_rot_motion.bones[mname][fno] = now_bf
+                            now_bf = target_trace_rot_motion.calc_bf(mname, fno)
+                            now_bf.rotation = now_qq
+                            now_bf.key = True
+                            target_trace_rot_motion.bones[mname][fno] = now_bf
 
-                        pchar.update(1)
+                            pchar.update(1)
 
             trace_rot_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_rot_no{oidx:02d}.vmd")
             logger.info("【No.{0}】トレースモーション(回転)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_rot_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(trace_model, trace_rot_motion, trace_rot_motion_path)
+
+            mp_trace_rot_motion_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_rot_no{oidx:02d}.vmd")
+            logger.info("【No.{0}】Mediapipe トレースモーション(回転)生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_rot_motion_path), decoration=MLogger.DECORATION_LINE)
+            vmd_writer.write(mp_trace_model, mp_trace_rot_motion, mp_trace_rot_motion_path)
 
             logger.info("【No.{0}】モーション(あにまさ式ミク)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
             # 移動ボーンのサイジング
             xz_ratio, y_ratio = calc_leg_ik_ratio(trace_model, miku_model)
 
-            with tqdm(total=((len(trace_rot_motion.bones.keys()) + 34) * len(fnos)), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=((len(trace_rot_motion.bones.keys()) + len(mp_trace_rot_motion.bones.keys()) + 34) * len(fnos)), desc=f'No.{oidx:02d}') as pchar:
                 for mname in ["センター", "グルーブ"]:
                     for fno in fnos:
                         rot_bf = trace_rot_motion.calc_bf(mname, fno)
@@ -400,90 +469,77 @@ def execute(args):
                         pchar.update(1)
                         continue
                     
-                for jname, jconn in VMD_CONNECTIONS.items():
-                    if not args.hand_motion and ("hand" in PMX_CONNECTIONS[jname] or "_wrist" in jname):
-                        # 手首から先はオプショナル
-                        pchar.update(len(fnos))
-                        continue
+                for jconns, pconns, target_trace_model, target_trace_rot_motion, target_trace_miku_motion in [(VMD_CONNECTIONS, PMX_CONNECTIONS, trace_model, trace_rot_motion, trace_miku_motion), 
+                                                                                                             (MP_VMD_CONNECTIONS, MP_PMX_CONNECTIONS, mp_trace_model, mp_trace_rot_motion, mp_trace_miku_motion)]:
+                    for jname, jconn in jconns.items():
+                        if not args.hand_motion and ("hand" in pconns[jname] or "_wrist" in jname):
+                            # 手首から先はオプショナル
+                            pchar.update(len(fnos))
+                            continue
 
-                    mname = PMX_CONNECTIONS[jname]['mmd']
-                    parent_jnmae = PMX_CONNECTIONS[jname]['parent']
+                        mname = pconns[jname]['mmd']
+                        parent_jnmae = pconns[jname]['parent']
 
-                    parent_name = "センター"
-                    if mname not in ["全ての親", "センター", "グルーブ"] and parent_jnmae in PMX_CONNECTIONS:
-                        parent_name = PMX_CONNECTIONS[parent_jnmae]['mmd']
-                    
-                    base_axis = PMX_CONNECTIONS[jname]["axis"] if jname in PMX_CONNECTIONS else None
-                    parent_axis = PMX_CONNECTIONS[jname]["parent_axis"] if jname in PMX_CONNECTIONS and "parent_axis" in PMX_CONNECTIONS[jname] else PMX_CONNECTIONS[parent_jnmae]["axis"] if parent_jnmae in PMX_CONNECTIONS else None
-                    trace_parent_local_x_qq = trace_model.get_local_x_qq(parent_name, parent_axis)
-                    trace_target_local_x_qq = trace_model.get_local_x_qq(mname, base_axis)
-                    miku_parent_local_x_qq = miku_model.get_local_x_qq(parent_name, parent_axis)
-                    miku_target_local_x_qq = miku_model.get_local_x_qq(mname, base_axis)
-
-                    parent_local_x_qq = miku_parent_local_x_qq.inverted() * trace_parent_local_x_qq
-                    target_local_x_qq = miku_target_local_x_qq.inverted() * trace_target_local_x_qq
-
-                    miku_local_x_axis = miku_model.get_local_x_axis(mname)
-                    miku_local_y_axis = MVector3D.crossProduct(miku_local_x_axis, MVector3D(0, 0, 1))
-
-                    for fno in fnos:
-                        rot_bf = trace_rot_motion.calc_bf(mname, fno)
-                        miku_bf = trace_miku_motion.calc_bf(mname, fno)
-
-                        miku_bf.position = rot_bf.position.copy()
-                        new_miku_qq = rot_bf.rotation.copy()
+                        parent_name = "センター"
+                        if mname not in ["全ての親", "センター", "グルーブ"] and parent_jnmae in pconns:
+                            parent_name = pconns[parent_jnmae]['mmd']
                         
-                        # if (len(mname) > 2 and mname[2] == "指") or mname[1:] in ["手首"]:
-                        #     pass
-                        # elif mname[1:] in ["手首"]:
-                        #     new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq
-                        if mname[1:] in ["肩"]:
-                            new_miku_qq = new_miku_qq * target_local_x_qq
-                        else:
-                            new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+                        base_axis = pconns[jname]["axis"] if jname in pconns else None
+                        parent_axis = pconns[jname]["parent_axis"] if jname in pconns and "parent_axis" in pconns[jname] else pconns[parent_jnmae]["axis"] if parent_jnmae in pconns else None
+                        target_trace_parent_local_x_qq = target_trace_model.get_local_x_qq(parent_name, parent_axis)
+                        target_trace_target_local_x_qq = target_trace_model.get_local_x_qq(mname, base_axis)
+                        miku_parent_local_x_qq = miku_model.get_local_x_qq(parent_name, parent_axis)
+                        miku_target_local_x_qq = miku_model.get_local_x_qq(mname, base_axis)
 
-                        miku_bf.rotation = new_miku_qq
-                        miku_bf.key = True
+                        parent_local_x_qq = miku_parent_local_x_qq.inverted() * target_trace_parent_local_x_qq
+                        target_local_x_qq = miku_target_local_x_qq.inverted() * target_trace_target_local_x_qq
 
-                        trace_miku_motion.bones[mname][fno] = miku_bf
-                        pchar.update(1)
-                
-                # for mname in ["左ひじ", "右ひじ"]:
-                #     miku_local_x_axis = miku_model.get_local_x_axis(mname)
-
-                #     for fno in fnos:
-                #         miku_bf = trace_miku_motion.calc_bf(mname, fno)
-
-                #         # X捩り除去
-                #         _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
-                #         miku_bf.rotation = now_yz_qq
-                #         pchar.update(1)
-                
-                for mname in ["左ひざ", "右ひざ"]:
-                    miku_local_x_axis = miku_model.get_local_x_axis(mname)
-                    miku_local_y_axis = MVector3D.crossProduct(miku_local_x_axis, MVector3D(0, 0, 1))
-
-                    for fno in fnos:
-                        miku_bf = trace_miku_motion.calc_bf(mname, fno)
-
-                        # X捩り除去
-                        _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
-                        miku_bf.rotation = MQuaternion.fromAxisAndAngle(miku_local_y_axis, now_yz_qq.toDegree())
-                        pchar.update(1)
-                
-                if args.hand_motion:
-                    for mname in ['左親指０' , '左親指１' , '左親指２' , '左人指１' , '左人指２' , '左人指３' , '左中指１' , '左中指２' , '左中指３' , '左薬指１' , '左薬指２' , '左薬指３' , '左小指１' , '左小指２' , '左小指３' , \
-                                '右親指０' , '右親指１' , '右親指２' , '右人指１' , '右人指２' , '右人指３' , '右中指１' , '右中指２' , '右中指３' , '右薬指１' , '右薬指２' , '右薬指３' , '右小指１' , '右小指２' , '右小指３']:
                         miku_local_x_axis = miku_model.get_local_x_axis(mname)
+                        miku_local_y_axis = MVector3D.crossProduct(miku_local_x_axis, MVector3D(0, 0, 1))
 
                         for fno in fnos:
-                            miku_bf = trace_miku_motion.calc_bf(mname, fno)
+                            rot_bf = target_trace_rot_motion.calc_bf(mname, fno)
+                            miku_bf = target_trace_miku_motion.calc_bf(mname, fno)
 
-                            # 指は正方向にしか曲がらない
-                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
-                            miku_bf.rotation = MQuaternion.fromAxisAndAngle((MVector3D(0, 0, -1) if mname[0] == "左" else MVector3D(0, 0, 1)), now_yz_qq.toDegree())
+                            miku_bf.position = rot_bf.position.copy()
+                            new_miku_qq = rot_bf.rotation.copy()
+                            
+                            if mname[1:] in ["肩"]:
+                                new_miku_qq = new_miku_qq * target_local_x_qq
+                            else:
+                                new_miku_qq = parent_local_x_qq.inverted() * new_miku_qq * target_local_x_qq
+
+                            miku_bf.rotation = new_miku_qq
+                            miku_bf.key = True
+
+                            target_trace_miku_motion.bones[mname][fno] = miku_bf
                             pchar.update(1)
-            
+                    
+                    for mname in ["左ひざ", "右ひざ"]:
+                        miku_local_x_axis = miku_model.get_local_x_axis(mname)
+                        miku_local_y_axis = MVector3D.crossProduct(miku_local_x_axis, MVector3D(0, 0, 1))
+
+                        for fno in fnos:
+                            miku_bf = target_trace_miku_motion.calc_bf(mname, fno)
+
+                            # X捩り除去
+                            _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
+                            miku_bf.rotation = MQuaternion.fromAxisAndAngle(miku_local_y_axis, now_yz_qq.toDegree())
+                            pchar.update(1)
+                    
+                    if args.hand_motion:
+                        for mname in ['左親指０' , '左親指１' , '左親指２' , '左人指１' , '左人指２' , '左人指３' , '左中指１' , '左中指２' , '左中指３' , '左薬指１' , '左薬指２' , '左薬指３' , '左小指１' , '左小指２' , '左小指３' , \
+                                    '右親指０' , '右親指１' , '右親指２' , '右人指１' , '右人指２' , '右人指３' , '右中指１' , '右中指２' , '右中指３' , '右薬指１' , '右薬指２' , '右薬指３' , '右小指１' , '右小指２' , '右小指３']:
+                            miku_local_x_axis = miku_model.get_local_x_axis(mname)
+
+                            for fno in fnos:
+                                miku_bf = target_trace_miku_motion.calc_bf(mname, fno)
+
+                                # 指は正方向にしか曲がらない
+                                _, _, _, now_yz_qq = MServiceUtils.separate_local_qq(fno, mname, miku_bf.rotation, miku_local_x_axis)
+                                miku_bf.rotation = MQuaternion.fromAxisAndAngle((MVector3D(0, 0, -1) if mname[0] == "左" else MVector3D(0, 0, 1)), now_yz_qq.toDegree())
+                                pchar.update(1)
+                
             if args.face_motion:
                 # モーフ生成ONの場合
                 logger.info("【No.{0}】モーフ計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
@@ -509,10 +565,27 @@ def execute(args):
             logger.info("【No.{0}】トレースモーション(あにまさ式ミク)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_miku_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(miku_model, trace_miku_motion, trace_miku_motion_path)
 
+            mp_trace_miku_motion_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_miku_no{oidx:02d}.vmd")
+            logger.info("【No.{0}】Mediapipe トレースモーション(あにまさ式ミク)生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_miku_motion_path), decoration=MLogger.DECORATION_LINE)
+            vmd_writer.write(miku_model, mp_trace_miku_motion, mp_trace_miku_motion_path)
+
             logger.info("【No.{0}】モーション(あにまさ式ミク)外れ値削除開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
             loop_cnt = 2
-            with tqdm(total=(len(trace_miku_motion.bones.keys()) * len(fnos) * loop_cnt), desc=f'No.{oidx:02d}') as pchar:
+            with tqdm(total=((4 * len(fnos)) + (len(trace_miku_motion.bones.keys()) * len(fnos) * loop_cnt)), desc=f'No.{oidx:02d}') as pchar:
+                for mname in ["上半身", "下半身", "右足", "左足"]:
+                    for fno in mp_trace_miku_motion.bones[mname].keys():
+                        mp_bf = mp_trace_miku_motion.calc_bf(mname, fno)
+                        ex_bf = trace_miku_motion.calc_bf(mname, fno)
+
+                        dot = MQuaternion.dotProduct(mp_bf.rotation, ex_bf.rotation)
+                        # logger.info("{0}: {1}, dot: {2}", fno, mname, dot)
+                        if abs(dot) < 0.8:
+                            # 離れすぎてるのは削除
+                            if fno in trace_miku_motion.bones[mname]:
+                                del trace_miku_motion.bones[mname][fno]
+                        pchar.update(1)
+
                 for n in range(loop_cnt):
                     bone_names = list(trace_miku_motion.bones.keys())
                     for mname in bone_names:
@@ -564,7 +637,7 @@ def execute(args):
                                 filterd_qq = MQuaternion.slerp(prev_bf.rotation, next_bf.rotation, (fno - prev_fno) / (next_fno - prev_fno))
                                 # 前後の中間と実際の値の内積を求める
                                 dot = MQuaternion.dotProduct(filterd_qq, now_bf.rotation)
-                                if prev_next_dot - 0.2 > dot:
+                                if prev_next_dot - 0.3 > dot:
                                     # 離れすぎてるのは削除
                                     if fno in trace_miku_motion.bones[mname]:
                                         del trace_miku_motion.bones[mname][fno]
@@ -572,7 +645,7 @@ def execute(args):
 
             logger.info("【No.{0}】モーション(あにまさ式ミク)スムージング開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
-            loop_cnt = 1
+            loop_cnt = 3
             with tqdm(total=(len(trace_miku_motion.bones.keys()) * len(fnos) * loop_cnt), desc=f'No.{oidx:02d}') as pchar:
                 for n in range(loop_cnt):
                     bone_names = list(trace_miku_motion.bones.keys())
@@ -594,17 +667,18 @@ def execute(args):
                                 pchar.update(1)
                             continue
 
-                        for prev_fno, next_fno in zip(fnos[n:], fnos[2+n:]):
+                        for prev_fno, next_fno in zip(fnos[n:], fnos[3+n:]):
                             prev_bf = trace_miku_motion.calc_bf(mname, prev_fno)
                             next_bf = trace_miku_motion.calc_bf(mname, next_fno)
                             for fno in range(prev_fno + 1, next_fno):
                                 bf = trace_miku_motion.calc_bf(mname, fno)
-                                # まず前後の中間をそのまま求める
-                                filterd_qq = MQuaternion.slerp(prev_bf.rotation, next_bf.rotation, (fno - prev_fno) / (next_fno - prev_fno))
-                                # 現在の回転にも少し近づける
-                                bf.rotation = MQuaternion.slerp(filterd_qq, bf.rotation, 0.6)
-                                bf.key = True
-                                trace_miku_motion.bones[mname][fno] = bf
+                                if bf.key:
+                                    # まず前後の中間をそのまま求める
+                                    filterd_qq = MQuaternion.slerp(prev_bf.rotation, next_bf.rotation, (fno - prev_fno) / (next_fno - prev_fno))
+                                    # 現在の回転にも少し近づける
+                                    bf.rotation = MQuaternion.slerp(filterd_qq, bf.rotation, 0.8)
+                                    bf.key = True
+                                    trace_miku_motion.bones[mname][fno] = bf
 
                             pchar.update(1)
 
@@ -618,6 +692,11 @@ def execute(args):
     except Exception as e:
         logger.critical("モーション生成で予期せぬエラーが発生しました。", e, decoration=MLogger.DECORATION_BOX)
         return False
+
+def normalize(v, axis=-1, order=2):
+    l2 = np.linalg.norm(v, ord = order, axis=axis, keepdims=True)
+    l2[l2==0] = 1
+    return v/l2
 
 def calc_leg_ik_ratio(trace_model: PmxModel, miku_model: PmxModel):
     target_bones = ["左足", "左ひざ", "左足首", "センター"]
@@ -641,12 +720,17 @@ def calc_leg_ik_ratio(trace_model: PmxModel, miku_model: PmxModel):
     
     return 1, 1
 
-def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict, miku_model: PmxModel):
+def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs: dict, miku_model: PmxModel, conns: dict):
     parent_jname = jconn["parent"]
     # MMDボーン名
     mname = jconn["mmd"]
     # 親ボーン
-    parent_bone = trace_model.bones[PMX_CONNECTIONS[parent_jname]['mmd']] if parent_jname in PMX_CONNECTIONS else trace_model.bones[parent_jname]
+    parent_bone = trace_model.bones[conns[parent_jname]['mmd']] if parent_jname in conns else trace_model.bones[parent_jname] if parent_jname in trace_model.bones else None
+    if not parent_bone:
+        for b in trace_model.bones.values():
+            if b.english_name == parent_jname:
+                parent_bone = b
+                break
 
     if jname not in target_bone_vecs or parent_jname not in target_bone_vecs:
         bone_relative_pos = MVector3D()
@@ -678,7 +762,7 @@ def create_bone(trace_model: PmxModel, jname: str, jconn: dict, target_bone_vecs
     bone = Bone(mname, mname, bone_pos, parent_bone.index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
     bone.index = len(list(trace_model.bones.keys()))
     if len(jconn['tail']) > 0:
-        bone.tail_index = PMX_CONNECTIONS[jconn["tail"]]['mmd']
+        bone.tail_index = conns[jconn["tail"]]['mmd']
 
     # ボーンINDEX
     trace_model.bone_indexes[bone.index] = bone.name
@@ -799,7 +883,7 @@ def calc_center(trace_model: PmxModel, target_all_links: dict, trace_mov_motion:
     image_ratio = (int(image_size[0] / image_gcd), int(image_size[1] / image_gcd))
 
     # カメラ中央
-    camera_center_pos = MVector3D(0, 0, 0.1)
+    camera_center_pos = MVector3D(0, 0, 0.001)
     # カメラ倍率
     camera_scale = params["camera"]["scale"]
     # センサー幅（画角？）
@@ -822,31 +906,141 @@ def calc_center(trace_model: PmxModel, target_all_links: dict, trace_mov_motion:
             # 足系のY
             leg_ys.append(target_global_poses[target_name].y())
         
-    # Xは下半身の画面内位置
     center_pos = MVector3D()
-    center_pos.setX((params["proj_pelvis"]["x"] - (image_size[0] / 2)) * depth * 0.002)
 
-    # 最も下にあるYを地面に接地させる
-    lower_y = target_global_poses["下半身"].y()
-    min_leg_y = min(leg_ys)
-    # デフォルト下半身の高さから現在の下半身の高さを引く
-    center_pos.setY((lower_y - min_leg_y) - (trace_model.bones["下半身"].position.y() - trace_model.bones["左つま先"].position.y()))
+    # Xは下半身の画面内位置
+    center_pos.setX((params["proj_pelvis"]["x"] - (image_size[0] / 2)) * depth * 0.002)
 
     # 上半身の傾き
     upper_dot = MVector3D.dotProduct((trace_model.bones["上半身2"].position - trace_model.bones["上半身"].position).normalized(), \
                                      (target_global_poses["上半身2"] - target_global_poses["上半身"]).normalized())
-    upper_direction = calc_ratio(upper_dot, -1, 1, 0.6, 1)
-    
+    upper_direction = calc_ratio(upper_dot, -1, 1, 0.8, 1)
+
+    # 下半身の向き
+    lower_dot = MVector3D.dotProduct(MVector3D(1, 0, 0), (target_global_poses["左足"] - target_global_poses["右足"]).normalized())
+    lower_direction = max(upper_direction, calc_ratio(abs(lower_dot), 0, 1, 0.8, 1))
+
+    # 最も下にある足のY
+    min_leg_y = min(leg_ys)
+
     # 下半身の奥行き
-    # 上半身が傾いている場合は浅めに見積もる
-    lower_depth = depth * upper_direction * 3
+    # 上半身が傾いている場合は浅めに見積もる(ただし、下半身が横を向いている時は相殺する)
+    lower_depth = depth * (upper_direction / lower_direction) * 3
+
+    # Yはプロジェクション座標の相対位置から仮算出
+    upper_project_square_pos = calc_project_square_vec(camera_center_pos, focal_length_in_mm, sensor_width, image_ratio, target_global_poses["上半身"])
+    proj_pelvis_square_pos = np.array([params["proj_pelvis"]["x"], params["proj_pelvis"]["y"]]) / image_size
+
+    center_pos.setY(((1 - proj_pelvis_square_pos[1]) - (1 - upper_project_square_pos.y())) * lower_depth)
 
     if not start_lower_depth:
-        return center_pos, lower_depth
+        return center_pos, min_leg_y, lower_depth
 
     center_pos.setZ(lower_depth - start_lower_depth)
 
-    return center_pos, start_lower_depth
+    return center_pos, min_leg_y, start_lower_depth
+
+# プロジェクション座標正規位置算出
+def calc_project_square_vec(camera_pos: MVector3D, camera_length: float, camera_angle: float, image_ratio: tuple, global_vec: MVector3D):
+    # モデル座標系
+    model_view = create_model_view(camera_pos, camera_length)
+
+    # プロジェクション座標系
+    projection_view = create_projection_view(camera_angle, image_ratio)
+
+    # viewport
+    viewport_rect = MRect(0, 0, image_ratio[0], image_ratio[1])
+
+    # プロジェクション座標位置
+    project_vec = global_vec.project(model_view, projection_view, viewport_rect)
+
+    # プロジェクション座標正規位置
+    project_square_vec = MVector3D()
+    project_square_vec.setX(project_vec.x() / image_ratio[0])
+
+    if camera_length <= 0:
+        project_square_vec.setY((-project_vec.y() + image_ratio[1]) / image_ratio[1])
+    else:
+        project_square_vec.setY(project_vec.y() / image_ratio[1])
+    
+    project_square_vec.setZ(project_vec.z())
+
+    return project_square_vec
+
+# プロジェクション座標系作成
+def create_projection_view(camera_angle: float, image_ratio: tuple):
+    mat = MMatrix4x4()
+    mat.setToIdentity()
+    # MMDの縦の視野角。
+    # https://ch.nicovideo.jp/t-ebiing/blomaga/ar510610
+    mat.perspective(camera_angle * 0.98, image_ratio[0] / image_ratio[1], 0.001, 50000)
+
+    return mat
+
+# モデル座標系作成
+def create_model_view(camera_pos: MVector3D, camera_length: float):
+    # モデル座標系（原点を見るため、単位行列）
+    model_view = MMatrix4x4()
+    model_view.setToIdentity()
+
+    # カメラ角度
+    camera_qq = MQuaternion()
+
+    # カメラの原点（グローバル座標）
+    mat_origin = MMatrix4x4()
+    mat_origin.setToIdentity()
+    mat_origin.translate(camera_pos)
+    mat_origin.rotate(camera_qq)
+    mat_origin.translate(MVector3D(0, 0, camera_length))
+    camera_origin = mat_origin * MVector3D()
+
+    mat_up = MMatrix4x4()
+    mat_up.setToIdentity()
+    mat_up.rotate(camera_qq)
+    camera_up = mat_up * MVector3D(0, 1, 0)
+
+    # カメラ座標系の行列
+    # eye: カメラの原点（グローバル座標）
+    # center: カメラの注視点（グローバル座標）
+    # up: カメラの上方向ベクトル
+    model_view.lookAt(camera_origin, camera_pos, camera_up)
+
+    return model_view
+
+def init_trace_model():
+    trace_model = PmxModel()
+    trace_model.vertices["vertices"] = []
+    # 空テクスチャを登録
+    trace_model.textures.append("")
+
+    # 全ての親 ------------------------
+    trace_model.bones["全ての親"] = Bone("全ての親", "Root", MVector3D(), -1, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
+    trace_model.bones["全ての親"].index = 0
+    trace_model.bone_indexes[0] = "全ての親"
+    trace_model.display_slots["Root"] = DisplaySlot("Root", "Root", 1, 0)
+    trace_model.display_slots["Root"].references.append(trace_model.bones["全ての親"].index)
+
+    # モーフの表示枠
+    trace_model.display_slots["表情"] = DisplaySlot("表情", "Exp", 1, 1)
+
+    # センター ------------------------
+    trace_model.bones["センター"] = Bone("センター", "Center", MVector3D(0, 9, 0), trace_model.bones["全ての親"].index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
+    trace_model.bones["センター"].index = len(trace_model.bones) - 1
+    trace_model.bone_indexes[trace_model.bones["センター"].index] = "センター"
+    trace_model.display_slots["センター"] = DisplaySlot("センター", "Center", 0, 0)
+    trace_model.display_slots["センター"].references.append(trace_model.bones["センター"].index)
+
+    # グルーブ ------------------------
+    trace_model.bones["グルーブ"] = Bone("グルーブ", "Groove", MVector3D(0, 9.5, 0), trace_model.bones["センター"].index, 0, 0x0000 | 0x0002 | 0x0004 | 0x0008 | 0x0010)
+    trace_model.bones["グルーブ"].index = len(trace_model.bones) - 1
+    trace_model.bone_indexes[trace_model.bones["グルーブ"].index] = "グルーブ"
+    trace_model.display_slots["センター"].references.append(trace_model.bones["グルーブ"].index)
+
+    # その他
+    for display_name in ["体幹", "左足", "右足", "左手", "右手", "左指", "右指", "顔", "眉", "鼻", "目", "口", "輪郭"]:
+        trace_model.display_slots[display_name] = DisplaySlot(display_name, display_name, 0, 0)
+
+    return trace_model
 
 def read_bone_csv(bone_csv_path: str):
     model = PmxModel()
@@ -1368,6 +1562,37 @@ def create_bone_leg_ik(pmx: PmxModel, direction: str):
         pmx.bones[toe_ik_bone.name] = toe_ik_bone
         pmx.bone_indexes[toe_ik_bone.index] = toe_ik_bone.name
 
+MP_PMX_CONNECTIONS = {
+    "mp_pelvis": {"mmd": "下半身", "parent": "Groove", "tail": "mp_pelvis2", "display": "体幹", "axis": None},
+    "mp_pelvis2": {"mmd": "下半身先", "parent": "mp_pelvis", "tail": "", "display": "体幹", "axis": None},
+    "mp_left_hip": {"mmd": "左足", "parent": "mp_pelvis", "tail": "mp_left_knee", "display": "左足", "axis": None},
+    "mp_right_hip": {"mmd": "右足", "parent": "mp_pelvis", "tail": "mp_right_knee", "display": "右足", "axis": None},
+    "mp_left_knee": {"mmd": "左ひざ", "parent": "mp_left_hip", "tail": "mp_left_ankle", "display": "左足", "axis": None},
+    "mp_right_knee": {"mmd": "右ひざ", "parent": "mp_right_hip", "tail": "mp_right_ankle", "display": "右足", "axis": None},
+    "mp_left_ankle": {"mmd": "左足首", "parent": "mp_left_knee", "tail": "mp_left_foot", "display": "左足", "axis": None},
+    "mp_right_ankle": {"mmd": "右足首", "parent": "mp_right_knee", "tail": "mp_right_foot", "display": "右足", "axis": None},
+    "mp_left_foot": {"mmd": "左つま先", "parent": "mp_left_ankle", "tail": "", "display": "左足", "axis": None},
+    "mp_right_foot": {"mmd": "右つま先", "parent": "mp_right_ankle", "tail": "", "display": "右足", "axis": None},
+    "mp_spine1": {"mmd": "上半身", "parent": "Groove", "tail": "mp_neck", "display": "体幹", "axis": None},
+    "mp_neck": {"mmd": "首", "parent": "mp_spine1", "tail": "mp_head", "display": "体幹", "axis": None},
+    "mp_head": {"mmd": "頭", "parent": "mp_neck", "tail": "mp_head_tail", "display": "体幹", "axis": MVector3D(1, 0, 0), "parent_axis": MVector3D(1, 0, 0)},
+    "mp_head_tail": {"mmd": "頭先", "parent": "mp_head", "tail": "", "display": "体幹", "axis": None},
+    "mp_left_collar": {"mmd": "左肩", "parent": "mp_spine1", "tail": "mp_left_shoulder", "display": "左手", "axis": MVector3D(1, 0, 0)},
+    "mp_right_collar": {"mmd": "右肩", "parent": "mp_spine1", "tail": "mp_right_shoulder", "display": "右手", "axis": MVector3D(-1, 0, 0)},
+    "mp_left_shoulder": {"mmd": "左腕", "parent": "mp_left_collar", "tail": "mp_left_elbow", "display": "左手", "axis": MVector3D(1, 0, 0)},
+    "mp_right_shoulder": {"mmd": "右腕", "parent": "mp_right_collar", "tail": "mp_right_elbow", "display": "右手", "axis": MVector3D(-1, 0, 0)},
+    "mp_left_elbow": {"mmd": "左ひじ", "parent": "mp_left_shoulder", "tail": "mp_body_left_wrist", "display": "左手", "axis": MVector3D(1, 0, 0)},
+    "mp_right_elbow": {"mmd": "右ひじ", "parent": "mp_right_shoulder", "tail": "mp_body_right_wrist", "display": "右手", "axis": MVector3D(-1, 0, 0)},
+    "mp_body_left_wrist": {"mmd": "左手首", "parent": "mp_left_elbow", "tail": "", "display": "左手", "axis": MVector3D(1, 0, 0)},
+    "mp_body_right_wrist": {"mmd": "右手首", "parent": "mp_right_elbow", "tail": "", "display": "右手", "axis": MVector3D(-1, 0, 0)},
+    "mp_right_eye": {"mmd": "右目", "parent": "mp_head", "tail": "", "display": "顔", "axis": None},
+    "mp_left_eye": {"mmd": "左目", "parent": "mp_head", "tail": "", "display": "顔", "axis": None},
+    "mp_left_foot_index": {"mmd": "左つま先", "parent": "mp_left_ankle", "tail": "", "display": "左足", "axis": None},
+    "mp_left_heel": {"mmd": "左かかと", "parent": "mp_left_ankle", "tail": "", "display": "左足", "axis": None},
+    "mp_right_foot_index": {"mmd": "右つま先", "parent": "mp_right_ankle", "tail": "", "display": "右足", "axis": None},
+    "mp_right_heel": {"mmd": "右かかと", "parent": "mp_right_ankle", "tail": "", "display": "右足", "axis": None},
+}
+
 
 PMX_CONNECTIONS = {
     "pelvis": {"mmd": "下半身", "parent": "グルーブ", "tail": "pelvis2", "display": "体幹", "axis": None},
@@ -1562,6 +1787,28 @@ PMX_CONNECTIONS = {
     "left_mouth_bottom_4": {"mmd": "left_mouth_bottom_4", "parent": "left_mouth_bottom_3", "tail": "", "display": "口", "axis": None, "mp_index": "405"},
     "left_mouth_bottom_5": {"mmd": "left_mouth_bottom_5", "parent": "left_mouth_bottom_4", "tail": "", "display": "口", "axis": None, "mp_index": "314"},
 }
+
+MP_VMD_CONNECTIONS = {
+    'mp_pelvis': {'direction': ('mp_pelvis', 'mp_pelvis2'), 'up': ('mp_left_hip', 'mp_right_hip'), 'cancel': []},
+    'mp_spine1': {'direction': ('mp_spine1', 'mp_neck'), 'up': ('mp_left_shoulder', 'mp_right_shoulder'), 'cancel': []},
+    # 'mp_neck': {'direction': ('mp_neck', 'mp_head'), 'up': ('mp_left_shoulder', 'mp_right_shoulder'), 'cancel': ['mp_spine1']},
+    # 'mp_head': {'direction': ('mp_head', 'mp_head_tail'), 'up': ('mp_left_eye', 'mp_right_eye'), 'cancel': ['mp_spine1', 'mp_neck']},
+
+    # 'mp_left_collar': {'direction': ('mp_left_collar', 'mp_left_shoulder'), 'up': ('mp_spine1', 'mp_neck'), 'cross': ('mp_left_shoulder', 'mp_right_shoulder'), 'cancel': ['mp_spine1']},
+    # 'mp_left_shoulder': {'direction': ('mp_left_shoulder', 'mp_left_elbow'), 'up': ('mp_left_collar', 'mp_left_shoulder'), 'cancel': ['mp_spine1', 'mp_left_collar']},
+    # 'mp_left_elbow': {'direction': ('mp_left_elbow', 'mp_body_left_wrist'), 'up': ('mp_left_shoulder', 'mp_left_elbow'), 'cancel': ['mp_spine1', 'mp_left_collar', 'mp_left_shoulder']},
+    'mp_left_hip': {'direction': ('mp_left_hip', 'mp_left_knee'), 'up': ('mp_left_hip', 'mp_right_hip'), 'cancel': ['mp_pelvis']},
+    # 'mp_left_knee': {'direction': ('mp_left_knee', 'mp_left_ankle'), 'up': ('mp_left_hip', 'mp_right_hip'), 'cancel': ['mp_pelvis', 'mp_left_hip']},
+    # 'mp_left_ankle': {'direction': ('mp_left_ankle', 'mp_left_foot'), 'up': ('mp_left_hip', 'mp_right_hip'), 'cancel': ['mp_pelvis', 'mp_left_hip', 'mp_left_knee']},
+
+    # 'mp_right_collar': {'direction': ('mp_right_collar', 'mp_right_shoulder'), 'up': ('mp_spine1', 'mp_neck'), 'cross': ('mp_right_shoulder', 'mp_left_shoulder'), 'cancel': ['mp_spine1']},
+    # 'mp_right_shoulder': {'direction': ('mp_right_shoulder', 'mp_right_elbow'), 'up': ('mp_right_collar', 'mp_right_shoulder'), 'cancel': ['mp_spine1', 'mp_right_collar']},
+    # 'mp_right_elbow': {'direction': ('mp_right_elbow', 'mp_body_right_wrist'), 'up': ('mp_right_shoulder', 'mp_right_elbow'), 'cancel': ['mp_spine1', 'mp_right_collar', 'mp_right_shoulder']},
+    'mp_right_hip': {'direction': ('mp_right_hip', 'mp_right_knee'), 'up': ('mp_right_hip', 'mp_left_hip'), 'cancel': ['mp_pelvis']},
+    # 'mp_right_knee': {'direction': ('mp_right_knee', 'mp_right_ankle'), 'up': ('mp_right_hip', 'mp_left_hip'), 'cancel': ['mp_pelvis', 'mp_right_hip']},
+    # 'mp_right_ankle': {'direction': ('mp_right_ankle', 'mp_right_foot'), 'up': ('mp_right_hip', 'mp_left_hip'), 'cancel': ['mp_pelvis', 'mp_right_hip', 'mp_right_knee']},
+}
+
 
 VMD_CONNECTIONS = {
     'pelvis': {'direction': ('pelvis', 'pelvis2'), 'up': ('left_hip', 'right_hip'), 'cancel': []},
