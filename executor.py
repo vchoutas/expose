@@ -35,6 +35,8 @@ if __name__ == "__main__":
     parser.add_argument('--face-model', type=str, dest='face_model', default="data/shape_predictor_68_face_landmarks.dat", help='Learning model for person face')
     parser.add_argument('--order-file', type=str, dest='order_file', default='', help='Index ordering file path')
     parser.add_argument('--bone-config', type=str, dest='bone_config', default="config/あにまさ式ミク準標準ボーン.csv", help='MMD Model Bone csv')
+    parser.add_argument('--trace-mov-model-config', type=str, dest='trace_mov_model_config', default="config/trace_mov_model.pmx", help='MMD Model Bone pmx')
+    parser.add_argument('--trace-rot-model-config', type=str, dest='trace_rot_model_config', default="config/trace_rot_model.pmx", help='MMD Model Bone pmx')
     parser.add_argument('--hand-motion', type=int, dest='hand_motion', default="0", help='Whether to generate hand motion')
     parser.add_argument('--face-motion', type=int, dest='face_motion', default="0", help='Whether to generate face motion')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='Log level')

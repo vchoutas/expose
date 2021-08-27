@@ -12,6 +12,8 @@ import datetime
 import numpy as np
 from tqdm import tqdm
 import math
+import shutil
+
 from mmd.utils import MServiceUtils
 
 from mmd.utils.MLogger import MLogger
@@ -25,6 +27,7 @@ from mmd.module.MMath import MQuaternion, MVector3D, MVector2D, MMatrix4x4, MRec
 from mmd.mmd.VmdData import VmdBoneFrame, VmdMorphFrame, VmdMotion, VmdShowIkFrame, VmdInfoIk, OneEuroFilter
 from mmd.mmd.PmxData import Material, PmxModel, Bone, Vertex, Bdef1, Ik, IkLink, DisplaySlot
 from mmd.mmd.PmxWriter import PmxWriter
+from mmd.mmd.PmxReader import PmxReader
 from mmd.utils.MServiceUtils import get_file_encoding, calc_global_pos, separate_local_qq
 
 logger = MLogger(__name__, level=1)
@@ -70,6 +73,10 @@ def execute(args):
             mp_trace_mov_motion = VmdMotion()
             mp_trace_rot_motion = VmdMotion()
             mp_trace_miku_motion = VmdMotion()
+
+            # トレース用モデルを読み込む
+            trace_model = PmxReader(args.trace_mov_model_config).read_data()
+            mp_trace_model = PmxReader(args.trace_mov_model_config).read_data()
 
             # KEY: 処理対象ボーン名, VALUE: vecリスト
             target_bone_vecs = {}
@@ -189,8 +196,6 @@ def execute(args):
 
                         # 四肢の信頼度を保持
                         target_bone_vecs["params"][fno]["visibility"] = {}
-                        # 下半身は常に対象とする
-                        target_bone_vecs["params"][fno]["visibility"]["下半身"] = 1
                         for jname, mname in [("mp_nose", "頭先"), ("mp_body_right_index", "右人指３"), ("mp_body_left_index", "左人指３"), ("mp_right_hip", "右足"), ("mp_left_hip", "左足"), 
                                              ("mp_right_heel", "右かかと"), ("mp_left_heel", "左かかと"), ("mp_right_foot_index", "右つま先"), ("mp_left_foot_index", "左つま先"), 
                                              ("mp_body_right_wrist", "右手首"), ("mp_body_left_wrist", "左手首")]:
@@ -198,10 +203,17 @@ def execute(args):
                                 target_bone_vecs["params"][fno]["visibility"][mname] = frame_joints["mp_body_joints"][jname]["visibility"]
                             else:
                                 target_bone_vecs["params"][fno]["visibility"][mname] = 0
+                        
+                        for jname, mname in [("mp_spine1", "上半身"), ("mp_pelvis", "下半身")]:
+                            if "mp_body_joints" in frame_joints:                        
+                                # 体幹は両足の信頼度
+                                target_bone_vecs["params"][fno]["visibility"][mname] = np.mean([frame_joints["mp_body_joints"]["mp_left_hip"]["visibility"], frame_joints["mp_body_joints"]["mp_right_hip"]["visibility"]])
+                            else:
+                                target_bone_vecs["params"][fno]["visibility"][mname] = 0
             
-            # 初期化
-            trace_model = init_trace_model()
-            mp_trace_model = init_trace_model()
+            # # 初期化
+            # trace_model = init_trace_model()
+            # mp_trace_model = init_trace_model()
             
             logger.info("【No.{0}】モーション(移動)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
@@ -228,8 +240,8 @@ def execute(args):
                             pchar.update(len(fnos))
                             continue
 
-                        # ボーン登録        
-                        create_bone(target_trace_model, jname, pconn, target_bone_vecs, miku_model, conns)
+                        # # ボーン登録        
+                        # create_bone(target_trace_model, jname, pconn, target_bone_vecs, miku_model, conns)
 
                         mname = pconn['mmd']
                         pmname = conns[pconn['parent']]['mmd'] if pconn['parent'] in conns else pconn['parent']
@@ -311,26 +323,19 @@ def execute(args):
             # expose
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_model_no{oidx:02d}.pmx")
             logger.info("【No.{0}】トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
-            trace_model.name = f"Trace結果 {oidx:02d} (移動用)"
-            trace_model.english_name = f"TraceModel {oidx:02d} (Move)"
-            trace_model.comment = f"Trace結果 {oidx:02d} 表示用モデル (移動用)\n足ＩＫがありません"
-            pmx_writer.write(trace_model, trace_model_path)
+            shutil.copy(args.trace_mov_model_config, trace_model_path)
             
             trace_mov_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_no{oidx:02d}.vmd")
             logger.info("【No.{0}】モーション(移動)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_mov_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(trace_model, trace_mov_motion, trace_mov_motion_path)
 
-            # mediapipe
-            mp_trace_model_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_mov_model_no{oidx:02d}.pmx")
-            logger.info("【No.{0}】Mediapipe トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_model_path), decoration=MLogger.DECORATION_LINE)
-            mp_trace_model.name = f"Mediapipe Trace結果 {oidx:02d} (移動用)"
-            mp_trace_model.english_name = f"Mediapipe TraceModel {oidx:02d} (Move)"
-            mp_trace_model.comment = f"Mediapipe Trace結果 {oidx:02d} 表示用モデル (移動用)\n足ＩＫがありません"
-            pmx_writer.write(mp_trace_model, mp_trace_model_path)
-            
             mp_trace_mov_motion_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_mov_no{oidx:02d}.vmd")
             logger.info("【No.{0}】mediapipeモーション(移動)生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_mov_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(mp_trace_model, mp_trace_mov_motion, mp_trace_mov_motion_path)
+
+            # 回転トレース用モデルを読み込
+            trace_model = PmxReader(args.trace_rot_model_config).read_data()
+            mp_trace_model = PmxReader(args.trace_rot_model_config).read_data()
 
             # 足ＩＫ ------------------------
             ik_show = VmdShowIkFrame()
@@ -351,18 +356,8 @@ def execute(args):
 
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_rot_model_no{oidx:02d}.pmx")
             logger.info("【No.{0}】トレース(回転)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
-            trace_model.name = f"Trace結果 {oidx:02d} (回転用)"
-            trace_model.english_name = f"TraceModel {oidx:02d} (Rot)"
-            trace_model.comment = f"Trace結果 {oidx:02d} 表示用モデル (回転用)\n足ＩＫはモーション側でOFFにしています"
-            pmx_writer.write(trace_model, trace_model_path)
-
-            mp_trace_model_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_rot_model_no{oidx:02d}.pmx")
-            logger.info("【No.{0}】Mediapipe トレース(回転)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_model_path), decoration=MLogger.DECORATION_LINE)
-            mp_trace_model.name = f"Mediapipe Trace結果 {oidx:02d} (回転用)"
-            mp_trace_model.english_name = f"Mediapipe TraceModel {oidx:02d} (Rot)"
-            mp_trace_model.comment = f"Mediapipe Trace結果 {oidx:02d} 表示用モデル (回転用)\n足ＩＫはモーション側でOFFにしています"
-            pmx_writer.write(mp_trace_model, mp_trace_model_path)
-                        
+            shutil.copy(args.trace_rot_model_config, trace_model_path)
+ 
             logger.info("【No.{0}】モーション(回転)計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
             
             with tqdm(total=((len(VMD_CONNECTIONS.keys()) + len(MP_VMD_CONNECTIONS.keys()) + 2) * (len(fnos))), desc=f'No.{oidx:02d}') as pchar:
@@ -572,19 +567,23 @@ def execute(args):
             logger.info("【No.{0}】モーション(あにまさ式ミク)外れ値削除開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
 
             loop_cnt = 2
-            with tqdm(total=((4 * len(fnos)) + (len(trace_miku_motion.bones.keys()) * len(fnos) * loop_cnt)), desc=f'No.{oidx:02d}') as pchar:
-                for mname in ["上半身", "下半身", "右足", "左足"]:
-                    for fno in mp_trace_miku_motion.bones[mname].keys():
-                        mp_bf = mp_trace_miku_motion.calc_bf(mname, fno)
-                        ex_bf = trace_miku_motion.calc_bf(mname, fno)
+            with tqdm(total=((len(trace_miku_motion.bones.keys()) * len(fnos) * loop_cnt)), desc=f'No.{oidx:02d}') as pchar:
+                # for mname in ["上半身", "下半身"]:
+                #     local_x_axis = trace_model.get_local_x_axis(mname)
 
-                        dot = MQuaternion.dotProduct(mp_bf.rotation, ex_bf.rotation)
-                        # logger.info("{0}: {1}, dot: {2}", fno, mname, dot)
-                        if abs(dot) < 0.8:
-                            # 離れすぎてるのは削除
-                            if fno in trace_miku_motion.bones[mname]:
-                                del trace_miku_motion.bones[mname][fno]
-                        pchar.update(1)
+                #     for fno in mp_trace_miku_motion.bones[mname].keys():
+                #         mp_bf = mp_trace_miku_motion.calc_bf(mname, fno)
+                #         ex_bf = trace_miku_motion.calc_bf(mname, fno)
+
+                #         if fno in target_bone_vecs["params"] and mname in target_bone_vecs["params"][fno]["visibility"] and target_bone_vecs["params"][fno]["visibility"][mname] > 0.7:
+                #             # mediapipeの値が信頼性ある場合に判定対象とする
+                #             dot = MQuaternion.dotProduct(mp_bf.rotation, ex_bf.rotation)
+                #             logger.info("{0}: {1}, dot: {2}, vis: {3}", fno, mname, dot, target_bone_vecs["params"][fno]["visibility"][mname])
+                #             if abs(dot) < 0.8:
+                #                 # 離れすぎてるのは削除
+                #                 if fno in trace_miku_motion.bones[mname]:
+                #                     del trace_miku_motion.bones[mname][fno]
+                #         pchar.update(1)
 
                 for n in range(loop_cnt):
                     bone_names = list(trace_miku_motion.bones.keys())
