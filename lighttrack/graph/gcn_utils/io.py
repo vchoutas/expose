@@ -39,7 +39,7 @@ class IO():
 
     def load_arg(self, argv=None):
         with open(argv.tracking_config, 'r') as f:
-            default_arg = yaml.load(f)
+            default_arg = yaml.load(f, Loader=yaml.FullLoader)
 
             parser = self.get_parser()
             parser.set_defaults(**default_arg)

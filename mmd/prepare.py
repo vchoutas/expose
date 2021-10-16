@@ -72,8 +72,8 @@ def execute(args):
         # 縮尺後の高さ
         height = int(H * scale)
 
-        if width % 2 != 0 or height % 2 != 0:
-            logger.error("入力動画のサイズが調整後に2で割り切れません。調整前({0}x{1}) -> 調整後({2}-{3})\n4の倍数で入力動画のサイズを調整してください。\n{0}", 
+        if width % 40 != 0 or height % 40 != 0:
+            logger.error("入力動画のサイズが調整後に40で割り切れません。調整前({0}x{1}) -> 調整後({2}-{3})\n40の倍数で入力動画のサイズを調整してください。\n{0}", 
                          W, H, width, height, args.video_file, decoration=MLogger.DECORATION_BOX)
             return False, None
 
