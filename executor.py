@@ -39,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument('--trace-rot-model-config', type=str, dest='trace_rot_model_config', default="config/trace_rot_model.pmx", help='MMD Model Bone pmx')
     parser.add_argument('--hand-motion', type=int, dest='hand_motion', default="0", help='Whether to generate hand motion')
     parser.add_argument('--face-motion', type=int, dest='face_motion', default="0", help='Whether to generate face motion')
+    parser.add_argument('--only-json', type=int, dest='only_json', default="0", help='Output Only Json')
     parser.add_argument('--verbose', type=int, dest='verbose', default=20, help='Log level')
     parser.add_argument("--log-mode", type=int, dest='log_mode', default=0, help='Log output mode')
 

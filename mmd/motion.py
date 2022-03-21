@@ -85,7 +85,7 @@ def execute(args):
             mp_fnos = []
         
             for mbname in ["全ての親", "センター", "グルーブ", "pelvis2", "head_tail", "right_wrist_tail", "left_wrist_tail", "params", \
-                           "Groove", "mp_pelvis", "mp_spine1", "mp_neck", "mp_head", "mp_head_tail", "mp_left_collar", "mp_right_collar", "mp_pelvis2"]:
+                           "Groove", "mp_pelvis", "mp_spine1", "mp_spine2", "mp_neck", "mp_head", "mp_head_tail", "mp_left_collar", "mp_right_collar", "mp_pelvis2"]:
                 target_bone_vecs[mbname] = {}
             
             logger.info("【No.{0}】モーション結果位置計算開始", f"{oidx:02d}", decoration=MLogger.DECORATION_LINE)
@@ -166,6 +166,9 @@ def execute(args):
                             # 右肩
                             target_bone_vecs['mp_right_collar'][fno] = np.mean([target_bone_vecs['mp_left_shoulder'][fno], target_bone_vecs['mp_right_shoulder'][fno]], axis=0)
 
+                            # 上半身2
+                            target_bone_vecs['mp_spine2'][fno] = np.mean([target_bone_vecs['mp_spine1'][fno], target_bone_vecs['mp_neck'][fno]], axis=0)
+                            
                             # 下半身先
                             target_bone_vecs['mp_pelvis2'][fno] = target_bone_vecs['mp_pelvis'][fno] + ((target_bone_vecs['mp_neck'][fno] - target_bone_vecs['mp_spine1'][fno]) / 3)
 
@@ -301,11 +304,18 @@ def execute(args):
                     groove_bf.key = True
                     trace_mov_motion.bones[groove_bf.name][fno] = groove_bf
 
+                    mp_groove_bf = mp_trace_mov_motion.calc_bf("グルーブ", fno)
+                    mp_trace_mov_motion.bones[mp_groove_bf.name][fno] = groove_bf.copy()
+                    
                     center_bf = trace_mov_motion.calc_bf("センター", fno)
                     center_bf.position.setX(center_pos.x())
                     center_bf.position.setZ(center_pos.z())
                     center_bf.key = True
                     trace_mov_motion.bones[center_bf.name][fno] = center_bf
+
+                    mp_center_bf = mp_trace_mov_motion.calc_bf("センター", fno)
+                    mp_trace_mov_motion.bones[mp_center_bf.name][fno] = center_bf.copy()
+                    
                     pchar.update(1)
                 
                 # 中央のY値が接地してると見なす
@@ -320,11 +330,61 @@ def execute(args):
                     trace_mov_motion.bones[groove_bf.name][fno] = groove_bf
                     pchar.update(1)
 
+            trace_mov_json_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_no{oidx:02d}.json")
+            logger.info("【No.{0}】モーション(移動)JSON生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_mov_json_path), decoration=MLogger.DECORATION_LINE)
+
+            # JSONデータに出力する
+            trace_mov_json_data = {}
+            with tqdm(total=(len(trace_mov_motion.bones.keys()) * (len(fnos))), desc=f'Trace Json No.{oidx:02d}') as pchar:
+                for bone_name, bfs in trace_mov_motion.bones.items():
+                    json_bone_name = JSON_CONNECTIONS.get(bone_name, bone_name)
+                    links = trace_model.create_link_2_top_one(bone_name, is_defined=False)
+                    # 足りないボーンは0で取得しておく
+                    _ = mp_trace_mov_motion.calc_bf(bone_name, 0)
+
+                    for fno in range(max(list(bfs.keys())) + 1):
+                        if fno not in trace_mov_json_data:
+                            trace_mov_json_data[fno] = {}
+                        
+                        now_vec = calc_global_pos_from_mov(trace_model, links, trace_mov_motion, fno)
+                        # yとzは入れ替える
+                        trace_mov_json_data[fno][json_bone_name] = {"x": now_vec.x() / MIKU_METER * 1000, "y": now_vec.z() / MIKU_METER * 1000, "z": now_vec.y() / MIKU_METER * 1000}
+                        pchar.update(1)
+            
+            with open(trace_mov_json_path, 'w', encoding='utf-8') as f:
+                json.dump(trace_mov_json_data, f, ensure_ascii=False, indent=4)
+
+            mp_trace_mov_json_path = os.path.join(motion_dir_path, f"mp_trace_{process_datetime}_mov_no{oidx:02d}.json")
+            logger.info("【No.{0}】mediapipeモーション(移動)JSON生成開始【{1}】", f"{oidx:02d}", os.path.basename(mp_trace_mov_json_path), decoration=MLogger.DECORATION_LINE)
+            
+            # JSONデータに出力する
+            mp_trace_mov_json_data = {}
+            with tqdm(total=(len(mp_trace_mov_motion.bones.keys()) * (len(fnos))), desc=f'Trace Json No.{oidx:02d}') as pchar:
+                for bone_name, bfs in mp_trace_mov_motion.bones.items():
+                    json_bone_name = JSON_CONNECTIONS.get(bone_name, bone_name)
+                    links = mp_trace_model.create_link_2_top_one(bone_name, is_defined=False)
+
+                    for fno in range(max(list(bfs.keys())) + 1):
+                        if fno not in mp_trace_mov_json_data:
+                            mp_trace_mov_json_data[fno] = {}
+                        
+                        now_vec = calc_global_pos_from_mov(mp_trace_model, links, mp_trace_mov_motion, fno)
+                        # yとzは入れ替える
+                        mp_trace_mov_json_data[fno][json_bone_name] = {"x": now_vec.x() / MIKU_METER * 1000, "y": now_vec.z() / MIKU_METER * 1000, "z": now_vec.y() / MIKU_METER * 1000}
+                        pchar.update(1)
+            
+            with open(mp_trace_mov_json_path, 'w', encoding='utf-8') as f:
+                json.dump(mp_trace_mov_json_data, f, ensure_ascii=False, indent=4)
+
+            if args.only_json:
+                # JSONデータのみ出力の場合、VMDデータ出力は行わない
+                continue
+
             # expose
             trace_model_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_model_no{oidx:02d}.pmx")
             logger.info("【No.{0}】トレース(移動)モデル生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_model_path), decoration=MLogger.DECORATION_LINE)
             shutil.copy(args.trace_mov_model_config, trace_model_path)
-            
+
             trace_mov_motion_path = os.path.join(motion_dir_path, f"trace_{process_datetime}_mov_no{oidx:02d}.vmd")
             logger.info("【No.{0}】モーション(移動)生成開始【{1}】", f"{oidx:02d}", os.path.basename(trace_mov_motion_path), decoration=MLogger.DECORATION_LINE)
             vmd_writer.write(trace_model, trace_mov_motion, trace_mov_motion_path)
@@ -1572,7 +1632,8 @@ MP_PMX_CONNECTIONS = {
     "mp_right_ankle": {"mmd": "右足首", "parent": "mp_right_knee", "tail": "mp_right_foot", "display": "右足", "axis": None},
     "mp_left_foot": {"mmd": "左つま先", "parent": "mp_left_ankle", "tail": "", "display": "左足", "axis": None},
     "mp_right_foot": {"mmd": "右つま先", "parent": "mp_right_ankle", "tail": "", "display": "右足", "axis": None},
-    "mp_spine1": {"mmd": "上半身", "parent": "Groove", "tail": "mp_neck", "display": "体幹", "axis": None},
+    "mp_spine1": {"mmd": "上半身", "parent": "Groove", "tail": "mp_spine2", "display": "体幹", "axis": None},
+    "mp_spine2": {"mmd": "上半身2", "parent": "mp_spine1", "tail": "mp_neck", "display": "体幹", "axis": None},
     "mp_neck": {"mmd": "首", "parent": "mp_spine1", "tail": "mp_head", "display": "体幹", "axis": None},
     "mp_head": {"mmd": "頭", "parent": "mp_neck", "tail": "mp_head_tail", "display": "体幹", "axis": MVector3D(1, 0, 0), "parent_axis": MVector3D(1, 0, 0)},
     "mp_head_tail": {"mmd": "頭先", "parent": "mp_head", "tail": "", "display": "体幹", "axis": None},
@@ -1785,6 +1846,87 @@ PMX_CONNECTIONS = {
     "left_mouth_bottom_3": {"mmd": "left_mouth_bottom_3", "parent": "left_mouth_bottom_2", "tail": "", "display": "口", "axis": None, "mp_index": "321"},
     "left_mouth_bottom_4": {"mmd": "left_mouth_bottom_4", "parent": "left_mouth_bottom_3", "tail": "", "display": "口", "axis": None, "mp_index": "405"},
     "left_mouth_bottom_5": {"mmd": "left_mouth_bottom_5", "parent": "left_mouth_bottom_4", "tail": "", "display": "口", "axis": None, "mp_index": "314"},
+}
+
+JSON_CONNECTIONS = {
+    "全ての親": "root",
+    "センター": "center",
+    "グルーブ": "groove",
+    "下半身": "pelvis",
+    "下半身先": "pelvis2",
+    "左足": "left_hip",
+    "右足": "right_hip",
+    "左ひざ": "left_knee",
+    "右ひざ": "right_knee",
+    "左足首": "left_ankle",
+    "右足首": "right_ankle",
+    "左つま先": "left_foot",
+    "右つま先": "right_foot",
+    "上半身": "spine1",
+    "上半身2": "spine2",
+    "首": "neck",
+    "頭": "head",
+    "左肩": "left_collar",
+    "右肩": "right_collar",
+    "頭先": "head_tail",
+    "左腕": "left_shoulder",
+    "右腕": "right_shoulder",
+    "左ひじ": "left_elbow",
+    "右ひじ": "right_elbow",
+    "左手首": "left_wrist",
+    "右手首": "right_wrist",
+    "左手先": "left_wrist_tail",
+    "右手先": "right_wrist_tail",
+    "右目": "right_eye",
+    "左目": "left_eye",
+    "左足親指": "left_big_toe",
+    "左足小指": "left_small_toe",
+    "左かかと": "left_heel",
+    "右足親指": "right_big_toe",
+    "右足小指": "right_small_toe",
+    "右かかと": "right_heel",
+    "左手首2": "mp_left_wrist",
+    "右手首2": "mp_right_wrist",
+    "左人指１": "mp_left_index1",
+    "左人指２": "mp_left_index2",
+    "左人指３": "mp_left_index3",
+    "左中指１": "mp_left_middle1",
+    "左中指２": "mp_left_middle2",
+    "左中指３": "mp_left_middle3",
+    "左小指１": "mp_left_pinky1",
+    "左小指２": "mp_left_pinky2",
+    "左小指３": "mp_left_pinky3",
+    "左薬指１": "mp_left_ring1",
+    "左薬指２": "mp_left_ring2",
+    "左薬指３": "mp_left_ring3",
+    "左親指０": "mp_left_thumb1",
+    "左親指１": "mp_left_thumb2",
+    "左親指２": "mp_left_thumb3",
+    "右人指１": "mp_right_index1",
+    "右人指２": "mp_right_index2",
+    "右人指３": "mp_right_index3",
+    "右中指１": "mp_right_middle1",
+    "右中指２": "mp_right_middle2",
+    "右中指３": "mp_right_middle3",
+    "右小指１": "mp_right_pinky1",
+    "右小指２": "mp_right_pinky2",
+    "右小指３": "mp_right_pinky3",
+    "右薬指１": "mp_right_ring1",
+    "右薬指２": "mp_right_ring2",
+    "右薬指３": "mp_right_ring3",
+    "右親指０": "mp_right_thumb1",
+    "右親指１": "mp_right_thumb2",
+    "右親指２": "mp_right_thumb3",
+    "左親指先": "mp_left_thumb",
+    "左人差指先": "mp_left_index",
+    "左中指先": "mp_left_middle",
+    "左薬指先": "mp_left_ring",
+    "左小指先": "mp_left_pinky",
+    "右親指先": "mp_right_thumb",
+    "右人差指先": "mp_right_index",
+    "右中指先": "mp_right_middle",
+    "右薬指先": "mp_right_ring",
+    "右小指先": "mp_right_pinky",    
 }
 
 MP_VMD_CONNECTIONS = {

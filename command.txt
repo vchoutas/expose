@@ -2,6 +2,11 @@ conda create -n expose pip python=3.7
 
 conda activate expose
 
+# sys.pathでRoming内を見に行ってたら見に行かないようにする
+python -c "import sys;print(sys.path)"
+set PYTHONNOUSERSITE=1
+
+https://pytorch.org/get-started/locally/
 conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.2 -c pytorch
 
 pip install -r requirements.txt

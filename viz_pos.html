@@ -43,7 +43,6 @@
     var myViz = {};
     myViz.posDict = {};     // データ保持
     myViz.playflag = false; // 再生中か
-    myViz.plot3dflag = false;  //3D(pos.txt)か2D(*_keypoints.json)か ※TODO 2D対応
 
     window.onload=function(){
       // Drag and Dropの設定
@@ -96,71 +95,52 @@
           //テキスト形式で読み込む
           reader.readAsText(files[i]);
 
-          // 2D jsonファイルの場合、ファイルは複数
-          if (files[i].name.endsWith('.json')) {
-            // TODO
-          } else {
-            // 3D posファイルの場合
-            reader.tmpmyframe = '3d';
-          }
-
           console.log(files[i].name);
 
           //読込終了後の処理
           reader.onload = function(ev){
+            var max_x=-99999, max_y=-99999, max_z=-99999, min_x=99999, min_y=99999, min_z=99999;
+            var jsonData = JSON.parse(ev.target.result);
+            var max_fno = 0;
 
-            if (ev.target.tmpmyframe == '3d') {
-              // 3dデータ読み込み
-              // 配列にする
-              var lineArr = ev.target.result.split("\n");
-              var max_x=-99999, max_y=-99999, max_z=-99999, min_x=99999, min_y=99999, min_z=99999;
-              for (var j = 0; j < lineArr.length; j++) {
-                var poslist = lineArr[j].split(",");
-                
-                var poslist2 = []
-                for (var k = 0; k < poslist.length; k++) {
-                  var pos = {};
-                  var ixyz =  poslist[k].trim().split(" ");
-                  pos.i = parseInt(ixyz[0]);
-                  pos.x = parseFloat(ixyz[1]);
-                  pos.y = parseFloat(ixyz[2]);
-                  pos.z = parseFloat(ixyz[3]);
-                  poslist2.push(pos)
+            Object.keys(jsonData).forEach(function (fno) {
+              var bf_json = jsonData[fno];
+              var bf_list = [];
+              max_fno = fno;
+              Object.keys(bf_json).forEach(function (bone_name) {
+                var bf = bf_json[bone_name];
+                bf.fno = parseInt(fno);
+                bf.name = bone_name;
+                bf.x = parseFloat(bf.x);
+                bf.y = parseFloat(bf.y);
+                bf.z = parseFloat(bf.z);
+                bf_list.push(bf);
 
-                  if (pos.x  > max_x){max_x = pos.x  } 
-                  if (pos.x  < min_x){min_x = pos.x  } 
-                  if (pos.y > max_y){max_y = pos.y } 
-                  if (pos.y < min_y){min_y = pos.y } 
-                  if (pos.z > max_z){max_z = pos.z } 
-                  if (pos.z < min_z){min_z = pos.z } 
-                }
-                myViz.posDict['3d' + j] = poslist2;
-              }
+                if (bf.x > max_x){max_x = bf.x};
+                if (bf.x < min_x){min_x = bf.x}; 
+                if (bf.y > max_y){max_y = bf.y};
+                if (bf.y < min_y){min_y = bf.y};
+                if (bf.z > max_z){max_z = bf.z};
+                if (bf.z < min_z){min_z = bf.z};
+              });
+              myViz.posDict['3d' + fno] = bf_list;
+            });
 
-              document.getElementById("x_min").value = Math.floor(min_x/100)*100;
-              document.getElementById("x_max").value = Math.ceil(max_x/100)*100;
-              document.getElementById("y_min").value = Math.floor(min_y/100)*100;
-              document.getElementById("y_max").value = Math.ceil(max_y/100)*100;
-              document.getElementById("z_min").value = Math.floor(min_z/100)*100;
-              document.getElementById("z_max").value = Math.ceil(max_z/100)*100;
+            document.getElementById("x_min").value = Math.floor(min_x/100)*100;
+            document.getElementById("x_max").value = Math.ceil(max_x/100)*100;
+            document.getElementById("y_min").value = Math.floor(min_y/100)*100;
+            document.getElementById("y_max").value = Math.ceil(max_y/100)*100;
+            document.getElementById("z_min").value = Math.floor(min_z/100)*100;
+            document.getElementById("z_max").value = Math.ceil(max_z/100)*100;
 
-          //    if (max_y - min_y > 0) {
-            //    document.getElementById("distance").value = (max_z-min_z)/(max_y-min_y)*1.5
-              //}
+            // 行数をFrameに表示
+            document.getElementById('fr_min').value = 0;
+            document.getElementById('fr_max').value = max_fno;
 
-              // 行数をFrameに表示
-              document.getElementById('fr_max').value = lineArr.length - 2;
-              document.getElementById('fr_min').value = 0;
+            // Frameを0にする
+            document.getElementById('fr').value = 0;
 
-              // Frameを0にする
-              document.getElementById('fr').value = 0;
-
-              myViz.plot3dflag = true;
-              plotpose();
-            } else {
-              // 2dデータ読み込み
-              // TODO
-            }
+            plotpose();
           }
         }
       }
@@ -181,11 +161,7 @@
       }
 
       document.getElementById('fr').value = val_new;
-      if (myViz.plot3dflag) {
-        plotpose();
-      } else {
-        plot2dpose(); //未作成
-      }
+      plotpose();
     }
 
     function next() {
@@ -203,11 +179,7 @@
         return;
       }
       document.getElementById('fr').value = val_new;
-      if (myViz.plot3dflag) {
-        plotpose();
-      } else {
-        plot2dpose(); //未作成
-      }
+      plotpose();
       var end = Date.now();
       // フレーム間のインターバルを設定
       if (end - start > interval) {
@@ -233,20 +205,24 @@
       var line_no = document.getElementById('fr').value
       var poslist = myViz.posDict['3d' + line_no];
             
+      var bone_names = {};
       var xpos = {};
       var ypos = {};
       var zpos = {};
       var key = 0;
       for (var i = 0; i < poslist.length; i++) {
-        key = poslist[i].i;
+        key = poslist[i].name;
         xpos[key] = poslist[i].x;
         ypos[key] = poslist[i].y;
         zpos[key] = poslist[i].z;
+        bone_names[key] = poslist[i].name
       }
 
-      var body_name = {0:'Hip',1:'RHip',2:'RKnee',3:'RFoot',6:'LHip',7:'LKnee',8:'LFoot',12:'Spine',13:'Thorax',14:'Neck/Nose',15:'Head',17:'LShoulder',18:'LElbow',19:'LWrist',25:'RShoulder',26:'RElbow',27:'RWrist'};
-
-      var order = [[15, 14, 13, 12, 0],[13, 17, 18, 19],[13, 25, 26, 27],[0, 1, 2, 3],[0, 6, 7, 8]];
+      var order = [['head_tail', 'head', 'neck', 'spine2', 'spine1', 'pelvis'],
+                   ['neck', 'left_collar', 'left_shoulder', 'left_elbow', 'left_wrist'],
+                   ['neck', 'right_collar', 'right_shoulder', 'right_elbow', 'right_wrist'],
+                   ['pelvis', 'right_hip', 'right_knee', 'right_ankle', 'right_foot'],
+                   ['pelvis', 'left_hip', 'left_knee', 'left_ankle', 'left_foot']];
       var x = [];
       var y = [];
       var z = [];
@@ -261,7 +237,7 @@
           x[i].push(xpos[order[i][j]]);
           y[i].push(ypos[order[i][j]]);
           z[i].push(zpos[order[i][j]]);
-          text[i].push(body_name[order[i][j]]);
+          text[i].push(order[i][j]);
         }
       }
 
@@ -421,7 +397,7 @@
 
 </head>
 <body>
-    <div id="dropzone" effectAllowed="move">Drop "pos.txt" file here!</div>
+    <div id="dropzone" effectAllowed="move">Drop "trace_xxxx_mov_noxx.json" or "mp_trace_xxxx_mov_noxx.json" file here!</div>
     <div id="set3d" class="setzone">
         <table>
             <tr>
