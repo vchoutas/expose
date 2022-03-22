@@ -1,3 +1,12 @@
+CUDA
+https://developer.nvidia.com/cuda-10.2-download-archive
+
+cuDNN
+https://developer.nvidia.com/compute/cudnn/secure/8.3.3/local_installers/10.2/cudnn-windows-x86_64-8.3.3.40_cuda10.2-archive.zip
+
+
+-----------------
+
 conda create -n expose pip python=3.7
 
 conda activate expose
@@ -9,6 +18,9 @@ set PYTHONNOUSERSITE=1
 https://pytorch.org/get-started/locally/
 conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.2 -c pytorch
 
+Build Tools for Visual Studio 2019をインストールする
+https://mebee.info/2020/07/18/post-13597/
+
 pip install -r requirements.txt
 
 "C:\Development\Anaconda3\envs\expose\Lib\site-packages\bezier\extra-dll\bezier-2e929504.dll"
@@ -18,6 +30,9 @@ cd lighttrack\lib
 
 python setup_windows.py build_ext --inplace
 ※スキップされたらcファイルを削除
+
+cl.exe にパスを通す
+https://qiita.com/asana_yui/items/d545b5eccd994c0cdaab
 
 python setup_cuda.py build_ext --inplace
 
