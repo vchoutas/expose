@@ -1,3 +1,11 @@
+# ExPose-MMD
+
+ - [導入メモ](command.txt)
+
+ - [JSONデータ出力結果](doc/output.md)
+
+----------
+
 ## ExPose: Monocular Expressive Body Regression through Body-Driven Attention
 
 [![report](https://img.shields.io/badge/arxiv-report-red)](https://arxiv.org/abs/2008.09062)
