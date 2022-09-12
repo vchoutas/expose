@@ -75,12 +75,12 @@ def execute(args):
         scale = width / W
 
         # 縮尺後の高さ
-        height = int(H * scale)
+        org_height = int(H * scale)
+        height = int(org_height + (org_height % 40))
 
-        if width % 40 != 0 or height % 40 != 0:
-            logger.error("入力動画のサイズが調整後に40で割り切れません。調整前({0}x{1}) -> 調整後({2}-{3})\n40の倍数で入力動画のサイズを調整してください。\n{0}", 
-                         W, H, width, height, args.video_file, decoration=MLogger.DECORATION_BOX)
-            return False, None
+        if width % 40 != 0 or org_height % 40 != 0:
+            logger.warning("入力動画のサイズが調整後に40で割り切れません。調整前({0}x{1}) -> 調整後({2}-{3})\n適切なサイズ({4})になるまで上辺を塗りつぶします。\n{5}", 
+                         W, H, width, org_height, height, args.video_file, decoration=MLogger.DECORATION_BOX)
 
         try:
             # 入力ファイル
@@ -90,7 +90,7 @@ def execute(args):
 
             for n in tqdm(range(int(count))):
                 # 動画から1枚キャプチャして読み込む
-                flag, img = cap.read()  # Capture frame-by-frame
+                flag, org_img = cap.read()  # Capture frame-by-frame
 
                 # 動画が終わっていたら終了
                 if flag == False:
@@ -101,10 +101,14 @@ def execute(args):
 
                     try:
                         # 画像に再変換
-                        img = Image.fromarray(img)
+                        org_img = Image.fromarray(org_img)
 
                         # 画像の縦横を指定サイズに変形
-                        img = img.resize((width, height), Image.ANTIALIAS)
+                        org_img = org_img.resize((width, org_height), Image.ANTIALIAS)
+
+                        img = Image.new(org_img.mode, (width, height), (0, 0, 0))
+
+                        img.paste(org_img, (0, height - org_height))
                         
                         # # floatに変換
                         # img = img_as_float(img)
